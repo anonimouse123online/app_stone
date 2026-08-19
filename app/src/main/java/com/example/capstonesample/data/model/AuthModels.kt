@@ -36,7 +36,7 @@ data class SignupRequest(
     val name: String,
     val email: String,
     val password: String,
-    val role: String = "Engineer"
+    val role: String = "engineer"
 )
 
 data class SignupResponse(

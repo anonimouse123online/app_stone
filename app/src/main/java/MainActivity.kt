@@ -5,6 +5,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
+import com.example.capstonesample.data.api.RetrofitClient
+import com.example.capstonesample.security.TokenManager
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -33,6 +35,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
 
         super.onCreate(savedInstanceState)
+        RetrofitClient.init(this)
 
 
         // ============================================================
@@ -101,6 +104,17 @@ class MainActivity : ComponentActivity() {
                 // ============================================================
 
                 var authToken by remember {
+                    mutableStateOf("")
+                }
+                var loggedInFullName by remember {
+                    mutableStateOf("")
+                }
+
+                var loggedInEmail by remember {
+                    mutableStateOf("")
+                }
+
+                var loggedInRole by remember {
                     mutableStateOf("")
                 }
 
@@ -454,37 +468,44 @@ class MainActivity : ComponentActivity() {
 
                         LoginScreen(
 
-                            onLoginClick = { token ->
+                            onLoginClick = {
+                                    token: String,
+                                    fullName: String,
+                                    email: String,
+                                    role: String ->
 
-                                // Save either:
-                                //
-                                // real JWT when online
-                                //
-                                // OR
-                                //
-                                // LOCAL_x when offline
+                                authToken =
+                                    token
 
-                                authToken = token
+                                loggedInFullName =
+                                    fullName
+
+                                loggedInEmail =
+                                    email
+
+                                loggedInRole =
+                                    role
 
 
-                                // If this is a real server JWT,
-                                // request another sync immediately.
                                 if (
                                     token.isNotBlank() &&
                                     !token.startsWith("LOCAL_")
                                 ) {
 
-                                    SyncManager
-                                        .requestImmediateSync(
-                                            context
-                                        )
+                                    TokenManager.saveToken(
+                                        context = context,
+                                        token = token
+                                    )
+
+                                    SyncManager.requestImmediateSync(
+                                        context
+                                    )
                                 }
 
 
                                 currentScreen =
                                     "dashboard"
                             },
-
 
                             onSignupClick = {
 
@@ -532,37 +553,28 @@ class MainActivity : ComponentActivity() {
 
                         DashboardScreen(
 
-                            selectedScreen =
-                                "dashboard",
+                            token = authToken,
+
+                            selectedScreen = "dashboard",
 
                             onHomeClick = {
-
-                                currentScreen =
-                                    "dashboard"
+                                currentScreen = "dashboard"
                             },
 
                             onProjectsClick = {
-
-                                currentScreen =
-                                    "projects"
+                                currentScreen = "projects"
                             },
 
                             onChatClick = {
-
-                                currentScreen =
-                                    "chat"
+                                currentScreen = "chat"
                             },
 
                             onTasksClick = {
-
-                                currentScreen =
-                                    "tasks"
+                                currentScreen = "tasks"
                             },
 
                             onProfileClick = {
-
-                                currentScreen =
-                                    "profile"
+                                currentScreen = "profile"
                             }
                         )
                     }
@@ -611,33 +623,20 @@ class MainActivity : ComponentActivity() {
                     "chat" -> {
 
                         ChatScreen(
-
                             onHomeClick = {
-
-                                currentScreen =
-                                    "dashboard"
+                                currentScreen = "dashboard"
                             },
 
                             onProjectsClick = {
-
-                                currentScreen =
-                                    "projects"
+                                currentScreen = "projects"
                             },
 
                             onTasksClick = {
-
-                                currentScreen =
-                                    "tasks"
+                                currentScreen = "tasks"
                             },
 
                             onProfileClick = {
-
-                                currentScreen =
-                                    "profile"
-                            },
-
-                            onChatClick = { chat ->
-
+                                currentScreen = "profile"
                             }
                         )
                     }
@@ -648,36 +647,32 @@ class MainActivity : ComponentActivity() {
                         TasksScreen(
 
                             onHomeClick = {
-
-                                currentScreen =
-                                    "dashboard"
+                                currentScreen = "dashboard"
                             },
 
                             onProjectsClick = {
-
-                                currentScreen =
-                                    "projects"
+                                currentScreen = "projects"
                             },
 
                             onMessagesClick = {
-
-                                currentScreen =
-                                    "chat"
+                                currentScreen = "chat"
                             },
 
                             onProfileClick = {
-
-                                currentScreen =
-                                    "profile"
+                                currentScreen = "profile"
                             },
 
                             onTaskClick = { siteTask ->
 
+                                println(
+                                    "OPEN TASK = ${siteTask.id}"
+                                )
+
+                                // We will connect this to TaskScreen later.
                             },
 
-                            onAddTaskClick = {
-
-                            }
+                            // Pass real JWT to TasksScreen
+                            token = authToken
                         )
                     }
 
@@ -686,39 +681,64 @@ class MainActivity : ComponentActivity() {
 
                         ProfileScreen(
 
-                            onHomeClick = {
+                            token =
+                                authToken,
 
-                                currentScreen =
-                                    "dashboard"
+                            profile =
+                                ProfileUiModel(
+
+                                    fullName =
+                                        loggedInFullName,
+
+                                    email =
+                                        loggedInEmail,
+
+                                    role =
+                                        loggedInRole,
+
+                                    completedCount =
+                                        0,
+
+                                    loggedHours =
+                                        "0h"
+                                ),
+
+                            onHomeClick = {
+                                currentScreen = "dashboard"
                             },
 
                             onProjectsClick = {
-
-                                currentScreen =
-                                    "projects"
+                                currentScreen = "projects"
                             },
 
                             onMessagesClick = {
-
-                                currentScreen =
-                                    "chat"
+                                currentScreen = "chat"
                             },
 
                             onTasksClick = {
+                                currentScreen = "tasks"
+                            },
+
+                            onProjectClick = { project ->
+
+                                selectedProject =
+                                    project
 
                                 currentScreen =
-                                    "tasks"
+                                    "project_detail"
                             },
 
                             onLogoutClick = {
 
                                 authToken = ""
 
-                                selectedProject = null
-                                selectedTask = null
+                                loggedInFullName = ""
+                                loggedInEmail = ""
+                                loggedInRole = ""
 
-                                capturedImageUri = null
-                                aiReport = null
+                                TokenManager.clearToken(
+                                    context
+                                )
 
                                 currentScreen =
                                     "login"

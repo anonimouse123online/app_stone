@@ -950,7 +950,7 @@ fun SignupScreen(
                                             email = cleanEmail,
                                             passwordHash = hashedPassword,
 
-                                            role = "Engineer",
+                                            role = "engineer",
 
                                             isSynced = false,
                                             serverUserId = null
@@ -982,7 +982,7 @@ fun SignupScreen(
                                                         name = fullName.trim(),
                                                         email = cleanEmail,
                                                         password = password,
-                                                        role = "Engineer"
+                                                        role = "engineer"
                                                     )
                                                 )
 

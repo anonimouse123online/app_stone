@@ -10,7 +10,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.outlined.BusinessCenter
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.TaskAlt
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,20 +34,37 @@ import kotlinx.coroutines.launch
 
 
 // ============================================================
-// PROJECT MODEL
+// PROJECT UI MODEL
 // ============================================================
 
 data class SiteProject(
-    val id: Int,
-    val category: String,
-    val name: String,
-    val manager: String,
-    val progress: Int,
-    val status: String,
-    val dueDate: String,
-    val remainingText: String
-)
 
+    val id: String,
+
+    val code: String,
+
+    val name: String,
+
+    val location: String,
+
+    val scope: String,
+
+    val client: String,
+
+    val budget: String,
+
+    val phase: String,
+
+    val status: String,
+
+    val progress: Int,
+
+    val startDate: String,
+
+    val dueDate: String,
+
+    val manager: String
+)
 
 // ============================================================
 // COLORS
@@ -61,7 +84,7 @@ private val GrayText =
 
 
 // ============================================================
-// PROJECT SCREEN
+// PROJECTS SCREEN
 // ============================================================
 
 @Composable
@@ -77,7 +100,6 @@ fun ProjectsScreen(
 
     onProjectClick: (SiteProject) -> Unit = {},
 
-    // JWT received from LoginScreen
     token: String = ""
 
 ) {
@@ -86,33 +108,27 @@ fun ProjectsScreen(
         mutableStateOf("")
     }
 
-
     var projects by remember {
         mutableStateOf<List<SiteProject>>(
             emptyList()
         )
     }
 
-
     var showJoinDialog by remember {
         mutableStateOf(false)
     }
-
 
     var isLoading by remember {
         mutableStateOf(false)
     }
 
-
     var isJoining by remember {
         mutableStateOf(false)
     }
 
-
     var joinError by remember {
         mutableStateOf<String?>(null)
     }
-
 
     var joinSuccess by remember {
         mutableStateOf<String?>(null)
@@ -124,54 +140,64 @@ fun ProjectsScreen(
 
 
     // ============================================================
-    // DEBUG TOKEN
+    // CONVERT API PROJECT -> UI PROJECT
     // ============================================================
 
-    LaunchedEffect(token) {
+    fun convertProject(
+        project: com.example.capstonesample.data.model.ProjectResponse
+    ): SiteProject {
 
-        println(
-            "===================================="
-        )
+        return SiteProject(
 
-        println(
-            "PROJECT SCREEN TOKEN"
-        )
+            id =
+                project.id ?: "",
 
-        println(
-            "TOKEN EMPTY = ${token.isBlank()}"
-        )
+            code =
+                project.code ?: "",
 
-        println(
-            "LOCAL TOKEN = ${token.startsWith("LOCAL_")}"
-        )
+            name =
+                project.name ?: "Unnamed Project",
 
-        if (
-            token.isNotBlank() &&
-            !token.startsWith("LOCAL_")
-        ) {
+            location =
+                project.location ?: "No location",
 
-            println(
-                "TOKEN START = ${token.take(20)}..."
-            )
-        }
+            scope =
+                project.scope ?: "No scope",
 
-        println(
-            "===================================="
+            client =
+                project.client ?: "No client",
+
+            budget =
+                project.budget ?: "0",
+
+            phase =
+                project.phase ?: "No phase",
+
+            status =
+                project.status ?: "Planning",
+
+            progress =
+                project.progress ?: 0,
+
+            startDate =
+                project.startDate ?: "No start date",
+
+            dueDate =
+                project.dueDate ?: "No due date",
+
+            manager =
+                project.manager ?: "Not assigned"
         )
     }
 
 
     // ============================================================
-    // LOAD PROJECTS FROM BACKEND
+    // LOAD PROJECTS
     // ============================================================
 
     fun loadProjects() {
 
         scope.launch {
-
-            // ========================================================
-            // DO NOT CALL BACKEND WITH LOCAL TOKEN
-            // ========================================================
 
             if (
                 token.isBlank() ||
@@ -179,7 +205,7 @@ fun ProjectsScreen(
             ) {
 
                 println(
-                    "Skipping project API because there is no server JWT."
+                    "Skipping projects API: no server JWT."
                 )
 
                 return@launch
@@ -191,13 +217,23 @@ fun ProjectsScreen(
 
             try {
 
-                val response =
-                    RetrofitClient.api
-                        .getProjects(
+                println(
+                    "===================================="
+                )
 
-                            token =
-                                "Bearer $token"
-                        )
+                println(
+                    "🌐 LOADING PROJECTS"
+                )
+
+                println(
+                    "===================================="
+                )
+
+
+                val response =
+                    RetrofitClient.api.getJoinedProjects(
+                        token = "Bearer $token"
+                    )
 
 
                 println(
@@ -209,57 +245,52 @@ fun ProjectsScreen(
                     response.isSuccessful
                 ) {
 
-                    val apiProjects =
+                    val result =
                         response.body()
-                            ?: emptyList()
 
-
-                    projects =
-                        apiProjects.map { project ->
-
-                            SiteProject(
-
-                                id =
-                                    project.id,
-
-                                category =
-                                    project.category
-                                        ?: "PROJECT",
-
-                                name =
-                                    project.name,
-
-                                manager =
-                                    project.manager
-                                        ?: "Not assigned",
-
-                                progress =
-                                    project.progress
-                                        ?: 0,
-
-                                status =
-                                    project.status
-                                        ?: "Active",
-
-                                dueDate =
-                                    project.dueDate
-                                        ?: "No due date",
-
-                                remainingText =
-                                    project.remainingText
-                                        ?: ""
-                            )
-                        }
+                    println("===== JOINED PROJECT DEBUG =====")
+                    println("HTTP = ${response.code()}")
+                    println("BODY = $result")
+                    println("SUCCESS = ${result?.success}")
+                    println("COUNT = ${result?.data?.size}")
+                    println("===============================")
 
 
                     println(
-                        "✅ PROJECTS LOADED = ${projects.size}"
+                        "PROJECT API RESPONSE = $result"
                     )
+
+
+                    if (
+                        result?.success == true
+                    ) {
+
+                        projects =
+                            result.data.map {
+                                    project ->
+
+                                convertProject(
+                                    project
+                                )
+                            }
+
+
+                        println(
+                            "✅ PROJECTS LOADED = ${projects.size}"
+                        )
+
+
+                    } else {
+
+                        println(
+                            "❌ Project response returned success=false"
+                        )
+                    }
 
 
                 } else {
 
-                    val serverError =
+                    val error =
                         try {
 
                             response
@@ -275,15 +306,15 @@ fun ProjectsScreen(
 
 
                     println(
-                        "❌ Failed to load projects"
+                        "❌ GET PROJECTS FAILED"
                     )
 
                     println(
-                        "HTTP ${response.code()}"
+                        "HTTP = ${response.code()}"
                     )
 
                     println(
-                        "SERVER = $serverError"
+                        "ERROR = $error"
                     )
                 }
 
@@ -295,7 +326,7 @@ fun ProjectsScreen(
                 e.printStackTrace()
 
                 println(
-                    "Unable to refresh projects: ${e.message}"
+                    "Unable to load projects: ${e.message}"
                 )
             }
 
@@ -306,7 +337,7 @@ fun ProjectsScreen(
 
 
     // ============================================================
-    // LOAD PROJECTS WHEN SCREEN OPENS
+    // LOAD WHEN SCREEN OPENS
     // ============================================================
 
     LaunchedEffect(token) {
@@ -322,7 +353,7 @@ fun ProjectsScreen(
 
 
     // ============================================================
-    // SEARCH
+    // FILTER
     // ============================================================
 
     val filteredProjects =
@@ -332,6 +363,11 @@ fun ProjectsScreen(
                 searchQuery,
                 ignoreCase = true
             ) ||
+
+                    project.code.contains(
+                        searchQuery,
+                        ignoreCase = true
+                    ) ||
 
                     project.manager.contains(
                         searchQuery,
@@ -378,7 +414,7 @@ fun ProjectsScreen(
             },
 
 
-            onJoin = { code ->
+            onJoin = { inviteCode ->
 
                 scope.launch {
 
@@ -393,7 +429,7 @@ fun ProjectsScreen(
 
 
                     // ====================================================
-                    // CHECK AUTH TOKEN
+                    // TOKEN CHECK
                     // ====================================================
 
                     if (
@@ -410,16 +446,12 @@ fun ProjectsScreen(
                     }
 
 
-                    // ====================================================
-                    // LOCAL TOKEN CANNOT JOIN SERVER PROJECT
-                    // ====================================================
-
                     if (
                         token.startsWith("LOCAL_")
                     ) {
 
                         joinError =
-                            "This account is using offline login. Sign in online before joining a project."
+                            "You are using offline login. Sign in online before joining a project."
 
                         isJoining =
                             false
@@ -431,19 +463,15 @@ fun ProjectsScreen(
                     try {
 
                         val cleanCode =
-                            code.trim()
+                            inviteCode.trim()
 
-
-                        // ====================================================
-                        // DEBUG
-                        // ====================================================
 
                         println(
                             "===================================="
                         )
 
                         println(
-                            "JOIN PROJECT REQUEST"
+                            "JOIN PROJECT"
                         )
 
                         println(
@@ -451,28 +479,9 @@ fun ProjectsScreen(
                         )
 
                         println(
-                            "TOKEN START = ${token.take(20)}..."
-                        )
-
-                        println(
-                            "JSON FIELD = invite_code"
-                        )
-
-                        println(
                             "===================================="
                         )
 
-
-                        // ====================================================
-                        // JOIN PROJECT API
-                        //
-                        // Android sends:
-                        //
-                        // {
-                        //     "invite_code": "XXXX-XXXX"
-                        // }
-                        //
-                        // ====================================================
 
                         val response =
                             RetrofitClient.api
@@ -491,7 +500,7 @@ fun ProjectsScreen(
 
 
                         println(
-                            "JOIN HTTP STATUS = ${response.code()}"
+                            "JOIN HTTP = ${response.code()}"
                         )
 
 
@@ -508,7 +517,7 @@ fun ProjectsScreen(
 
 
                             println(
-                                "JOIN RESPONSE = $result"
+                                "JOIN RESULT = $result"
                             )
 
 
@@ -521,20 +530,126 @@ fun ProjectsScreen(
 
 
                                 println(
-                                    "✅ JOIN PROJECT SUCCESS"
+                                    "✅ JOIN SUCCESS"
                                 )
+
+
+                                val joinedProjectCode =
+                                    result.projectId
 
 
                                 println(
-                                    "PROJECT ID = ${result.projectId}"
+                                    "JOINED PROJECT CODE = $joinedProjectCode"
                                 )
 
 
-                                // Refresh project list from server
+                                // =================================================
+                                // FETCH PROJECT DETAILS IMMEDIATELY
+                                // =================================================
+
+                                if (
+                                    !joinedProjectCode.isNullOrBlank()
+                                ) {
+
+                                    try {
+
+                                        val projectResponse =
+                                            RetrofitClient.api
+                                                .getProjectByCode(
+
+                                                    token =
+                                                        "Bearer $token",
+
+                                                    code =
+                                                        joinedProjectCode
+                                                )
+
+
+                                        println(
+                                            "GET JOINED PROJECT HTTP = ${projectResponse.code()}"
+                                        )
+
+
+                                        if (
+                                            projectResponse.isSuccessful
+                                        ) {
+
+                                            val projectResult =
+                                                projectResponse.body()
+
+
+                                            println(
+                                                "JOINED PROJECT RESULT = $projectResult"
+                                            )
+
+
+                                            val apiProject =
+                                                projectResult?.data
+
+
+                                            if (
+                                                projectResult?.success == true &&
+                                                apiProject != null
+                                            ) {
+
+                                                val joinedProject =
+                                                    convertProject(
+                                                        apiProject
+                                                    )
+
+
+                                                // =====================================
+                                                // REMOVE DUPLICATE
+                                                // THEN ADD CURRENT PROJECT
+                                                // =====================================
+
+                                                projects =
+                                                    projects
+                                                        .filterNot {
+
+                                                            it.code.equals(
+                                                                joinedProject.code,
+                                                                ignoreCase = true
+                                                            )
+                                                        } +
+                                                            joinedProject
+
+
+                                                println(
+                                                    "✅ PROJECT ADDED TO SCREEN"
+                                                )
+
+                                                println(
+                                                    "NAME = ${joinedProject.name}"
+                                                )
+
+                                                println(
+                                                    "CODE = ${joinedProject.code}"
+                                                )
+                                            }
+                                        }
+
+
+                                    } catch (
+                                        e: Exception
+                                    ) {
+
+                                        e.printStackTrace()
+
+                                        println(
+                                            "Unable to fetch joined project details: ${e.message}"
+                                        )
+                                    }
+                                }
+
+
+                                // =================================================
+                                // REFRESH COMPLETE PROJECT LIST TOO
+                                // =================================================
+
                                 loadProjects()
 
 
-                                // Close dialog
                                 showJoinDialog =
                                     false
 
@@ -550,7 +665,7 @@ fun ProjectsScreen(
                         } else {
 
                             // ====================================================
-                            // READ REAL BACKEND ERROR
+                            // BACKEND ERROR
                             // ====================================================
 
                             val serverError =
@@ -569,70 +684,62 @@ fun ProjectsScreen(
 
 
                             println(
-                                "❌ JOIN PROJECT FAILED"
+                                "❌ JOIN FAILED"
                             )
 
                             println(
-                                "JOIN HTTP STATUS = ${response.code()}"
+                                "HTTP = ${response.code()}"
                             )
 
                             println(
-                                "JOIN SERVER ERROR = $serverError"
+                                "SERVER ERROR = $serverError"
                             )
 
-
-                            // ====================================================
-                            // SHOW ERROR
-                            // ====================================================
 
                             joinError =
                                 when (
                                     response.code()
                                 ) {
 
-                                    400 -> {
-
+                                    400 ->
                                         serverError
                                             ?: "Invalid or expired invite code."
-                                    }
 
 
-                                    401 -> {
-
-                                        "Your login session is invalid or expired. Please sign out and sign in again."
-                                    }
+                                    401 ->
+                                        "Your login session has expired. Please sign in again."
 
 
-                                    403 -> {
-
-                                        "You do not have permission to join this project."
-                                    }
+                                    403 ->
+                                        "You are not allowed to join this project."
 
 
-                                    404 -> {
-
+                                    404 ->
                                         "Project or invite code was not found."
-                                    }
 
 
                                     409 -> {
+
+                                        println(
+                                            "Already member — refreshing joined projects."
+                                        )
+
+                                        loadProjects()
+
+                                        showJoinDialog = false
 
                                         "You are already a member of this project."
                                     }
 
 
-                                    500 -> {
-
+                                    500 ->
                                         serverError
-                                            ?: "The server encountered an error while joining the project."
-                                    }
+                                            ?: "Server error while joining the project."
 
 
-                                    else -> {
-
+                                    else ->
                                         serverError
                                             ?: "Unable to join project. Error ${response.code()}."
-                                    }
                                 }
                         }
 
@@ -644,19 +751,9 @@ fun ProjectsScreen(
                         e.printStackTrace()
 
 
-                        println(
-                            "❌ JOIN EXCEPTION"
-                        )
-
-                        println(
-                            "${e.javaClass.simpleName}: ${e.message}"
-                        )
-
-
                         joinError =
-                            "Unable to connect to the server: ${
-                                e.message
-                                    ?: "Unknown network error"
+                            "Unable to connect to server: ${
+                                e.message ?: "Unknown error"
                             }"
                     }
 
@@ -670,7 +767,7 @@ fun ProjectsScreen(
 
 
     // ============================================================
-    // SCREEN
+    // UI
     // ============================================================
 
     Scaffold(
@@ -695,10 +792,7 @@ fun ProjectsScreen(
                 onHomeClick =
                     onHomeClick,
 
-                onProjectsClick = {
-
-                    // already on projects screen
-                },
+                onProjectsClick = {},
 
                 onMessagesClick =
                     onMessagesClick,
@@ -711,10 +805,6 @@ fun ProjectsScreen(
             )
         },
 
-
-        // ========================================================
-        // JOIN PROJECT BUTTON
-        // ========================================================
 
         floatingActionButton = {
 
@@ -732,14 +822,14 @@ fun ProjectsScreen(
                         true
                 },
 
-                shape =
-                    CircleShape,
-
                 containerColor =
                     ProjectOrange,
 
                 contentColor =
-                    Color.White
+                    Color.White,
+
+                shape =
+                    CircleShape
 
             ) {
 
@@ -800,30 +890,18 @@ fun ProjectsScreen(
                         24.sp,
 
                     fontWeight =
-                        FontWeight.Bold,
-
-                    color =
-                        Color.Black
+                        FontWeight.Bold
                 )
 
 
                 Spacer(
-
-                    modifier =
-                        Modifier.height(
-                            10.dp
-                        )
+                    Modifier.height(
+                        10.dp
+                    )
                 )
 
 
-                // =================================================
-                // SEARCH
-                // =================================================
-
                 Row(
-
-                    modifier =
-                        Modifier.fillMaxWidth(),
 
                     verticalAlignment =
                         Alignment.CenterVertically
@@ -837,9 +915,7 @@ fun ProjectsScreen(
                             searchQuery,
 
                         onValueChange = {
-
-                            searchQuery =
-                                it
+                            searchQuery = it
                         },
 
                         modifier =
@@ -852,15 +928,7 @@ fun ProjectsScreen(
                         placeholder = {
 
                             Text(
-
-                                text =
-                                    "Search projects...",
-
-                                fontSize =
-                                    13.sp,
-
-                                color =
-                                    GrayText
+                                "Search projects..."
                             )
                         },
 
@@ -872,15 +940,7 @@ fun ProjectsScreen(
                                     Icons.Default.Search,
 
                                 contentDescription =
-                                    "Search",
-
-                                tint =
-                                    GrayText,
-
-                                modifier =
-                                    Modifier.size(
-                                        20.dp
-                                    )
+                                    "Search"
                             )
                         },
 
@@ -893,38 +953,28 @@ fun ProjectsScreen(
                             ),
 
                         colors =
-                            OutlinedTextFieldDefaults.colors(
+                            OutlinedTextFieldDefaults
+                                .colors(
 
-                                focusedContainerColor =
-                                    SearchBackground,
+                                    focusedContainerColor =
+                                        SearchBackground,
 
-                                unfocusedContainerColor =
-                                    SearchBackground,
+                                    unfocusedContainerColor =
+                                        SearchBackground,
 
-                                focusedBorderColor =
-                                    Color.Transparent,
+                                    focusedBorderColor =
+                                        Color.Transparent,
 
-                                unfocusedBorderColor =
-                                    Color.Transparent,
-
-                                cursorColor =
-                                    ProjectOrange,
-
-                                focusedTextColor =
-                                    Color.Black,
-
-                                unfocusedTextColor =
-                                    Color.Black
-                            )
+                                    unfocusedBorderColor =
+                                        Color.Transparent
+                                )
                     )
 
 
                     Spacer(
-
-                        modifier =
-                            Modifier.width(
-                                8.dp
-                            )
+                        Modifier.width(
+                            8.dp
+                        )
                     )
 
 
@@ -955,10 +1005,7 @@ fun ProjectsScreen(
                                 Icons.Outlined.Tune,
 
                             contentDescription =
-                                "Filter",
-
-                            tint =
-                                Color.Black
+                                "Filter"
                         )
                     }
                 }
@@ -998,7 +1045,7 @@ fun ProjectsScreen(
 
 
                 // =================================================
-                // EMPTY STATE
+                // EMPTY
                 // =================================================
 
                 Box(
@@ -1010,6 +1057,7 @@ fun ProjectsScreen(
                         Alignment.Center
 
                 ) {
+
 
                     Column(
 
@@ -1038,11 +1086,9 @@ fun ProjectsScreen(
 
 
                         Spacer(
-
-                            modifier =
-                                Modifier.height(
-                                    12.dp
-                                )
+                            Modifier.height(
+                                12.dp
+                            )
                         )
 
 
@@ -1051,33 +1097,31 @@ fun ProjectsScreen(
                             text =
                                 "No projects yet",
 
-                            fontWeight =
-                                FontWeight.Bold,
-
                             fontSize =
-                                17.sp
+                                17.sp,
+
+                            fontWeight =
+                                FontWeight.Bold
                         )
 
 
                         Spacer(
-
-                            modifier =
-                                Modifier.height(
-                                    5.dp
-                                )
+                            Modifier.height(
+                                5.dp
+                            )
                         )
 
 
                         Text(
 
                             text =
-                                "Tap + and enter the invite code provided by your administrator.",
-
-                            color =
-                                GrayText,
+                                "Tap + and enter the project invite code.",
 
                             fontSize =
-                                12.sp
+                                12.sp,
+
+                            color =
+                                GrayText
                         )
                     }
                 }
@@ -1118,9 +1162,19 @@ fun ProjectsScreen(
                         items =
                             filteredProjects,
 
-                        key = {
+                        key = { project ->
 
-                            it.id
+                            // Use project code where possible
+                            if (
+                                project.code.isNotBlank()
+                            ) {
+
+                                project.code
+
+                            } else {
+
+                                project.id.toString()
+                            }
                         }
 
                     ) { project ->
@@ -1144,11 +1198,9 @@ fun ProjectsScreen(
                     item {
 
                         Spacer(
-
-                            modifier =
-                                Modifier.height(
-                                    70.dp
-                                )
+                            Modifier.height(
+                                70.dp
+                            )
                         )
                     }
                 }
@@ -1177,9 +1229,7 @@ private fun JoinProjectDialog(
 
 ) {
 
-
     var projectCode by remember {
-
         mutableStateOf("")
     }
 
@@ -1229,11 +1279,9 @@ private fun JoinProjectDialog(
 
 
                 Spacer(
-
-                    modifier =
-                        Modifier.height(
-                            16.dp
-                        )
+                    Modifier.height(
+                        16.dp
+                    )
                 )
 
 
@@ -1243,10 +1291,7 @@ private fun JoinProjectDialog(
                         projectCode,
 
                     onValueChange = {
-
-                        // Preserve code exactly as typed.
-                        projectCode =
-                            it
+                        projectCode = it
                     },
 
                     modifier =
@@ -1284,11 +1329,9 @@ private fun JoinProjectDialog(
                 ) {
 
                     Spacer(
-
-                        modifier =
-                            Modifier.height(
-                                10.dp
-                            )
+                        Modifier.height(
+                            10.dp
+                        )
                     )
 
 
@@ -1313,11 +1356,9 @@ private fun JoinProjectDialog(
                 ) {
 
                     Spacer(
-
-                        modifier =
-                            Modifier.height(
-                                10.dp
-                            )
+                        Modifier.height(
+                            10.dp
+                        )
                     )
 
 
@@ -1360,13 +1401,9 @@ private fun JoinProjectDialog(
                 },
 
                 enabled =
-
                     projectCode
                         .trim()
-                        .isNotEmpty()
-
-                            &&
-
+                        .isNotEmpty() &&
                             !isLoading,
 
                 colors =
@@ -1440,7 +1477,6 @@ private fun JoinProjectDialog(
 @Composable
 private fun ProjectsTopBar() {
 
-
     TopAppBar(
 
         title = {
@@ -1454,10 +1490,7 @@ private fun ProjectsTopBar() {
                     20.sp,
 
                 fontWeight =
-                    FontWeight.Bold,
-
-                color =
-                    Color.Black
+                    FontWeight.Bold
             )
         },
 
@@ -1465,9 +1498,7 @@ private fun ProjectsTopBar() {
         actions = {
 
             IconButton(
-
                 onClick = {}
-
             ) {
 
                 Icon(
@@ -1476,10 +1507,7 @@ private fun ProjectsTopBar() {
                         Icons.Outlined.Notifications,
 
                     contentDescription =
-                        "Notifications",
-
-                    tint =
-                        Color.Black
+                        "Notifications"
                 )
             }
 
@@ -1550,15 +1578,23 @@ private fun ProjectListCard(
 
 ) {
 
-
-    val onTrack =
+    val isGoodStatus =
         project.status.equals(
-
             "On track",
-
-            ignoreCase =
-                true
-        )
+            ignoreCase = true
+        ) ||
+                project.status.equals(
+                    "Active",
+                    ignoreCase = true
+                ) ||
+                project.status.equals(
+                    "Ongoing",
+                    ignoreCase = true
+                ) ||
+                project.status.equals(
+                    "Planning",
+                    ignoreCase = true
+                )
 
 
     Card(
@@ -1567,7 +1603,6 @@ private fun ProjectListCard(
             Modifier
                 .fillMaxWidth()
                 .clickable {
-
                     onClick()
                 },
 
@@ -1577,33 +1612,25 @@ private fun ProjectListCard(
             ),
 
         colors =
-            CardDefaults
-                .cardColors(
-
-                    containerColor =
-                        Color.White
-                ),
-
-        elevation =
-            CardDefaults
-                .cardElevation(
-
-                    defaultElevation =
-                        0.dp
-                )
+            CardDefaults.cardColors(
+                containerColor =
+                    Color.White
+            )
 
     ) {
-
 
         Column(
 
             modifier =
                 Modifier.padding(
-                    14.dp
+                    16.dp
                 )
 
         ) {
 
+            // ====================================================
+            // TITLE + STATUS
+            // ====================================================
 
             Row(
 
@@ -1615,7 +1642,6 @@ private fun ProjectListCard(
 
             ) {
 
-
                 Column(
 
                     modifier =
@@ -1625,14 +1651,13 @@ private fun ProjectListCard(
 
                 ) {
 
-
                     Text(
 
                         text =
-                            project.category,
+                            project.phase,
 
                         fontSize =
-                            9.sp,
+                            10.sp,
 
                         color =
                             GrayText
@@ -1645,13 +1670,26 @@ private fun ProjectListCard(
                             project.name,
 
                         fontSize =
-                            16.sp,
+                            18.sp,
 
                         fontWeight =
                             FontWeight.Bold,
 
                         color =
                             Color.Black
+                    )
+
+
+                    Text(
+
+                        text =
+                            project.code,
+
+                        fontSize =
+                            10.sp,
+
+                        color =
+                            GrayText
                     )
                 }
 
@@ -1662,34 +1700,27 @@ private fun ProjectListCard(
                         Modifier
                             .background(
 
-                                color =
-
-                                    if (
-                                        onTrack
+                                if (
+                                    isGoodStatus
+                                )
+                                    Color(
+                                        0xFFDDF4E1
                                     )
+                                else
+                                    Color(
+                                        0xFFFFDEDE
+                                    ),
 
-                                        Color(
-                                            0xFFDDF4E1
-                                        )
-
-                                    else
-
-                                        Color(
-                                            0xFFFFDEDE
-                                        ),
-
-                                shape =
-                                    RoundedCornerShape(
-                                        8.dp
-                                    )
+                                RoundedCornerShape(
+                                    8.dp
+                                )
                             )
                             .padding(
-                                horizontal = 8.dp,
+                                horizontal = 9.dp,
                                 vertical = 5.dp
                             )
 
                 ) {
-
 
                     Text(
 
@@ -1700,76 +1731,82 @@ private fun ProjectListCard(
                             9.sp,
 
                         color =
-
                             if (
-                                onTrack
+                                isGoodStatus
                             )
-
                                 Color(
                                     0xFF199642
                                 )
-
                             else
-
-                                Color.Red,
-
-                        fontWeight =
-                            FontWeight.Medium
+                                Color.Red
                     )
                 }
             }
 
 
             Spacer(
-
-                modifier =
-                    Modifier.height(
-                        10.dp
-                    )
+                Modifier.height(
+                    14.dp
+                )
             )
 
 
-            Row {
+            // ====================================================
+            // PROJECT DETAILS
+            // ====================================================
+
+            ProjectDetailRow(
+                label = "Location",
+                value = project.location
+            )
 
 
-                Text(
-
-                    text =
-                        "Manager: ",
-
-                    fontSize =
-                        11.sp,
-
-                    color =
-                        GrayText
-                )
+            ProjectDetailRow(
+                label = "Client",
+                value = project.client
+            )
 
 
-                Text(
+            ProjectDetailRow(
+                label = "Manager",
+                value = project.manager
+            )
 
-                    text =
-                        project.manager,
 
-                    fontSize =
-                        11.sp,
+            ProjectDetailRow(
+                label = "Scope",
+                value = project.scope
+            )
 
-                    fontWeight =
-                        FontWeight.SemiBold,
 
-                    color =
-                        Color.Black
-                )
-            }
+            ProjectDetailRow(
+                label = "Budget",
+                value = project.budget
+            )
+
+
+            ProjectDetailRow(
+                label = "Start Date",
+                value = project.startDate
+            )
+
+
+            ProjectDetailRow(
+                label = "Due Date",
+                value = project.dueDate
+            )
 
 
             Spacer(
-
-                modifier =
-                    Modifier.height(
-                        12.dp
-                    )
+                Modifier.height(
+                    14.dp
+                )
             )
 
+
+            // ====================================================
+            // PROGRESS
+            // ====================================================
 
             Row(
 
@@ -1778,14 +1815,13 @@ private fun ProjectListCard(
 
             ) {
 
-
                 Text(
 
                     text =
                         "Progress",
 
                     fontSize =
-                        10.sp,
+                        11.sp,
 
                     color =
                         GrayText
@@ -1793,11 +1829,9 @@ private fun ProjectListCard(
 
 
                 Spacer(
-
-                    modifier =
-                        Modifier.weight(
-                            1f
-                        )
+                    Modifier.weight(
+                        1f
+                    )
                 )
 
 
@@ -1807,32 +1841,21 @@ private fun ProjectListCard(
                         "${project.progress}%",
 
                     fontSize =
-                        10.sp,
+                        11.sp,
 
                     fontWeight =
                         FontWeight.Bold,
 
                     color =
-
-                        if (
-                            onTrack
-                        )
-
-                            ProjectOrange
-
-                        else
-
-                            Color.Black
+                        ProjectOrange
                 )
             }
 
 
             Spacer(
-
-                modifier =
-                    Modifier.height(
-                        5.dp
-                    )
+                Modifier.height(
+                    6.dp
+                )
             )
 
 
@@ -1840,138 +1863,83 @@ private fun ProjectListCard(
 
                 progress = {
 
-                    project.progress /
-                            100f
+                    project.progress
+                        .coerceIn(
+                            0,
+                            100
+                        ) / 100f
                 },
 
                 modifier =
                     Modifier
                         .fillMaxWidth()
                         .height(
-                            5.dp
+                            6.dp
                         ),
 
                 color =
-
-                    if (
-                        onTrack
-                    )
-
-                        ProjectOrange
-
-                    else
-
-                        Color.Black,
+                    ProjectOrange,
 
                 trackColor =
                     Color(
                         0xFFEAE4E1
                     )
             )
-
-
-            Spacer(
-
-                modifier =
-                    Modifier.height(
-                        12.dp
-                    )
-            )
-
-
-            HorizontalDivider(
-
-                color =
-                    Color(
-                        0xFFF0EBE8
-                    )
-            )
-
-
-            Spacer(
-
-                modifier =
-                    Modifier.height(
-                        10.dp
-                    )
-            )
-
-
-            Row(
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                verticalAlignment =
-                    Alignment.CenterVertically
-
-            ) {
-
-
-                Row {
-
-
-                    Text(
-
-                        text =
-                            "Due Date: ",
-
-                        fontSize =
-                            10.sp,
-
-                        color =
-                            GrayText
-                    )
-
-
-                    Text(
-
-                        text =
-                            project.dueDate,
-
-                        fontSize =
-                            10.sp,
-
-                        fontWeight =
-                            FontWeight.Medium,
-
-                        color =
-                            Color.Black
-                    )
-                }
-
-
-                Spacer(
-
-                    modifier =
-                        Modifier.weight(
-                            1f
-                        )
-                )
-
-
-                Text(
-
-                    text =
-                        project.remainingText,
-
-                    fontSize =
-                        10.sp,
-
-                    fontWeight =
-                        FontWeight.Medium,
-
-                    color =
-                        Color.Red
-                )
-            }
         }
     }
 }
 
+@Composable
+private fun ProjectDetailRow(
 
+    label: String,
+
+    value: String
+
+) {
+
+    Row(
+
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    vertical = 3.dp
+                )
+
+    ) {
+
+        Text(
+
+            text =
+                "$label: ",
+
+            fontSize =
+                11.sp,
+
+            color =
+                GrayText
+        )
+
+
+        Text(
+
+            text =
+                value,
+
+            fontSize =
+                11.sp,
+
+            fontWeight =
+                FontWeight.Medium,
+
+            color =
+                Color.Black
+        )
+    }
+}
 // ============================================================
-// BOTTOM NAVIGATION
+// BOTTOM NAV
 // ============================================================
 
 @Composable
@@ -1991,14 +1959,10 @@ private fun ProjectsBottomNavigationBar(
 
 ) {
 
-
     NavigationBar(
 
         containerColor =
-            Color.White,
-
-        tonalElevation =
-            3.dp
+            Color.White
 
     ) {
 
@@ -2107,7 +2071,6 @@ private fun RowScope.ProjectsNavigationItem(
 
 ) {
 
-
     NavigationBarItem(
 
         selected =
@@ -2115,7 +2078,6 @@ private fun RowScope.ProjectsNavigationItem(
 
         onClick =
             onClick,
-
 
         icon = {
 
@@ -2125,15 +2087,9 @@ private fun RowScope.ProjectsNavigationItem(
                     icon,
 
                 contentDescription =
-                    title,
-
-                modifier =
-                    Modifier.size(
-                        21.dp
-                    )
+                    title
             )
         },
-
 
         label = {
 
@@ -2146,7 +2102,6 @@ private fun RowScope.ProjectsNavigationItem(
                     9.sp
             )
         },
-
 
         colors =
             NavigationBarItemDefaults
@@ -2161,13 +2116,7 @@ private fun RowScope.ProjectsNavigationItem(
                     indicatorColor =
                         Color(
                             0xFFFFE7DD
-                        ),
-
-                    unselectedIconColor =
-                        Color.Gray,
-
-                    unselectedTextColor =
-                        Color.Gray
+                        )
                 )
     )
 }

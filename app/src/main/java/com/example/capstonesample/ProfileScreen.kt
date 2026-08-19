@@ -4,13 +4,16 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Logout
-import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.BusinessCenter
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
@@ -18,181 +21,623 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.HelpOutline
-import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import com.example.capstonesample.data.api.RetrofitClient
 
-private val ProfileBackground = Color(0xFFF0E1D8)
-private val ProfileOrange = Color(0xFFF15A24)
-private val ProfileGray = Color(0xFF777777)
-private val ProfileDivider = Color(0xFFF0E8E4)
+import kotlinx.coroutines.launch
 
+
+// ============================================================
+// COLORS
+// ============================================================
+
+private val ProfileBackground =
+    Color(0xFFF0E1D8)
+
+private val ProfileOrange =
+    Color(0xFFF15A24)
+
+private val ProfileGray =
+    Color(0xFF777777)
+
+private val ProfileDividerColor =
+    Color(0xFFF0E8E4)
+
+
+// ============================================================
+// PROFILE MODEL
+// ============================================================
+
+data class ProfileUiModel(
+
+    val fullName: String = "",
+
+    val email: String = "",
+
+    val role: String = "",
+
+    val completedCount: Int = 0,
+
+    val loggedHours: String = "0h"
+)
+
+
+// ============================================================
+// PROFILE SCREEN
+// ============================================================
 
 @Composable
 fun ProfileScreen(
+
+    profile: ProfileUiModel,
+
+    // Logged-in JWT
+    token: String,
+
     onHomeClick: () -> Unit = {},
+
     onProjectsClick: () -> Unit = {},
+
     onMessagesClick: () -> Unit = {},
+
     onTasksClick: () -> Unit = {},
+
+    onProjectClick: (SiteProject) -> Unit = {},
+
     onLogoutClick: () -> Unit = {}
+
 ) {
 
+    val scope =
+        rememberCoroutineScope()
+
+    val scrollState =
+        rememberScrollState()
+
+
+    // ============================================================
+    // PROFILE INFO
+    // ============================================================
+
+    val displayName =
+        profile.fullName.ifBlank {
+            "User"
+        }
+
+    val displayRole =
+        profile.role.ifBlank {
+            "User"
+        }
+
+    val initials =
+        getProfileInitials(
+            displayName
+        )
+
+
+    // ============================================================
+    // USER PROJECTS
+    // ============================================================
+
+    var userProjects by remember {
+
+        mutableStateOf<List<SiteProject>>(
+            emptyList()
+        )
+    }
+
+    var isLoadingProjects by remember {
+
+        mutableStateOf(false)
+    }
+
+    var projectError by remember {
+
+        mutableStateOf<String?>(null)
+    }
+
+
+    // ============================================================
+    // LOAD USER PROJECTS
+    //
+    // SAME API USED BY ProjectsScreen
+    // GET joined projects for logged-in user
+    // ============================================================
+
+    fun loadUserProjects() {
+
+        if (
+            token.isBlank() ||
+            token.startsWith("LOCAL_")
+        ) {
+
+            println(
+                "Profile projects: offline/local session."
+            )
+
+            return
+        }
+
+
+        scope.launch {
+
+            isLoadingProjects =
+                true
+
+            projectError =
+                null
+
+
+            try {
+
+                println(
+                    "=================================="
+                )
+
+                println(
+                    "👤 PROFILE: LOADING USER PROJECTS"
+                )
+
+                println(
+                    "=================================="
+                )
+
+
+                val response =
+                    RetrofitClient.api
+                        .getJoinedProjects(
+
+                            token =
+                                "Bearer $token"
+                        )
+
+
+                println(
+                    "PROFILE PROJECT HTTP = ${response.code()}"
+                )
+
+
+                if (
+                    response.isSuccessful
+                ) {
+
+                    val result =
+                        response.body()
+
+
+                    if (
+                        result?.success == true
+                    ) {
+
+                        userProjects =
+                            result.data.map { project ->
+
+                                SiteProject(
+
+                                    id =
+                                        project.id
+                                            ?: "",
+
+                                    code =
+                                        project.code
+                                            ?: "",
+
+                                    name =
+                                        project.name
+                                            ?: "Unnamed Project",
+
+                                    location =
+                                        project.location
+                                            ?: "No location",
+
+                                    scope =
+                                        project.scope
+                                            ?: "No scope",
+
+                                    client =
+                                        project.client
+                                            ?: "No client",
+
+                                    budget =
+                                        project.budget
+                                            ?: "0",
+
+                                    phase =
+                                        project.phase
+                                            ?: "No phase",
+
+                                    status =
+                                        project.status
+                                            ?: "Planning",
+
+                                    progress =
+                                        project.progress
+                                            ?: 0,
+
+                                    startDate =
+                                        project.startDate
+                                            ?: "No start date",
+
+                                    dueDate =
+                                        project.dueDate
+                                            ?: "No due date",
+
+                                    manager =
+                                        project.manager
+                                            ?: "Not assigned"
+                                )
+                            }
+
+
+                        println(
+                            "✅ PROFILE PROJECTS = ${userProjects.size}"
+                        )
+
+                    } else {
+
+                        projectError =
+                            "Unable to load projects."
+                    }
+
+
+                } else {
+
+                    projectError =
+                        "Unable to load projects (${response.code()})."
+                }
+
+
+            } catch (
+                e: Exception
+            ) {
+
+                e.printStackTrace()
+
+                projectError =
+                    e.message
+                        ?: "Unable to load projects."
+
+            } finally {
+
+                isLoadingProjects =
+                    false
+            }
+        }
+    }
+
+
+    // ============================================================
+    // LOAD PROJECTS WHEN PROFILE OPENS
+    // ============================================================
+
+    LaunchedEffect(
+        token
+    ) {
+
+        loadUserProjects()
+    }
+
+
+    // ============================================================
+    // SCREEN
+    // ============================================================
+
     Scaffold(
-        containerColor = ProfileBackground,
+
+        containerColor =
+            ProfileBackground,
 
         bottomBar = {
+
             ProfileBottomNavigationBar(
-                selectedScreen = "profile",
 
-                onHomeClick = onHomeClick,
+                onHomeClick =
+                    onHomeClick,
 
-                onProjectsClick = onProjectsClick,
+                onProjectsClick =
+                    onProjectsClick,
 
-                onMessagesClick = onMessagesClick,
+                onMessagesClick =
+                    onMessagesClick,
 
-                onTasksClick = onTasksClick,
+                onTasksClick =
+                    onTasksClick,
 
                 onProfileClick = {
-                    // Already on profile
+                    // Already here
                 }
             )
         }
 
     ) { padding ->
 
+
         Column(
+
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .background(ProfileBackground)
-                .padding(horizontal = 14.dp)
+                .padding(
+                    padding
+                )
+                .background(
+                    ProfileBackground
+                )
+                .verticalScroll(
+                    scrollState
+                )
+                .padding(
+                    horizontal = 14.dp
+                )
+
         ) {
 
+
             Spacer(
-                modifier = Modifier.height(18.dp)
+                modifier =
+                    Modifier.height(
+                        18.dp
+                    )
             )
 
 
-            // =====================================================
+            // ====================================================
             // PROFILE CARD
-            // =====================================================
+            // ====================================================
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.White
-                ),
-                elevation = CardDefaults.cardElevation(
-                    defaultElevation = 0.dp
-                )
+
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                shape =
+                    RoundedCornerShape(
+                        18.dp
+                    ),
+
+                colors =
+                    CardDefaults.cardColors(
+
+                        containerColor =
+                            Color.White
+                    )
+
             ) {
 
                 Column(
+
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(
-                            top = 18.dp,
-                            bottom = 16.dp,
-                            start = 16.dp,
-                            end = 16.dp
+                            18.dp
                         ),
-                    horizontalAlignment = Alignment.CenterHorizontally
+
+                    horizontalAlignment =
+                        Alignment.CenterHorizontally
+
                 ) {
 
-                    // TODO API:
-                    // Replace initials from logged-in user.
+
+                    // =================================================
+                    // AVATAR
+                    // =================================================
 
                     Box(
+
                         modifier = Modifier
-                            .size(64.dp)
+                            .size(
+                                64.dp
+                            )
                             .background(
-                                Color(0xFF263238),
+
+                                Color(
+                                    0xFF263238
+                                ),
+
                                 CircleShape
                             ),
-                        contentAlignment = Alignment.Center
+
+                        contentAlignment =
+                            Alignment.Center
+
                     ) {
 
                         Text(
-                            text = "SA",
-                            color = Color.White,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Medium
+
+                            text =
+                                initials,
+
+                            color =
+                                Color.White,
+
+                            fontSize =
+                                22.sp,
+
+                            fontWeight =
+                                FontWeight.Medium
                         )
                     }
 
 
                     Spacer(
-                        modifier = Modifier.height(10.dp)
+                        modifier =
+                            Modifier.height(
+                                10.dp
+                            )
                     )
 
 
-                    // TODO API:
-                    // Replace with user.fullName
+                    // =================================================
+                    // NAME
+                    // =================================================
 
                     Text(
-                        text = "Seth Andrew",
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black
+
+                        text =
+                            displayName,
+
+                        fontSize =
+                            18.sp,
+
+                        fontWeight =
+                            FontWeight.Bold,
+
+                        color =
+                            Color.Black
                     )
 
 
-                    // TODO API:
-                    // Replace with user.role
+                    // =================================================
+                    // EMAIL
+                    // =================================================
+
+                    if (
+                        profile.email.isNotBlank()
+                    ) {
+
+                        Spacer(
+                            modifier =
+                                Modifier.height(
+                                    2.dp
+                                )
+                        )
+
+                        Text(
+
+                            text =
+                                profile.email,
+
+                            fontSize =
+                                10.sp,
+
+                            color =
+                                ProfileGray
+                        )
+                    }
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(
+                                3.dp
+                            )
+                    )
+
+
+                    // =================================================
+                    // ROLE
+                    // =================================================
 
                     Text(
-                        text = "Product Manager",
-                        fontSize = 11.sp,
-                        color = ProfileGray
+
+                        text =
+                            displayRole,
+
+                        fontSize =
+                            11.sp,
+
+                        color =
+                            ProfileGray
                     )
 
 
                     Spacer(
-                        modifier = Modifier.height(14.dp)
+                        modifier =
+                            Modifier.height(
+                                14.dp
+                            )
                     )
 
 
                     HorizontalDivider(
-                        color = ProfileDivider
+
+                        color =
+                            ProfileDividerColor
                     )
 
 
                     Spacer(
-                        modifier = Modifier.height(14.dp)
+                        modifier =
+                            Modifier.height(
+                                14.dp
+                            )
                     )
 
 
+                    // =================================================
+                    // PROFILE STATS
+                    // =================================================
+
                     Row(
-                        modifier = Modifier.fillMaxWidth()
+
+                        modifier =
+                            Modifier.fillMaxWidth()
+
                     ) {
 
-                        ProfileStat(
-                            modifier = Modifier.weight(1f),
-                            value = "12",
-                            label = "Projects",
-                            valueColor = ProfileOrange
-                        )
+
+                        // =================================================
+                        // ACTUAL PROJECT COUNT
+                        // =================================================
 
                         ProfileStat(
-                            modifier = Modifier.weight(1f),
-                            value = "84",
-                            label = "Completed"
+
+                            modifier =
+                                Modifier.weight(
+                                    1f
+                                ),
+
+                            value =
+                                userProjects
+                                    .size
+                                    .toString(),
+
+                            label =
+                                "Projects",
+
+                            valueColor =
+                                ProfileOrange
                         )
 
+
                         ProfileStat(
-                            modifier = Modifier.weight(1f),
-                            value = "320h",
-                            label = "Logged"
+
+                            modifier =
+                                Modifier.weight(
+                                    1f
+                                ),
+
+                            value =
+                                profile
+                                    .completedCount
+                                    .toString(),
+
+                            label =
+                                "Completed"
+                        )
+
+
+                        ProfileStat(
+
+                            modifier =
+                                Modifier.weight(
+                                    1f
+                                ),
+
+                            value =
+                                profile.loggedHours,
+
+                            label =
+                                "Logged"
                         )
                     }
                 }
@@ -200,141 +645,543 @@ fun ProfileScreen(
 
 
             Spacer(
-                modifier = Modifier.height(14.dp)
+                modifier =
+                    Modifier.height(
+                        16.dp
+                    )
             )
 
 
-            // =====================================================
-            // SETTINGS CARD
-            // =====================================================
+
+
+
+            // ====================================================
+            // SETTINGS
+            // ====================================================
 
             Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.White
-                ),
-                elevation = CardDefaults.cardElevation(
-                    defaultElevation = 0.dp
-                )
+
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                shape =
+                    RoundedCornerShape(
+                        18.dp
+                    ),
+
+                colors =
+                    CardDefaults.cardColors(
+                        containerColor =
+                            Color.White
+                    )
+
             ) {
 
                 Column {
 
+
                     ProfileSettingRow(
-                        icon = Icons.Outlined.Person,
-                        title = "Account Settings",
-                        onClick = {
-                            // TODO:
-                            // Open AccountSettingsScreen
-                        }
+
+                        icon =
+                            Icons.Outlined.Person,
+
+                        title =
+                            "Account Settings",
+
+                        onClick = {}
                     )
+
 
                     ProfileDivider()
 
+
                     ProfileSettingRow(
-                        icon = Icons.Outlined.Notifications,
-                        title = "Notifications",
-                        onClick = {
-                            // TODO:
-                            // Open NotificationSettingsScreen
-                        }
+
+                        icon =
+                            Icons.Outlined.Notifications,
+
+                        title =
+                            "Notifications",
+
+                        onClick = {}
                     )
+
 
                     ProfileDivider()
 
+
                     ProfileSettingRow(
-                        icon = Icons.Outlined.Visibility,
-                        title = "Appearance",
-                        onClick = {
-                            // TODO:
-                            // Open Appearance screen
-                        }
+
+                        icon =
+                            Icons.Outlined.Visibility,
+
+                        title =
+                            "Appearance",
+
+                        onClick = {}
                     )
+
 
                     ProfileDivider()
 
+
                     ProfileSettingRow(
-                        icon = Icons.Outlined.Storage,
-                        title = "Data and Storage",
-                        onClick = {
-                            // TODO:
-                            // Open storage settings
-                        }
+
+                        icon =
+                            Icons.Outlined.Storage,
+
+                        title =
+                            "Data and Storage",
+
+                        onClick = {}
                     )
+
 
                     ProfileDivider()
 
+
                     ProfileSettingRow(
-                        icon = Icons.Outlined.Security,
-                        title = "Security",
-                        onClick = {
-                            // TODO:
-                            // Open security settings
-                        }
+
+                        icon =
+                            Icons.Outlined.Security,
+
+                        title =
+                            "Security",
+
+                        onClick = {}
                     )
+
 
                     ProfileDivider()
 
+
                     ProfileSettingRow(
-                        icon = Icons.Outlined.HelpOutline,
-                        title = "Help and Support",
-                        onClick = {
-                            // TODO:
-                            // Open help/support
-                        }
+
+                        icon =
+                            Icons.Outlined.HelpOutline,
+
+                        title =
+                            "Help and Support",
+
+                        onClick = {}
                     )
                 }
             }
 
 
             Spacer(
-                modifier = Modifier.height(14.dp)
+                modifier =
+                    Modifier.height(
+                        14.dp
+                    )
             )
 
 
-            // =====================================================
-            // LOGOUT BUTTON
-            // =====================================================
+            // ====================================================
+            // LOGOUT
+            // ====================================================
 
             OutlinedButton(
-                onClick = onLogoutClick,
+
+                onClick =
+                    onLogoutClick,
+
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = Color.Red
-                ),
-                border = BorderStroke(
-                    1.dp,
-                    Color.Red
-                )
+                    .height(
+                        48.dp
+                    ),
+
+                shape =
+                    RoundedCornerShape(
+                        14.dp
+                    ),
+
+                colors =
+                    ButtonDefaults
+                        .outlinedButtonColors(
+
+                            contentColor =
+                                Color.Red
+                        ),
+
+                border =
+                    BorderStroke(
+                        1.dp,
+                        Color.Red
+                    )
+
             ) {
 
                 Icon(
-                    imageVector = Icons.Default.Logout,
-                    contentDescription = "Log Out",
-                    modifier = Modifier.size(18.dp)
+
+                    imageVector =
+                        Icons.Default.Logout,
+
+                    contentDescription =
+                        "Log Out",
+
+                    modifier =
+                        Modifier.size(
+                            18.dp
+                        )
                 )
+
 
                 Spacer(
-                    modifier = Modifier.width(8.dp)
+
+                    modifier =
+                        Modifier.width(
+                            8.dp
+                        )
                 )
 
+
                 Text(
-                    text = "Log Out",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
+
+                    text =
+                        "Log Out",
+
+                    fontSize =
+                        13.sp,
+
+                    fontWeight =
+                        FontWeight.Medium
                 )
             }
 
 
             Spacer(
-                modifier = Modifier.weight(1f)
+                modifier =
+                    Modifier.height(
+                        30.dp
+                    )
             )
         }
     }
+}
+
+
+// ============================================================
+// PROFILE PROJECT CARD
+// ============================================================
+
+@Composable
+private fun ProfileProjectCard(
+
+    project: SiteProject,
+
+    onClick: () -> Unit
+
+) {
+
+    Card(
+
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                onClick()
+            },
+
+        shape =
+            RoundedCornerShape(
+                16.dp
+            ),
+
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    Color.White
+            )
+
+    ) {
+
+        Column(
+
+            modifier =
+                Modifier.padding(
+                    16.dp
+                )
+
+        ) {
+
+            Row(
+
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                verticalAlignment =
+                    Alignment.CenterVertically
+
+            ) {
+
+                Box(
+
+                    modifier = Modifier
+                        .size(
+                            42.dp
+                        )
+                        .background(
+
+                            Color(
+                                0xFFFFE7DD
+                            ),
+
+                            RoundedCornerShape(
+                                11.dp
+                            )
+                        ),
+
+                    contentAlignment =
+                        Alignment.Center
+
+                ) {
+
+                    Icon(
+
+                        imageVector =
+                            Icons
+                                .Outlined
+                                .BusinessCenter,
+
+                        contentDescription =
+                            null,
+
+                        tint =
+                            ProfileOrange
+                    )
+                }
+
+
+                Spacer(
+
+                    modifier =
+                        Modifier.width(
+                            12.dp
+                        )
+                )
+
+
+                Column(
+
+                    modifier =
+                        Modifier.weight(
+                            1f
+                        )
+
+                ) {
+
+                    Text(
+
+                        text =
+                            project.name,
+
+                        fontSize =
+                            15.sp,
+
+                        fontWeight =
+                            FontWeight.Bold,
+
+                        color =
+                            Color.Black,
+
+                        maxLines =
+                            1,
+
+                        overflow =
+                            TextOverflow.Ellipsis
+                    )
+
+
+                    Text(
+
+                        text =
+                            project.code,
+
+                        fontSize =
+                            10.sp,
+
+                        color =
+                            ProfileGray
+                    )
+                }
+
+
+                Icon(
+
+                    imageVector =
+                        Icons
+                            .Outlined
+                            .ChevronRight,
+
+                    contentDescription =
+                        "Open project",
+
+                    tint =
+                        ProfileGray
+                )
+            }
+
+
+            Spacer(
+
+                modifier =
+                    Modifier.height(
+                        12.dp
+                    )
+            )
+
+
+            Row(
+
+                modifier =
+                    Modifier.fillMaxWidth()
+
+            ) {
+
+                Text(
+
+                    text =
+                        project.status,
+
+                    fontSize =
+                        10.sp,
+
+                    color =
+                        ProfileGray
+                )
+
+
+                Spacer(
+
+                    modifier =
+                        Modifier.weight(
+                            1f
+                        )
+                )
+
+
+                Text(
+
+                    text =
+                        "${project.progress}%",
+
+                    fontSize =
+                        11.sp,
+
+                    fontWeight =
+                        FontWeight.Bold,
+
+                    color =
+                        ProfileOrange
+                )
+            }
+
+
+            Spacer(
+
+                modifier =
+                    Modifier.height(
+                        6.dp
+                    )
+            )
+
+
+            LinearProgressIndicator(
+
+                progress = {
+
+                    project.progress
+                        .coerceIn(
+                            0,
+                            100
+                        ) / 100f
+                },
+
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(
+                        5.dp
+                    ),
+
+                color =
+                    ProfileOrange,
+
+                trackColor =
+                    Color(
+                        0xFFEAE4E1
+                    )
+            )
+
+
+            if (
+                project.location.isNotBlank()
+            ) {
+
+                Spacer(
+
+                    modifier =
+                        Modifier.height(
+                            8.dp
+                        )
+                )
+
+
+                Text(
+
+                    text =
+                        project.location,
+
+                    fontSize =
+                        10.sp,
+
+                    color =
+                        ProfileGray,
+
+                    maxLines =
+                        1,
+
+                    overflow =
+                        TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
+}
+
+
+// ============================================================
+// INITIALS
+// ============================================================
+
+private fun getProfileInitials(
+    fullName: String
+): String {
+
+    if (
+        fullName.isBlank()
+    ) {
+
+        return "U"
+    }
+
+
+    return fullName
+        .trim()
+        .split(" ")
+        .filter {
+            it.isNotBlank()
+        }
+        .take(2)
+        .mapNotNull {
+
+            it.firstOrNull()
+                ?.uppercase()
+        }
+        .joinToString("")
+        .ifBlank {
+            "U"
+        }
 }
 
 
@@ -344,49 +1191,85 @@ fun ProfileScreen(
 
 @Composable
 private fun ProfileStat(
-    modifier: Modifier = Modifier,
+
+    modifier: Modifier =
+        Modifier,
+
     value: String,
+
     label: String,
-    valueColor: Color = Color.Black
+
+    valueColor: Color =
+        Color.Black
+
 ) {
 
     Column(
-        modifier = modifier,
-        horizontalAlignment = Alignment.CenterHorizontally
+
+        modifier =
+            modifier,
+
+        horizontalAlignment =
+            Alignment.CenterHorizontally
+
     ) {
 
         Text(
-            text = value,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.Bold,
-            color = valueColor
+
+            text =
+                value,
+
+            fontSize =
+                16.sp,
+
+            fontWeight =
+                FontWeight.Bold,
+
+            color =
+                valueColor
         )
+
 
         Spacer(
-            modifier = Modifier.height(2.dp)
+            modifier =
+                Modifier.height(
+                    2.dp
+                )
         )
 
+
         Text(
-            text = label,
-            fontSize = 9.sp,
-            color = ProfileGray
+
+            text =
+                label,
+
+            fontSize =
+                9.sp,
+
+            color =
+                ProfileGray
         )
     }
 }
 
 
 // ============================================================
-// SETTING ROW
+// SETTINGS ROW
 // ============================================================
 
 @Composable
 private fun ProfileSettingRow(
+
     icon: ImageVector,
+
     title: String,
+
     onClick: () -> Unit
+
 ) {
 
     Row(
+
         modifier = Modifier
             .fillMaxWidth()
             .clickable {
@@ -396,32 +1279,74 @@ private fun ProfileSettingRow(
                 horizontal = 14.dp,
                 vertical = 13.dp
             ),
-        verticalAlignment = Alignment.CenterVertically
+
+        verticalAlignment =
+            Alignment.CenterVertically
+
     ) {
 
         Icon(
-            imageVector = icon,
-            contentDescription = title,
-            modifier = Modifier.size(19.dp),
-            tint = ProfileGray
+
+            imageVector =
+                icon,
+
+            contentDescription =
+                title,
+
+            modifier =
+                Modifier.size(
+                    19.dp
+                ),
+
+            tint =
+                ProfileGray
         )
+
 
         Spacer(
-            modifier = Modifier.width(12.dp)
+
+            modifier =
+                Modifier.width(
+                    12.dp
+                )
         )
+
 
         Text(
-            text = title,
-            modifier = Modifier.weight(1f),
-            fontSize = 13.sp,
-            color = Color.Black
+
+            text =
+                title,
+
+            modifier =
+                Modifier.weight(
+                    1f
+                ),
+
+            fontSize =
+                13.sp,
+
+            color =
+                Color.Black
         )
 
+
         Icon(
-            imageVector = Icons.Outlined.ChevronRight,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp),
-            tint = ProfileGray
+
+            imageVector =
+                Icons
+                    .Outlined
+                    .ChevronRight,
+
+            contentDescription =
+                null,
+
+            modifier =
+                Modifier.size(
+                    18.dp
+                ),
+
+            tint =
+                ProfileGray
         )
     }
 }
@@ -435,115 +1360,202 @@ private fun ProfileSettingRow(
 private fun ProfileDivider() {
 
     HorizontalDivider(
-        modifier = Modifier.padding(
-            start = 46.dp
-        ),
-        color = ProfileDivider
+
+        modifier =
+            Modifier.padding(
+                start = 46.dp
+            ),
+
+        color =
+            ProfileDividerColor
     )
 }
 
 
 // ============================================================
-// PROFILE NAVIGATION
+// BOTTOM NAV
 // ============================================================
 
 @Composable
 private fun ProfileBottomNavigationBar(
-    selectedScreen: String,
+
     onHomeClick: () -> Unit,
+
     onProjectsClick: () -> Unit,
+
     onMessagesClick: () -> Unit,
+
     onTasksClick: () -> Unit,
+
     onProfileClick: () -> Unit
+
 ) {
 
     NavigationBar(
-        containerColor = Color.White,
-        tonalElevation = 3.dp
+
+        containerColor =
+            Color.White,
+
+        tonalElevation =
+            3.dp
+
     ) {
 
         ProfileNavigationItem(
-            title = "Home",
-            icon = Icons.Outlined.Home,
-            selected = selectedScreen == "dashboard",
-            onClick = onHomeClick
+
+            title =
+                "Home",
+
+            icon =
+                Icons.Outlined.Home,
+
+            selected =
+                false,
+
+            onClick =
+                onHomeClick
         )
 
-        ProfileNavigationItem(
-            title = "Projects",
-            icon = Icons.Outlined.BusinessCenter,
-            selected = selectedScreen == "projects",
-            onClick = onProjectsClick
-        )
 
         ProfileNavigationItem(
-            title = "Messages",
-            icon = Icons.Outlined.ChatBubbleOutline,
-            selected = selectedScreen == "chat",
-            onClick = onMessagesClick
+
+            title =
+                "Projects",
+
+            icon =
+                Icons.Outlined.BusinessCenter,
+
+            selected =
+                false,
+
+            onClick =
+                onProjectsClick
         )
 
-        ProfileNavigationItem(
-            title = "Tasks",
-            icon = Icons.Outlined.TaskAlt,
-            selected = selectedScreen == "tasks",
-            onClick = onTasksClick
-        )
 
         ProfileNavigationItem(
-            title = "Profile",
-            icon = Icons.Outlined.Person,
-            selected = selectedScreen == "profile",
-            onClick = onProfileClick
+
+            title =
+                "Messages",
+
+            icon =
+                Icons.Outlined.ChatBubbleOutline,
+
+            selected =
+                false,
+
+            onClick =
+                onMessagesClick
+        )
+
+
+        ProfileNavigationItem(
+
+            title =
+                "Tasks",
+
+            icon =
+                Icons.Outlined.TaskAlt,
+
+            selected =
+                false,
+
+            onClick =
+                onTasksClick
+        )
+
+
+        ProfileNavigationItem(
+
+            title =
+                "Profile",
+
+            icon =
+                Icons.Outlined.Person,
+
+            selected =
+                true,
+
+            onClick =
+                onProfileClick
         )
     }
 }
 
 
 // ============================================================
-// NAVIGATION ITEM
+// NAV ITEM
 // ============================================================
 
 @Composable
 private fun RowScope.ProfileNavigationItem(
+
     title: String,
+
     icon: ImageVector,
+
     selected: Boolean,
+
     onClick: () -> Unit
+
 ) {
 
     NavigationBarItem(
-        selected = selected,
-        onClick = onClick,
+
+        selected =
+            selected,
+
+        onClick =
+            onClick,
 
         icon = {
 
             Icon(
-                imageVector = icon,
-                contentDescription = title,
-                modifier = Modifier.size(21.dp)
+
+                imageVector =
+                    icon,
+
+                contentDescription =
+                    title,
+
+                modifier =
+                    Modifier.size(
+                        21.dp
+                    )
             )
         },
 
         label = {
 
             Text(
-                text = title,
-                fontSize = 9.sp
+
+                text =
+                    title,
+
+                fontSize =
+                    9.sp
             )
         },
 
-        colors = NavigationBarItemDefaults.colors(
+        colors =
+            NavigationBarItemDefaults.colors(
 
-            selectedIconColor = ProfileOrange,
+                selectedIconColor =
+                    ProfileOrange,
 
-            selectedTextColor = ProfileOrange,
+                selectedTextColor =
+                    ProfileOrange,
 
-            indicatorColor = Color(0xFFFFE7DD),
+                indicatorColor =
+                    Color(
+                        0xFFFFE7DD
+                    ),
 
-            unselectedIconColor = Color.Gray,
+                unselectedIconColor =
+                    Color.Gray,
 
-            unselectedTextColor = Color.Gray
-        )
+                unselectedTextColor =
+                    Color.Gray
+            )
     )
 }

@@ -23,8 +23,8 @@ import androidx.compose.ui.unit.sp
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.local.AppDatabase
 import com.example.capstonesample.data.model.LoginRequest
-import com.example.capstonesample.data.model.SignupRequest
 import com.example.capstonesample.security.PasswordUtils
+import com.example.capstonesample.security.TokenManager
 
 import kotlinx.coroutines.launch
 import java.net.ConnectException
@@ -32,11 +32,32 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 
 
+// ============================================================
+// LOGIN SCREEN
+// ============================================================
+
 @Composable
 fun LoginScreen(
-    onLoginClick: (String) -> Unit,
+
+    // ========================================================
+    // UPDATED:
+    // Pass login token + real user information to MainActivity
+    // ========================================================
+
+    onLoginClick: (
+        token: String,
+        fullName: String,
+        email: String,
+        role: String
+    ) -> Unit,
+
     onSignupClick: () -> Unit = {}
+
 ) {
+
+    // ============================================================
+    // FORM STATE
+    // ============================================================
 
     var username by remember {
         mutableStateOf("")
@@ -63,22 +84,39 @@ fun LoginScreen(
     }
 
 
+    // ============================================================
+    // CONTEXT / COROUTINE
+    // ============================================================
+
     val scope =
         rememberCoroutineScope()
 
     val context =
         LocalContext.current
 
+
+    // ============================================================
+    // LOCAL ROOM DATABASE
+    // ============================================================
+
     val database =
         remember {
-            AppDatabase.getDatabase(context)
+
+            AppDatabase.getDatabase(
+                context
+            )
         }
 
     val userDao =
         remember {
+
             database.userDao()
         }
 
+
+    // ============================================================
+    // COLORS
+    // ============================================================
 
     val orange =
         Color(0xFFF15A24)
@@ -99,26 +137,38 @@ fun LoginScreen(
         Color(0xFF007AFF)
 
 
+    // ============================================================
+    // MAIN UI
+    // ============================================================
+
     Box(
+
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(
+                Color.White
+            )
+
     ) {
 
         Column(
+
             modifier =
                 Modifier.fillMaxSize()
+
         ) {
 
 
-            // ============================================================
+            // ====================================================
             // HEADER
-            // ============================================================
+            // ====================================================
 
             Column(
+
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(
+
                         color =
                             headerBeige,
 
@@ -134,14 +184,18 @@ fun LoginScreen(
                         top = 22.dp,
                         bottom = 24.dp
                     )
+
             ) {
 
                 Row(
+
                     verticalAlignment =
                         Alignment.CenterVertically
+
                 ) {
 
                     Box(
+
                         modifier = Modifier
                             .size(7.dp)
                             .background(
@@ -150,43 +204,40 @@ fun LoginScreen(
                             )
                     )
 
+
                     Spacer(
+
                         modifier =
                             Modifier.width(7.dp)
                     )
+
 
                     Text(
                         text = "SITEPULSE",
                         color = orange,
                         fontSize = 12.sp,
-                        fontWeight =
-                            FontWeight.Bold
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
 
                 Spacer(
+
                     modifier =
                         Modifier.height(7.dp)
                 )
 
 
                 Text(
-                    text =
-                        "Welcome back !",
-
-                    fontSize =
-                        27.sp,
-
-                    fontWeight =
-                        FontWeight.Bold,
-
-                    color =
-                        Color.Black
+                    text = "Welcome back !",
+                    fontSize = 27.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black
                 )
 
 
                 Spacer(
+
                     modifier =
                         Modifier.height(4.dp)
                 )
@@ -195,65 +246,60 @@ fun LoginScreen(
                 Text(
                     text =
                         "Real Time Field-Tracking and Issue Reporting",
-
-                    color =
-                        Color.Gray,
-
-                    fontSize =
-                        13.sp
+                    color = Color.Gray,
+                    fontSize = 13.sp
                 )
             }
 
 
-            // ============================================================
+            // ====================================================
             // LOGIN CONTENT
-            // ============================================================
+            // ====================================================
 
             Column(
+
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .padding(
                         horizontal = 22.dp
                     )
+
             ) {
 
                 Spacer(
+
                     modifier =
                         Modifier.height(106.dp)
                 )
 
 
-                // ========================================================
+                // =================================================
                 // EMAIL
-                // ========================================================
+                // =================================================
 
                 Text(
-                    text =
-                        "Username / Email",
-
-                    color =
-                        Color.Black,
-
-                    fontSize =
-                        13.sp,
-
-                    fontWeight =
-                        FontWeight.SemiBold
+                    text = "Username / Email",
+                    color = Color.Black,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
 
 
                 Spacer(
+
                     modifier =
                         Modifier.height(7.dp)
                 )
 
 
                 OutlinedTextField(
+
                     value =
                         username,
 
                     onValueChange = {
+
                         username = it
                         message = ""
                     },
@@ -265,14 +311,9 @@ fun LoginScreen(
                     placeholder = {
 
                         Text(
-                            text =
-                                "Enter your email",
-
-                            color =
-                                Color(0xFF999999),
-
-                            fontSize =
-                                13.sp
+                            text = "Enter your email",
+                            color = Color(0xFF999999),
+                            fontSize = 13.sp
                         )
                     },
 
@@ -313,41 +354,38 @@ fun LoginScreen(
 
 
                 Spacer(
+
                     modifier =
                         Modifier.height(16.dp)
                 )
 
 
-                // ========================================================
+                // =================================================
                 // PASSWORD
-                // ========================================================
+                // =================================================
 
                 Text(
-                    text =
-                        "Password",
-
-                    color =
-                        Color.Black,
-
-                    fontSize =
-                        13.sp,
-
-                    fontWeight =
-                        FontWeight.SemiBold
+                    text = "Password",
+                    color = Color.Black,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
 
 
                 Spacer(
+
                     modifier =
                         Modifier.height(7.dp)
                 )
 
 
                 OutlinedTextField(
+
                     value =
                         password,
 
                     onValueChange = {
+
                         password = it
                         message = ""
                     },
@@ -359,14 +397,9 @@ fun LoginScreen(
                     placeholder = {
 
                         Text(
-                            text =
-                                "Enter your password",
-
-                            color =
-                                Color(0xFF999999),
-
-                            fontSize =
-                                13.sp
+                            text = "Enter your password",
+                            color = Color(0xFF999999),
+                            fontSize = 13.sp
                         )
                     },
 
@@ -375,33 +408,39 @@ fun LoginScreen(
 
                     visualTransformation =
 
-                        if (passwordVisible)
+                        if (passwordVisible) {
 
                             VisualTransformation.None
 
-                        else
+                        } else {
 
-                            PasswordVisualTransformation(),
+                            PasswordVisualTransformation()
+                        },
 
                     trailingIcon = {
 
                         IconButton(
+
                             onClick = {
+
                                 passwordVisible =
                                     !passwordVisible
                             }
+
                         ) {
 
                             Icon(
+
                                 imageVector =
 
-                                    if (passwordVisible)
+                                    if (passwordVisible) {
 
                                         Icons.Default.VisibilityOff
 
-                                    else
+                                    } else {
 
-                                        Icons.Default.Visibility,
+                                        Icons.Default.Visibility
+                                    },
 
                                 contentDescription =
                                     "Toggle password",
@@ -449,28 +488,33 @@ fun LoginScreen(
 
 
                 Spacer(
+
                     modifier =
                         Modifier.height(13.dp)
                 )
 
 
-                // ========================================================
-                // REMEMBER / FORGOT
-                // ========================================================
+                // =================================================
+                // REMEMBER ME / FORGOT PASSWORD
+                // =================================================
 
                 Row(
+
                     modifier =
                         Modifier.fillMaxWidth(),
 
                     verticalAlignment =
                         Alignment.CenterVertically
+
                 ) {
 
                     Checkbox(
+
                         checked =
                             rememberMe,
 
                         onCheckedChange = {
+
                             rememberMe = it
                         },
 
@@ -496,30 +540,28 @@ fun LoginScreen(
 
 
                     Spacer(
+
                         modifier =
                             Modifier.width(7.dp)
                     )
 
 
                     Text(
-                        text =
-                            "Remember me",
-
-                        fontSize =
-                            12.sp,
-
-                        color =
-                            Color.Black
+                        text = "Remember me",
+                        fontSize = 12.sp,
+                        color = Color.Black
                     )
 
 
                     Spacer(
+
                         modifier =
                             Modifier.weight(1f)
                     )
 
 
                     Text(
+
                         text =
                             "Forgot Password?",
 
@@ -546,17 +588,23 @@ fun LoginScreen(
 
 
                 Spacer(
+
                     modifier =
                         Modifier.height(18.dp)
                 )
 
 
-                // ========================================================
+                // =================================================
                 // SIGN IN BUTTON
-                // ========================================================
+                // =================================================
 
                 Button(
+
                     onClick = {
+
+                        // ============================================
+                        // VALIDATE
+                        // ============================================
 
                         if (
                             username.isBlank() ||
@@ -570,10 +618,17 @@ fun LoginScreen(
                         }
 
 
+                        // ============================================
+                        // LOGIN
+                        // ============================================
+
                         scope.launch {
 
-                            isLoading = true
-                            message = ""
+                            isLoading =
+                                true
+
+                            message =
+                                ""
 
 
                             val cleanEmail =
@@ -582,19 +637,25 @@ fun LoginScreen(
                                     .lowercase()
 
 
-                            // ====================================================
-                            // STEP 1
+                            // ========================================
                             // GET LOCAL USER
-                            // ====================================================
+                            //
+                            // Used for:
+                            // - offline login
+                            // - local fallback profile information
+                            // ========================================
 
                             val localUser =
+
                                 try {
 
                                     userDao.getUserByEmail(
                                         cleanEmail
                                     )
 
-                                } catch (e: Exception) {
+                                } catch (
+                                    e: Exception
+                                ) {
 
                                     e.printStackTrace()
 
@@ -602,136 +663,9 @@ fun LoginScreen(
                                 }
 
 
-                            // ====================================================
-                            // STEP 2
-                            // VERIFY LOCAL PASSWORD IF USER EXISTS
-                            // ====================================================
-
-                            if (localUser != null) {
-
-                                val enteredHash =
-                                    PasswordUtils.hashPassword(
-                                        password
-                                    )
-
-                                if (
-                                    enteredHash !=
-                                    localUser.passwordHash
-                                ) {
-
-                                    message =
-                                        "Invalid email or password."
-
-                                    isLoading =
-                                        false
-
-                                    return@launch
-                                }
-                            }
-
-
-                            // ====================================================
-                            // STEP 3
-                            // SYNC LOCAL ACCOUNT IF NEEDED
-                            // ====================================================
-
-                            if (
-                                localUser != null &&
-                                !localUser.isSynced
-                            ) {
-
-                                try {
-
-                                    val signupResponse =
-                                        RetrofitClient.api.signup(
-
-                                            SignupRequest(
-                                                name =
-                                                    localUser.fullName,
-
-                                                email =
-                                                    cleanEmail,
-
-                                                password =
-                                                    password,
-
-                                                role =
-                                                    "Engineer"
-                                            )
-                                        )
-
-
-                                    println(
-                                        "SIGNUP HTTP = ${signupResponse.code()}"
-                                    )
-
-
-                                    if (
-                                        signupResponse.isSuccessful
-                                    ) {
-
-                                        val serverUser =
-                                            signupResponse
-                                                .body()
-                                                ?.user
-
-
-                                        userDao.markUserSynced(
-                                            email =
-                                                cleanEmail,
-
-                                            serverUserId =
-                                                serverUser?.id
-                                        )
-
-
-                                        println(
-                                            "✅ ACCOUNT SYNCED"
-                                        )
-
-                                    } else {
-
-                                        val signupError =
-                                            try {
-
-                                                signupResponse
-                                                    .errorBody()
-                                                    ?.string()
-
-                                            } catch (e: Exception) {
-
-                                                null
-                                            }
-
-
-                                        println(
-                                            "SIGNUP SERVER RESPONSE = $signupError"
-                                        )
-
-                                        // 409 can simply mean the user
-                                        // already exists on the backend.
-                                        //
-                                        // Continue to /auth/login.
-                                    }
-
-
-                                } catch (e: Exception) {
-
-                                    println(
-                                        "SIGNUP CONNECTION ERROR = ${e.message}"
-                                    )
-
-                                    // Do not return.
-                                    // Login below will determine whether
-                                    // backend is actually reachable.
-                                }
-                            }
-
-
-                            // ====================================================
-                            // STEP 4
-                            // SERVER LOGIN
-                            // ====================================================
+                            // ========================================
+                            // TRY ONLINE LOGIN FIRST
+                            // ========================================
 
                             try {
 
@@ -740,7 +674,7 @@ fun LoginScreen(
                                 )
 
                                 println(
-                                    "🌐 ATTEMPTING SERVER LOGIN"
+                                    "🌐 TRYING ONLINE LOGIN"
                                 )
 
                                 println(
@@ -766,21 +700,17 @@ fun LoginScreen(
 
 
                                 println(
-                                    "========== SERVER LOGIN =========="
+                                    "LOGIN HTTP = ${response.code()}"
                                 )
 
                                 println(
-                                    "HTTP STATUS = ${response.code()}"
-                                )
-
-                                println(
-                                    "SUCCESS = ${response.isSuccessful}"
+                                    "LOGIN SUCCESS = ${response.isSuccessful}"
                                 )
 
 
-                                // ================================================
-                                // LOGIN SUCCESS
-                                // ================================================
+                                // ====================================
+                                // ONLINE LOGIN SUCCESS
+                                // ====================================
 
                                 if (
                                     response.isSuccessful
@@ -792,13 +722,16 @@ fun LoginScreen(
                                     val jwt =
                                         result?.token
 
+                                    val serverUser =
+                                        result?.user
+
 
                                     println(
                                         "TOKEN EXISTS = ${!jwt.isNullOrBlank()}"
                                     )
 
                                     println(
-                                        "SERVER USER = ${result?.user}"
+                                        "SERVER USER = $serverUser"
                                     )
 
 
@@ -807,15 +740,29 @@ fun LoginScreen(
                                     ) {
 
                                         println(
-                                            "✅ REAL SERVER JWT RECEIVED"
+                                            "✅ ONLINE LOGIN SUCCESS"
                                         )
+
+
+                                        // ================================
+                                        // SAVE JWT
+                                        // ================================
+
+                                        TokenManager.saveToken(
+                                            context = context,
+                                            token = jwt
+                                        )
+
 
                                         println(
-                                            "✅ ONLINE LOGIN"
+                                            "🔐 JWT TOKEN SAVED"
                                         )
 
 
-                                        // Mark local user as synced
+                                        // ================================
+                                        // MARK LOCAL USER AS SYNCED
+                                        // ================================
+
                                         if (
                                             localUser != null
                                         ) {
@@ -823,13 +770,12 @@ fun LoginScreen(
                                             try {
 
                                                 userDao.markUserSynced(
+
                                                     email =
                                                         cleanEmail,
 
                                                     serverUserId =
-                                                        result
-                                                            ?.user
-                                                            ?.id
+                                                        serverUser?.id
                                                 )
 
                                             } catch (
@@ -837,16 +783,59 @@ fun LoginScreen(
                                             ) {
 
                                                 e.printStackTrace()
+
+                                                println(
+                                                    "Failed to update local sync status: ${e.message}"
+                                                )
                                             }
                                         }
 
 
-                                        // ========================================
-                                        // REAL JWT GOES TO MAIN ACTIVITY
-                                        // ========================================
+                                        // ================================
+                                        // PROFILE INFORMATION
+                                        //
+                                        // Prefer server information.
+                                        // Fall back to local Room data.
+                                        // ================================
+
+                                        val profileFullName =
+                                            serverUser?.name
+                                                ?: localUser?.fullName
+                                                ?: ""
+
+                                        val profileEmail =
+                                            serverUser?.email
+                                                ?: localUser?.email
+                                                ?: cleanEmail
+
+                                        val profileRole =
+                                            serverUser?.role
+                                                ?: localUser?.role
+                                                ?: "engineer"
+
+
+                                        println(
+                                            "PROFILE NAME = $profileFullName"
+                                        )
+
+                                        println(
+                                            "PROFILE EMAIL = $profileEmail"
+                                        )
+
+                                        println(
+                                            "PROFILE ROLE = $profileRole"
+                                        )
+
+
+                                        // ================================
+                                        // PASS TOKEN + PROFILE
+                                        // ================================
 
                                         onLoginClick(
-                                            jwt
+                                            jwt,
+                                            profileFullName,
+                                            profileEmail,
+                                            profileRole
                                         )
 
 
@@ -858,7 +847,7 @@ fun LoginScreen(
 
 
                                     message =
-                                        "Server login succeeded but no authentication token was returned."
+                                        "Login succeeded but the server did not return an authentication token."
 
                                     isLoading =
                                         false
@@ -867,11 +856,12 @@ fun LoginScreen(
                                 }
 
 
-                                // ================================================
-                                // SERVER REPLIED WITH AN ERROR
-                                // ================================================
+                                // ====================================
+                                // SERVER REPLIED WITH ERROR
+                                // ====================================
 
                                 val serverError =
+
                                     try {
 
                                         response
@@ -879,7 +869,7 @@ fun LoginScreen(
                                             ?.string()
 
                                     } catch (
-                                        e: Exception
+                                        _: Exception
                                     ) {
 
                                         null
@@ -895,14 +885,16 @@ fun LoginScreen(
                                 )
 
                                 println(
-                                    "ERROR = $serverError"
+                                    "SERVER ERROR = $serverError"
                                 )
 
 
-                                // HTTP error means backend was reached.
-                                // DO NOT call this "offline".
+                                // If server replies with HTTP error,
+                                // don't use offline fallback because
+                                // the server itself was reachable.
 
                                 message =
+
                                     when (
                                         response.code()
                                     ) {
@@ -917,13 +909,13 @@ fun LoginScreen(
                                             "Your account is not authorized."
 
                                         404 ->
-                                            "Account not found on the server."
+                                            "Account was not found."
 
                                         500 ->
                                             "The server encountered an error."
 
                                         else ->
-                                            "Server login failed (${response.code()})."
+                                            "Login failed (${response.code()})."
                                     }
 
 
@@ -937,154 +929,132 @@ fun LoginScreen(
                                 e: ConnectException
                             ) {
 
-                                // ================================================
-                                // SERVER CONNECTION REFUSED
-                                // ================================================
-
-                                e.printStackTrace()
-
                                 println(
-                                    "❌ SERVER CONNECTION REFUSED"
+                                    "📴 SERVER CONNECTION REFUSED"
                                 )
 
-
-                                if (
-                                    localUser != null
-                                ) {
-
-                                    println(
-                                        "📴 USING LOCAL LOGIN"
-                                    )
-
-                                    onLoginClick(
-                                        "LOCAL_${localUser.id}"
-                                    )
-
-                                } else {
-
-                                    message =
-                                        "Cannot connect to the SitePulse server."
-                                }
-
-
-                                isLoading =
-                                    false
-
-                                return@launch
+                                println(
+                                    "TRYING OFFLINE LOGIN..."
+                                )
 
 
                             } catch (
                                 e: SocketTimeoutException
                             ) {
 
-                                // ================================================
-                                // SERVER TIMEOUT
-                                // ================================================
-
-                                e.printStackTrace()
-
                                 println(
-                                    "❌ SERVER TIMED OUT"
+                                    "📴 SERVER TIMEOUT"
                                 )
 
-
-                                if (
-                                    localUser != null
-                                ) {
-
-                                    println(
-                                        "📴 USING LOCAL LOGIN"
-                                    )
-
-                                    onLoginClick(
-                                        "LOCAL_${localUser.id}"
-                                    )
-
-                                } else {
-
-                                    message =
-                                        "Server connection timed out."
-                                }
-
-
-                                isLoading =
-                                    false
-
-                                return@launch
+                                println(
+                                    "TRYING OFFLINE LOGIN..."
+                                )
 
 
                             } catch (
                                 e: UnknownHostException
                             ) {
 
-                                // ================================================
-                                // NETWORK / HOST UNAVAILABLE
-                                // ================================================
-
-                                e.printStackTrace()
-
                                 println(
-                                    "❌ NETWORK/HOST UNAVAILABLE"
+                                    "📴 NO NETWORK / SERVER HOST"
                                 )
 
-
-                                if (
-                                    localUser != null
-                                ) {
-
-                                    println(
-                                        "📴 USING LOCAL LOGIN"
-                                    )
-
-                                    onLoginClick(
-                                        "LOCAL_${localUser.id}"
-                                    )
-
-                                } else {
-
-                                    message =
-                                        "No network connection is available."
-                                }
-
-
-                                isLoading =
-                                    false
-
-                                return@launch
+                                println(
+                                    "TRYING OFFLINE LOGIN..."
+                                )
 
 
                             } catch (
                                 e: Exception
                             ) {
 
-                                // ================================================
-                                // OTHER ERROR
-                                // ================================================
-
                                 e.printStackTrace()
 
-                                println(
-                                    "❌ UNEXPECTED LOGIN ERROR"
-                                )
-
-                                println(
-                                    "${e.javaClass.simpleName}: ${e.message}"
-                                )
-
-
-                                // Do NOT automatically switch to offline mode here.
                                 message =
                                     "Login error: ${
                                         e.message
                                             ?: "Unknown error"
                                     }"
 
+                                isLoading =
+                                    false
+
+                                return@launch
+                            }
+
+
+                            // ========================================
+                            // OFFLINE LOGIN
+                            // ========================================
+
+                            if (
+                                localUser == null
+                            ) {
+
+                                message =
+                                    "No offline account is saved on this device."
 
                                 isLoading =
                                     false
 
                                 return@launch
                             }
+
+
+                            try {
+
+                                val enteredHash =
+                                    PasswordUtils.hashPassword(
+                                        password
+                                    )
+
+
+                                if (
+                                    enteredHash ==
+                                    localUser.passwordHash
+                                ) {
+
+                                    println(
+                                        "✅ OFFLINE LOGIN SUCCESS"
+                                    )
+
+
+                                    // ================================
+                                    // PASS LOCAL USER PROFILE
+                                    // ================================
+
+                                    onLoginClick(
+
+                                        "LOCAL_${localUser.id}",
+
+                                        localUser.fullName,
+
+                                        localUser.email,
+
+                                        localUser.role
+                                    )
+
+
+                                } else {
+
+                                    message =
+                                        "Incorrect email or password."
+                                }
+
+
+                            } catch (
+                                e: Exception
+                            ) {
+
+                                e.printStackTrace()
+
+                                message =
+                                    "Unable to verify offline login."
+                            }
+
+
+                            isLoading =
+                                false
                         }
                     },
 
@@ -1109,14 +1079,15 @@ fun LoginScreen(
                                     alpha = 0.6f
                                 )
                         )
-                ) {
 
+                ) {
 
                     if (
                         isLoading
                     ) {
 
                         CircularProgressIndicator(
+
                             modifier =
                                 Modifier.size(20.dp),
 
@@ -1130,37 +1101,32 @@ fun LoginScreen(
                     } else {
 
                         Text(
-                            text =
-                                "Sign In",
-
-                            color =
-                                Color.White,
-
-                            fontSize =
-                                15.sp,
-
-                            fontWeight =
-                                FontWeight.Bold
+                            text = "Sign In",
+                            color = Color.White,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
 
 
-                // ========================================================
+                // =================================================
                 // MESSAGE
-                // ========================================================
+                // =================================================
 
                 if (
                     message.isNotEmpty()
                 ) {
 
                     Spacer(
+
                         modifier =
                             Modifier.height(8.dp)
                     )
 
 
                     Text(
+
                         text =
                             message,
 
@@ -1174,33 +1140,39 @@ fun LoginScreen(
                                     "Invalid",
                                     ignoreCase = true
                                 ) ||
+
+                                message.contains(
+                                    "Incorrect",
+                                    ignoreCase = true
+                                ) ||
+
                                 message.contains(
                                     "failed",
                                     ignoreCase = true
                                 ) ||
+
                                 message.contains(
                                     "Unable",
                                     ignoreCase = true
                                 ) ||
+
                                 message.contains(
                                     "not found",
                                     ignoreCase = true
                                 ) ||
+
                                 message.contains(
                                     "not authorized",
                                     ignoreCase = true
-                                ) ||
-                                message.contains(
-                                    "Cannot connect",
-                                    ignoreCase = true
                                 )
-                            )
+                            ) {
 
                                 Color(0xFFD32F2F)
 
-                            else
+                            } else {
 
-                                grayText,
+                                grayText
+                            },
 
                         fontSize =
                             11.sp
@@ -1209,16 +1181,18 @@ fun LoginScreen(
 
 
                 Spacer(
+
                     modifier =
                         Modifier.height(23.dp)
                 )
 
 
-                // ========================================================
+                // =================================================
                 // SIGN UP
-                // ========================================================
+                // =================================================
 
                 Row(
+
                     modifier =
                         Modifier.fillMaxWidth(),
 
@@ -1227,21 +1201,21 @@ fun LoginScreen(
 
                     verticalAlignment =
                         Alignment.CenterVertically
+
                 ) {
 
                     Text(
                         text =
                             "Don’t have an account? ",
-
                         color =
                             Color.Black,
-
                         fontSize =
                             12.sp
                     )
 
 
                     Text(
+
                         text =
                             "Sign up",
 
@@ -1269,22 +1243,25 @@ fun LoginScreen(
 
 
                 Spacer(
+
                     modifier =
                         Modifier.weight(1f)
                 )
 
 
-                // ========================================================
-                // SECURITY BOX
-                // ========================================================
+                // =================================================
+                // SECURITY INFO
+                // =================================================
 
                 Row(
+
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(
                             bottom = 18.dp
                         )
                         .background(
+
                             color =
                                 Color(0xFFF5EFEF),
 
@@ -1300,9 +1277,11 @@ fun LoginScreen(
 
                     verticalAlignment =
                         Alignment.CenterVertically
+
                 ) {
 
                     Box(
+
                         modifier = Modifier
                             .size(27.dp)
                             .background(
@@ -1314,9 +1293,11 @@ fun LoginScreen(
 
                         contentAlignment =
                             Alignment.Center
+
                     ) {
 
                         Icon(
+
                             imageVector =
                                 Icons.Outlined.Security,
 
@@ -1333,12 +1314,14 @@ fun LoginScreen(
 
 
                     Spacer(
+
                         modifier =
                             Modifier.width(11.dp)
                     )
 
 
                     Text(
+
                         text =
                             "Online authentication is used when the server is available.\n" +
                                     "Offline access uses your secure local account.",

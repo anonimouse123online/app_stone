@@ -10,8 +10,7 @@ import kotlinx.coroutines.flow.Flow
 interface TaskDao {
 
     // ============================================================
-    // GET ALL TASKS
-    // Used by UI even when offline
+    // GET ALL LOCAL TASKS
     // ============================================================
 
     @Query("SELECT * FROM tasks")
@@ -19,7 +18,7 @@ interface TaskDao {
 
 
     // ============================================================
-    // INSERT / UPDATE TASKS
+    // INSERT MANY
     // ============================================================
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -27,6 +26,10 @@ interface TaskDao {
         tasks: List<TaskEntity>
     )
 
+
+    // ============================================================
+    // INSERT ONE
+    // ============================================================
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTask(
@@ -36,21 +39,21 @@ interface TaskDao {
 
     // ============================================================
     // GET UNSYNCED TASKS
-    // SyncWorker uses this
     // ============================================================
 
     @Query(
         """
-        SELECT * FROM tasks
+        SELECT *
+        FROM tasks
         WHERE isSynced = 0
         """
     )
-    suspend fun getUnsyncedTasks(): List<TaskEntity>
+    suspend fun getUnsyncedTasks():
+            List<TaskEntity>
 
 
     // ============================================================
-    // MARK TASK AS SYNCED
-    // Called after backend successfully receives the task
+    // MARK SYNCED
     // ============================================================
 
     @Query(
@@ -61,13 +64,12 @@ interface TaskDao {
         """
     )
     suspend fun markTaskSynced(
-        taskId: Int
+        taskId: String
     )
 
 
     // ============================================================
-    // MARK TASK AS UNSYNCED
-    // Use when engineer modifies task locally
+    // MARK UNSYNCED
     // ============================================================
 
     @Query(
@@ -78,12 +80,12 @@ interface TaskDao {
         """
     )
     suspend fun markTaskUnsynced(
-        taskId: Int
+        taskId: String
     )
 
 
     // ============================================================
-    // DELETE
+    // DELETE ALL
     // ============================================================
 
     @Query("DELETE FROM tasks")

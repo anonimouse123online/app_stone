@@ -10,7 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -19,87 +19,46 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import com.example.capstonesample.data.api.RetrofitClient
+import com.example.capstonesample.data.api.TaskResponse
+
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
 
 // ============================================================
-// DATA MODELS
+// UI MODELS
 // ============================================================
 
 data class Task(
     val title: String,
     val engineer: String,
     val status: String,
-    val subtasks: List<String>
+    val subtasks: List<String> = emptyList()
 )
 
-data class Project(
+
+data class DashboardProjectUi(
     val name: String,
     val type: String,
     val progress: Int,
     val status: String
 )
 
-data class FieldActivity(
+
+data class DashboardFieldActivityUi(
     val title: String,
     val description: String,
-    val type: ActivityType
+    val type: DashboardActivityType
 )
 
-enum class ActivityType {
+
+enum class DashboardActivityType {
     WARNING,
     INFO,
     SUCCESS
 }
-
-
-// ============================================================
-// SAMPLE DASHBOARD DATA
-// ============================================================
-
-// TODO API:
-// Replace these with your backend data later.
-//
-// Example:
-//
-// val projects by viewModel.projects.collectAsState()
-// val activities by viewModel.activities.collectAsState()
-
-private val sampleProjects = listOf(
-
-    Project(
-        name = "Riverside",
-        type = "BRIDGE",
-        progress = 72,
-        status = "Active"
-    ),
-
-    Project(
-        name = "Tower A",
-        type = "HIGHRISE",
-        progress = 45,
-        status = "Delayed"
-    )
-)
-
-private val sampleActivities = listOf(
-
-    FieldActivity(
-        title = "Foundation poured (Tower A)",
-        description = "Logged by Inspector Mike R. • 09:15 AM",
-        type = ActivityType.WARNING
-    ),
-
-    FieldActivity(
-        title = "Safety Photos Uploaded",
-        description = "Riverside Bridge site check • 08:30 AM",
-        type = ActivityType.INFO
-    ),
-
-    FieldActivity(
-        title = "Excavation Inspection Approved",
-        description = "Site Engineer approval",
-        type = ActivityType.SUCCESS
-    )
-)
 
 
 // ============================================================
@@ -121,6 +80,8 @@ private val Blue = Color(0xFF2864E8)
 @Composable
 fun DashboardScreen(
 
+    token: String,
+
     selectedScreen: String = "dashboard",
 
     onHomeClick: () -> Unit = {},
@@ -132,55 +93,538 @@ fun DashboardScreen(
     onTasksClick: () -> Unit = {},
 
     onProfileClick: () -> Unit
+
 ) {
+
+    // ========================================================
+    // API DATA
+    // ========================================================
+
+    var projects by remember {
+        mutableStateOf<List<DashboardProjectUi>>(emptyList())
+    }
+
+    var tasks by remember {
+        mutableStateOf<List<TaskResponse>>(emptyList())
+    }
+
+    var isLoading by remember {
+        mutableStateOf(true)
+    }
+
+    var errorMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+
+
+    // ========================================================
+    // LOAD PROJECTS + TASKS
+    // ========================================================
+
+    LaunchedEffect(token) {
+
+        isLoading = true
+        errorMessage = null
+
+        try {
+
+            val authorizationToken =
+                if (token.startsWith("Bearer ")) {
+                    token
+                } else {
+                    "Bearer $token"
+                }
+
+
+            // =================================================
+            // PROJECTS API
+            // GET /projects
+            // =================================================
+
+            val projectsResponse =
+                RetrofitClient.api.getProjects(
+                    token = authorizationToken
+                )
+
+            if (projectsResponse.isSuccessful) {
+
+                val body =
+                    projectsResponse.body()
+
+                if (body?.success == true) {
+
+                    projects =
+                        body.data.map { project ->
+
+                            DashboardProjectUi(
+
+                                // Project name may be nullable from API
+                                name =
+                                    project.name
+                                        ?: "Unnamed Project",
+
+                                // Your Project model does not have a "type" field yet
+                                type =
+                                    "PROJECT",
+
+                                progress =
+                                    (project.progress ?: 0)
+                                        .coerceIn(0, 100),
+
+                                status =
+                                    project.status
+                                        ?: "Active"
+                            )
+                        }
+
+                } else {
+
+                    errorMessage =
+                        "Unable to load projects."
+                }
+
+            } else {
+
+                errorMessage =
+                    when (projectsResponse.code()) {
+
+                        401 ->
+                            "Session expired. Please login again."
+
+                        403 ->
+                            "You do not have permission to view projects."
+
+                        404 ->
+                            "Projects API was not found."
+
+                        500 ->
+                            "Server error while loading projects."
+
+                        else ->
+                            "Projects error: ${projectsResponse.code()}"
+                    }
+            }
+
+
+            // =================================================
+            // TASKS API
+            // GET /tasks
+            // =================================================
+
+            val tasksResponse =
+                RetrofitClient.api.getTasks(
+                    token = authorizationToken
+                )
+
+            if (tasksResponse.isSuccessful) {
+
+                val body =
+                    tasksResponse.body()
+
+                if (body?.success == true) {
+
+                    tasks =
+                        body.data
+
+                } else {
+
+                    if (errorMessage == null) {
+                        errorMessage =
+                            "Unable to load tasks."
+                    }
+                }
+
+            } else {
+
+                if (errorMessage == null) {
+
+                    errorMessage =
+                        when (tasksResponse.code()) {
+
+                            401 ->
+                                "Session expired. Please login again."
+
+                            403 ->
+                                "You do not have permission to view tasks."
+
+                            404 ->
+                                "Tasks API was not found."
+
+                            500 ->
+                                "Server error while loading tasks."
+
+                            else ->
+                                "Tasks error: ${tasksResponse.code()}"
+                        }
+                }
+            }
+
+        } catch (e: Exception) {
+
+            errorMessage =
+                e.message
+                    ?: "Unable to connect to SitePulse server."
+
+        } finally {
+
+            isLoading = false
+        }
+    }
+
+
+    // ========================================================
+    // USER
+    //
+    // Temporary until we connect profile/current-user API.
+    // ========================================================
+    val userName = "SitePulse User"
+    val userRole = "Field Engineer"
+
+    val initials = "SP"
+
+
+    val currentDate =
+        remember {
+
+            SimpleDateFormat(
+                "EEEE, MMM dd",
+                Locale.getDefault()
+            ).format(Date())
+        }
+
+
+    // ========================================================
+    // RECENT FIELD ACTIVITY
+    //
+    // Uses tasks from GET /tasks
+    // ========================================================
+
+    val activities =
+        tasks
+            .take(5)
+            .map { task ->
+
+                DashboardFieldActivityUi(
+
+                    title =
+                        task.title,
+
+                    description =
+                        buildString {
+
+                            append(
+                                task.status
+                                    ?: "Pending"
+                            )
+
+                            task.projectName?.let {
+
+                                append(" • ")
+                                append(it)
+                            }
+
+                            task.assigneeName?.let {
+
+                                append(" • ")
+                                append(it)
+                            }
+                        },
+
+                    type =
+                        when (
+                            task.status
+                                ?.uppercase()
+                        ) {
+
+                            "DELAYED",
+                            "OVERDUE",
+                            "BLOCKED",
+                            "REJECTED" ->
+
+                                DashboardActivityType.WARNING
+
+
+                            "COMPLETED",
+                            "DONE",
+                            "APPROVED" ->
+
+                                DashboardActivityType.SUCCESS
+
+
+                            else ->
+
+                                DashboardActivityType.INFO
+                        }
+                )
+            }
+
+
+    // ========================================================
+    // HEALTH CALCULATION
+    // ========================================================
+
+    val totalTasks =
+        tasks.size
+
+
+    val delayedTasks =
+        tasks.count { task ->
+
+            task.status.equals(
+                "Delayed",
+                ignoreCase = true
+            ) ||
+
+                    task.status.equals(
+                        "Overdue",
+                        ignoreCase = true
+                    ) ||
+
+                    task.status.equals(
+                        "Blocked",
+                        ignoreCase = true
+                    )
+        }
+
+
+    val completedTasks =
+        tasks.count { task ->
+
+            task.status.equals(
+                "Completed",
+                ignoreCase = true
+            ) ||
+
+                    task.status.equals(
+                        "Done",
+                        ignoreCase = true
+                    ) ||
+
+                    task.status.equals(
+                        "Approved",
+                        ignoreCase = true
+                    )
+        }
+
+
+    // ========================================================
+    // PROJECT STATUS
+    // ========================================================
+
+    val onTrack =
+        projects.count { project ->
+
+            project.status.equals(
+                "Active",
+                ignoreCase = true
+            ) ||
+
+                    project.status.equals(
+                        "On Track",
+                        ignoreCase = true
+                    )
+        }
+
+
+    val delayed =
+        projects.count { project ->
+
+            project.status.equals(
+                "Delayed",
+                ignoreCase = true
+            )
+        }
+
+
+    // ========================================================
+    // HEALTH SCORE
+    //
+    // TEMPORARY FORMULA:
+    // Every delayed / overdue / blocked task reduces health.
+    //
+    // We can improve this later using:
+    // - expected project progress
+    // - issues
+    // - delayed tasks
+    // - overdue tasks
+    // - field reports
+    // ========================================================
+
+    val health =
+        if (totalTasks == 0) {
+
+            100
+
+        } else {
+
+            val delayedPercentage =
+                (
+                        delayedTasks.toFloat() /
+                                totalTasks.toFloat()
+                        ) * 100f
+
+            (100 - delayedPercentage.toInt())
+                .coerceIn(0, 100)
+        }
+
+
+    // ========================================================
+    // SCREEN
+    // ========================================================
 
     Scaffold(
 
-        containerColor = DashboardBackground,
+        containerColor =
+            DashboardBackground,
 
         topBar = {
-            DashboardTopBar()
+
+            DashboardTopBar(
+                initials = initials
+            )
         },
 
         bottomBar = {
 
             SitePulseBottomNavigation(
 
-                selectedScreen = selectedScreen,
+                selectedScreen =
+                    selectedScreen,
 
-                onHomeClick = onHomeClick,
+                onHomeClick =
+                    onHomeClick,
 
-                onProjectsClick = onProjectsClick,
+                onProjectsClick =
+                    onProjectsClick,
 
-                onMessagesClick = onChatClick,
+                onMessagesClick =
+                    onChatClick,
 
-                onTasksClick = onTasksClick,
+                onTasksClick =
+                    onTasksClick,
 
-                onProfileClick = onProfileClick
+                onProfileClick =
+                    onProfileClick
             )
         }
 
     ) { padding ->
 
+
         LazyColumn(
 
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .background(DashboardBackground),
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+                    .background(
+                        DashboardBackground
+                    ),
 
-            contentPadding = PaddingValues(
-                horizontal = 18.dp,
-                vertical = 14.dp
-            ),
+            contentPadding =
+                PaddingValues(
+                    horizontal = 18.dp,
+                    vertical = 14.dp
+                ),
 
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement =
+                Arrangement.spacedBy(14.dp)
 
         ) {
 
 
             // =================================================
-            // USER GREETING
+            // LOADING
+            // =================================================
+
+            if (isLoading) {
+
+                item {
+
+                    LinearProgressIndicator(
+
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        color =
+                            SitePulseOrange
+                    )
+                }
+            }
+
+
+            // =================================================
+            // ERROR
+            // =================================================
+
+            errorMessage?.let { error ->
+
+                item {
+
+                    Card(
+
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        colors =
+                            CardDefaults.cardColors(
+                                containerColor =
+                                    Color(0xFFFFE7E7)
+                            ),
+
+                        shape =
+                            RoundedCornerShape(12.dp)
+
+                    ) {
+
+                        Row(
+
+                            modifier =
+                                Modifier.padding(12.dp),
+
+                            verticalAlignment =
+                                Alignment.CenterVertically
+
+                        ) {
+
+                            Icon(
+
+                                imageVector =
+                                    Icons.Outlined.ErrorOutline,
+
+                                contentDescription =
+                                    null,
+
+                                tint =
+                                    Color.Red
+                            )
+
+
+                            Spacer(
+                                modifier =
+                                    Modifier.width(8.dp)
+                            )
+
+
+                            Text(
+
+                                text =
+                                    error,
+
+                                color =
+                                    Color.Red,
+
+                                fontSize =
+                                    11.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+
+            // =================================================
+            // USER
             // =================================================
 
             item {
@@ -194,27 +638,43 @@ fun DashboardScreen(
                         color = TextGray
                     )
 
+
                     Spacer(
-                        modifier = Modifier.height(2.dp)
+                        modifier =
+                            Modifier.height(2.dp)
                     )
 
-                    // TODO API:
-                    // Replace with logged-in user's name.
 
                     Text(
-                        text = "Seth Andrew",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black
+
+                        text =
+                            if (isLoading) {
+                                "Loading..."
+                            } else {
+                                userName
+                            },
+
+                        fontSize =
+                            24.sp,
+
+                        fontWeight =
+                            FontWeight.Bold,
+
+                        color =
+                            Color.Black
                     )
 
-                    // TODO API:
-                    // Replace with user role + actual date.
 
                     Text(
-                        text = "Product Manager • Tuesday, Oct 24",
-                        fontSize = 12.sp,
-                        color = TextGray
+
+                        text =
+                            "$userRole • $currentDate",
+
+                        fontSize =
+                            12.sp,
+
+                        color =
+                            TextGray
                     )
                 }
             }
@@ -230,18 +690,30 @@ fun DashboardScreen(
 
 
             // =================================================
-            // HEALTH STATUS
+            // HEALTH
             // =================================================
 
             item {
 
-                // TODO API:
-                // Replace 86 with:
-                //
-                // dashboard.healthScore
-
                 HealthStatusCard(
-                    health = 86
+
+                    health =
+                        health,
+
+                    onTrack =
+                        onTrack,
+
+                    delayed =
+                        delayed,
+
+                    delayedTasks =
+                        delayedTasks,
+
+                    completedTasks =
+                        completedTasks,
+
+                    totalTasks =
+                        totalTasks
                 )
             }
 
@@ -256,14 +728,19 @@ fun DashboardScreen(
 
 
             // =================================================
-            // ACTIVE PROJECTS
+            // ACTIVE PROJECT TITLE
             // =================================================
 
             item {
 
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+
+                    modifier =
+                        Modifier.fillMaxWidth(),
+
+                    verticalAlignment =
+                        Alignment.CenterVertically
+
                 ) {
 
                     Text(
@@ -272,40 +749,88 @@ fun DashboardScreen(
                         fontWeight = FontWeight.Bold
                     )
 
+
                     Spacer(
-                        modifier = Modifier.weight(1f)
+                        modifier =
+                            Modifier.weight(1f)
                     )
 
+
                     Text(
-                        text = "See details",
-                        fontSize = 11.sp,
-                        color = SitePulseOrange,
-                        modifier = Modifier.clickable {
-                            onProjectsClick()
-                        }
+
+                        text =
+                            "See details",
+
+                        fontSize =
+                            11.sp,
+
+                        color =
+                            SitePulseOrange,
+
+                        modifier =
+                            Modifier.clickable {
+                                onProjectsClick()
+                            }
                     )
                 }
             }
 
 
             // =================================================
-            // PROJECT CARDS
+            // PROJECTS
             // =================================================
 
-            item {
+            if (
+                projects.isEmpty() &&
+                !isLoading
+            ) {
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement =
-                        Arrangement.spacedBy(10.dp)
-                ) {
+                item {
 
-                    sampleProjects.forEach { project ->
+                    EmptyDashboardCard(
+                        text =
+                            "No projects available."
+                    )
+                }
 
-                        ProjectCard(
-                            project = project,
-                            modifier = Modifier.weight(1f)
-                        )
+            } else {
+
+                item {
+
+                    Row(
+
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        horizontalArrangement =
+                            Arrangement.spacedBy(
+                                10.dp
+                            )
+
+                    ) {
+
+                        projects
+                            .take(2)
+                            .forEach { project ->
+
+                                ProjectCard(
+
+                                    project =
+                                        project,
+
+                                    modifier =
+                                        Modifier.weight(1f)
+                                )
+                            }
+
+
+                        if (projects.size == 1) {
+
+                            Spacer(
+                                modifier =
+                                    Modifier.weight(1f)
+                            )
+                        }
                     }
                 }
             }
@@ -317,26 +842,94 @@ fun DashboardScreen(
 
             item {
 
-                Text(
-                    text = "Recent Field Activity",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+
+                    modifier =
+                        Modifier.fillMaxWidth(),
+
+                    verticalAlignment =
+                        Alignment.CenterVertically
+
+                ) {
+
+                    Text(
+
+                        text =
+                            "Recent Field Activity",
+
+                        fontSize =
+                            16.sp,
+
+                        fontWeight =
+                            FontWeight.Bold
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.weight(1f)
+                    )
+
+
+                    Text(
+
+                        text =
+                            "View tasks",
+
+                        fontSize =
+                            11.sp,
+
+                        color =
+                            SitePulseOrange,
+
+                        modifier =
+                            Modifier.clickable {
+                                onTasksClick()
+                            }
+                    )
+                }
             }
 
 
-            items(sampleActivities) { activity ->
+            // =================================================
+            // TASK ACTIVITIES
+            // =================================================
 
-                ActivityRow(
-                    activity = activity
-                )
+            if (
+                activities.isEmpty() &&
+                !isLoading
+            ) {
+
+                item {
+
+                    EmptyDashboardCard(
+                        text =
+                            "No recent task activity."
+                    )
+                }
+
+            } else {
+
+                items(
+                    items = activities,
+                    key = {
+                        "${it.title}-${it.description}"
+                    }
+                ) { activity ->
+
+                    ActivityRow(
+                        activity =
+                            activity
+                    )
+                }
             }
 
 
             item {
 
                 Spacer(
-                    modifier = Modifier.height(10.dp)
+                    modifier =
+                        Modifier.height(10.dp)
                 )
             }
         }
@@ -345,12 +938,56 @@ fun DashboardScreen(
 
 
 // ============================================================
+// INITIALS
+// ============================================================
+
+private fun generateInitials(
+    name: String
+): String {
+
+    val words =
+        name
+            .trim()
+            .split(" ")
+            .filter {
+                it.isNotBlank()
+            }
+
+    if (words.isEmpty()) {
+        return "SP"
+    }
+
+    if (words.size == 1) {
+
+        return words[0]
+            .take(2)
+            .uppercase()
+    }
+
+    return (
+            words.first()
+                .first()
+                .toString() +
+
+                    words.last()
+                        .first()
+                        .toString()
+            )
+        .uppercase()
+}
+
+
+// ============================================================
 // TOP BAR
 // ============================================================
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(
+    ExperimentalMaterial3Api::class
+)
 @Composable
-private fun DashboardTopBar() {
+private fun DashboardTopBar(
+    initials: String
+) {
 
     TopAppBar(
 
@@ -368,36 +1005,38 @@ private fun DashboardTopBar() {
 
             IconButton(
                 onClick = {
-
-                    // TODO API:
-                    // GET /api/notifications
-
+                    // TODO: Connect notifications API later
                 }
             ) {
 
                 Icon(
-                    imageVector = Icons.Outlined.Notifications,
-                    contentDescription = "Notifications"
+                    imageVector =
+                        Icons.Outlined.Notifications,
+
+                    contentDescription =
+                        "Notifications"
                 )
             }
 
 
             Box(
-                modifier = Modifier
-                    .padding(end = 12.dp)
-                    .size(36.dp)
-                    .background(
-                        Color(0xFF263238),
-                        CircleShape
-                    ),
-                contentAlignment = Alignment.Center
+
+                modifier =
+                    Modifier
+                        .padding(end = 12.dp)
+                        .size(36.dp)
+                        .background(
+                            Color(0xFF263238),
+                            CircleShape
+                        ),
+
+                contentAlignment =
+                    Alignment.Center
+
             ) {
 
-                // TODO API:
-                // Generate initials from logged-in user.
-
                 Text(
-                    text = "SA",
+                    text = initials,
                     color = Color.White,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold
@@ -405,15 +1044,18 @@ private fun DashboardTopBar() {
             }
         },
 
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = Color.White
-        )
+        colors =
+            TopAppBarDefaults
+                .topAppBarColors(
+                    containerColor =
+                        Color.White
+                )
     )
 }
 
 
 // ============================================================
-// ADVISORY CARD
+// ADVISORY
 // ============================================================
 
 @Composable
@@ -421,46 +1063,67 @@ private fun AdvisoryCard() {
 
     Card(
 
-        modifier = Modifier.fillMaxWidth(),
+        modifier =
+            Modifier.fillMaxWidth(),
 
-        shape = RoundedCornerShape(14.dp),
+        shape =
+            RoundedCornerShape(14.dp),
 
-        colors = CardDefaults.cardColors(
-            containerColor = OrangeLight
-        )
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    OrangeLight
+            )
 
     ) {
 
         Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+
+            modifier =
+                Modifier.padding(12.dp),
+
+            verticalAlignment =
+                Alignment.CenterVertically
+
         ) {
 
             Icon(
-                imageVector = Icons.Outlined.Warning,
-                contentDescription = null,
-                tint = SitePulseOrange
+                imageVector =
+                    Icons.Outlined.Warning,
+                contentDescription =
+                    null,
+                tint =
+                    SitePulseOrange
             )
 
+
             Spacer(
-                modifier = Modifier.width(10.dp)
+                modifier =
+                    Modifier.width(10.dp)
             )
+
 
             Column {
 
                 Text(
-                    text = "Heat Advisory Active",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
+                    text =
+                        "Field Advisory",
+                    fontSize =
+                        13.sp,
+                    fontWeight =
+                        FontWeight.Bold
                 )
+
 
                 Text(
                     text =
-                        "Mandatory shade breaks every 2 hrs. " +
-                                "Hydration post active.",
-                    fontSize = 10.sp,
-                    lineHeight = 13.sp,
-                    color = TextGray
+                        "Monitor assigned tasks, progress and field conditions.",
+                    fontSize =
+                        10.sp,
+                    lineHeight =
+                        13.sp,
+                    color =
+                        TextGray
                 )
             }
         }
@@ -469,45 +1132,89 @@ private fun AdvisoryCard() {
 
 
 // ============================================================
-// HEALTH STATUS
+// HEALTH
 // ============================================================
 
 @Composable
 private fun HealthStatusCard(
-    health: Int
+
+    health: Int,
+
+    onTrack: Int,
+
+    delayed: Int,
+
+    delayedTasks: Int,
+
+    completedTasks: Int,
+
+    totalTasks: Int
+
 ) {
+
+    val healthMessage =
+        when {
+
+            totalTasks == 0 ->
+                "No Task Data Yet"
+
+            health >= 90 ->
+                "All Sites Operational"
+
+            health >= 75 ->
+                "Minor Attention Required"
+
+            health >= 50 ->
+                "Project Attention Required"
+
+            else ->
+                "Critical Attention Required"
+        }
+
 
     Card(
 
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(100.dp),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(118.dp),
 
-        shape = RoundedCornerShape(20.dp),
+        shape =
+            RoundedCornerShape(20.dp),
 
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    Color.White
+            )
 
     ) {
 
         Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
 
-            verticalAlignment = Alignment.CenterVertically
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+
+            verticalAlignment =
+                Alignment.CenterVertically
+
         ) {
 
             Box(
-                modifier = Modifier
-                    .size(62.dp)
-                    .background(
-                        Color(0xFFFFEEE7),
-                        CircleShape
-                    ),
 
-                contentAlignment = Alignment.Center
+                modifier =
+                    Modifier
+                        .size(68.dp)
+                        .background(
+                            Color(0xFFFFEEE7),
+                            CircleShape
+                        ),
+
+                contentAlignment =
+                    Alignment.Center
+
             ) {
 
                 Column(
@@ -530,48 +1237,92 @@ private fun HealthStatusCard(
 
 
             Spacer(
-                modifier = Modifier.width(16.dp)
+                modifier =
+                    Modifier.width(16.dp)
             )
 
 
             Column {
 
                 Text(
-                    text = "AGGREGATED STATUS",
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextGray
+                    text =
+                        "AGGREGATED STATUS",
+                    fontSize =
+                        9.sp,
+                    fontWeight =
+                        FontWeight.Bold,
+                    color =
+                        TextGray
                 )
+
 
                 Text(
-                    text = "All Sites Operational",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
+
+                    text =
+                        healthMessage,
+
+                    fontSize =
+                        14.sp,
+
+                    fontWeight =
+                        FontWeight.Bold
                 )
 
+
                 Spacer(
-                    modifier = Modifier.height(7.dp)
+                    modifier =
+                        Modifier.height(7.dp)
                 )
 
 
                 Row {
 
                     StatusBadge(
-                        text = "● 2 On Track",
-                        background = Color(0xFFE1F5E7),
-                        textColor = Green
+                        text =
+                            "● $onTrack On Track",
+                        background =
+                            Color(0xFFE1F5E7),
+                        textColor =
+                            Green
                     )
+
 
                     Spacer(
-                        modifier = Modifier.width(8.dp)
+                        modifier =
+                            Modifier.width(8.dp)
                     )
 
+
                     StatusBadge(
-                        text = "● 1 Delayed",
-                        background = Color(0xFFFFEED7),
-                        textColor = Color(0xFFFF8A00)
+                        text =
+                            "● $delayed Delayed",
+                        background =
+                            Color(0xFFFFEED7),
+                        textColor =
+                            Color(0xFFFF8A00)
                     )
                 }
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(5.dp)
+                )
+
+
+                Text(
+
+                    text =
+                        "$completedTasks completed • " +
+                                "$delayedTasks delayed • " +
+                                "$totalTasks total tasks",
+
+                    fontSize =
+                        9.sp,
+
+                    color =
+                        TextGray
+                )
             }
         }
     }
@@ -584,21 +1335,28 @@ private fun HealthStatusCard(
 
 @Composable
 private fun StatusBadge(
+
     text: String,
+
     background: Color,
+
     textColor: Color
+
 ) {
 
     Box(
-        modifier = Modifier
-            .background(
-                background,
-                RoundedCornerShape(10.dp)
-            )
-            .padding(
-                horizontal = 7.dp,
-                vertical = 4.dp
-            )
+
+        modifier =
+            Modifier
+                .background(
+                    background,
+                    RoundedCornerShape(10.dp)
+                )
+                .padding(
+                    horizontal = 7.dp,
+                    vertical = 4.dp
+                )
+
     ) {
 
         Text(
@@ -619,9 +1377,13 @@ private fun StatusBadge(
 private fun QuickActions() {
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
+
+        modifier =
+            Modifier.fillMaxWidth(),
+
         horizontalArrangement =
             Arrangement.spacedBy(10.dp)
+
     ) {
 
         QuickActionButton(
@@ -651,38 +1413,50 @@ private fun QuickActions() {
 
 @Composable
 private fun QuickActionButton(
+
     title: String,
+
     icon: ImageVector,
+
     modifier: Modifier = Modifier
+
 ) {
 
     Card(
 
-        modifier = modifier
-            .height(48.dp)
-            .clickable {
+        modifier =
+            modifier
+                .height(48.dp)
+                .clickable {
+                    // TODO: Connect action/navigation later
+                },
 
-                // TODO:
-                // Connect actions later.
+        shape =
+            RoundedCornerShape(10.dp),
 
-            },
-
-        shape = RoundedCornerShape(10.dp),
-
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    Color.White
+            )
 
     ) {
 
         Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 10.dp),
 
-            verticalAlignment = Alignment.CenterVertically,
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .padding(
+                        horizontal = 10.dp
+                    ),
 
-            horizontalArrangement = Arrangement.Center
+            verticalAlignment =
+                Alignment.CenterVertically,
+
+            horizontalArrangement =
+                Arrangement.Center
+
         ) {
 
             Icon(
@@ -692,9 +1466,12 @@ private fun QuickActionButton(
                 tint = SitePulseOrange
             )
 
+
             Spacer(
-                modifier = Modifier.width(7.dp)
+                modifier =
+                    Modifier.width(7.dp)
             )
+
 
             Text(
                 text = title,
@@ -712,28 +1489,51 @@ private fun QuickActionButton(
 
 @Composable
 private fun ProjectCard(
-    project: Project,
+
+    project: DashboardProjectUi,
+
     modifier: Modifier = Modifier
+
 ) {
+
+    val isActive =
+        project.status.equals(
+            "Active",
+            ignoreCase = true
+        ) ||
+
+                project.status.equals(
+                    "On Track",
+                    ignoreCase = true
+                )
+
 
     Card(
 
-        modifier = modifier,
+        modifier =
+            modifier,
 
-        shape = RoundedCornerShape(15.dp),
+        shape =
+            RoundedCornerShape(15.dp),
 
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    Color.White
+            )
 
     ) {
 
         Column(
-            modifier = Modifier.padding(12.dp)
+            modifier =
+                Modifier.padding(12.dp)
         ) {
 
             Row(
-                modifier = Modifier.fillMaxWidth()
+                modifier =
+                    Modifier.fillMaxWidth(),
+                verticalAlignment =
+                    Alignment.CenterVertically
             ) {
 
                 Text(
@@ -743,30 +1543,36 @@ private fun ProjectCard(
                     color = TextGray
                 )
 
+
                 Spacer(
-                    modifier = Modifier.weight(1f)
+                    modifier =
+                        Modifier.weight(1f)
                 )
+
 
                 StatusBadge(
                     text = project.status,
 
                     background =
-                        if (project.status == "Active")
+                        if (isActive) {
                             Color(0xFFE1F5E7)
-                        else
-                            Color(0xFFFFEED7),
+                        } else {
+                            Color(0xFFFFEED7)
+                        },
 
                     textColor =
-                        if (project.status == "Active")
+                        if (isActive) {
                             Green
-                        else
+                        } else {
                             Color(0xFFFF8A00)
+                        }
                 )
             }
 
 
             Spacer(
-                modifier = Modifier.height(10.dp)
+                modifier =
+                    Modifier.height(10.dp)
             )
 
 
@@ -778,14 +1584,16 @@ private fun ProjectCard(
 
 
             Text(
-                text = "${project.progress}% Complete",
+                text =
+                    "${project.progress}% Complete",
                 fontSize = 10.sp,
                 color = TextGray
             )
 
 
             Spacer(
-                modifier = Modifier.height(8.dp)
+                modifier =
+                    Modifier.height(8.dp)
             )
 
 
@@ -795,17 +1603,20 @@ private fun ProjectCard(
                     project.progress / 100f
                 },
 
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(5.dp),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(5.dp),
 
                 color =
-                    if (project.status == "Active")
+                    if (isActive) {
                         SitePulseOrange
-                    else
-                        Color(0xFFFF9800),
+                    } else {
+                        Color(0xFFFF9800)
+                    },
 
-                trackColor = Color(0xFFE9E4E1)
+                trackColor =
+                    Color(0xFFE9E4E1)
             )
         }
     }
@@ -813,43 +1624,57 @@ private fun ProjectCard(
 
 
 // ============================================================
-// FIELD ACTIVITY
+// ACTIVITY ROW
 // ============================================================
 
 @Composable
 private fun ActivityRow(
-    activity: FieldActivity
+
+    activity:
+    DashboardFieldActivityUi
+
 ) {
 
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.Top
+
+        modifier =
+            Modifier.fillMaxWidth(),
+
+        verticalAlignment =
+            Alignment.Top
+
     ) {
 
         Box(
-            modifier = Modifier
-                .padding(top = 5.dp)
-                .size(9.dp)
-                .background(
-                    when (activity.type) {
 
-                        ActivityType.WARNING ->
-                            SitePulseOrange
+            modifier =
+                Modifier
+                    .padding(top = 5.dp)
+                    .size(9.dp)
+                    .background(
 
-                        ActivityType.INFO ->
-                            Blue
+                        when (
+                            activity.type
+                        ) {
 
-                        ActivityType.SUCCESS ->
-                            Green
-                    },
+                            DashboardActivityType.WARNING ->
+                                SitePulseOrange
 
-                    CircleShape
-                )
+                            DashboardActivityType.INFO ->
+                                Blue
+
+                            DashboardActivityType.SUCCESS ->
+                                Green
+                        },
+
+                        CircleShape
+                    )
         )
 
 
         Spacer(
-            modifier = Modifier.width(12.dp)
+            modifier =
+                Modifier.width(12.dp)
         )
 
 
@@ -860,6 +1685,7 @@ private fun ActivityRow(
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )
+
 
             Text(
                 text = activity.description,
@@ -872,8 +1698,43 @@ private fun ActivityRow(
 
 
 // ============================================================
-// SHARED BOTTOM NAVIGATION
-// KEEP ONLY ONE COPY OF THIS FUNCTION IN YOUR WHOLE PROJECT
+// EMPTY CARD
+// ============================================================
+
+@Composable
+private fun EmptyDashboardCard(
+    text: String
+) {
+
+    Card(
+
+        modifier =
+            Modifier.fillMaxWidth(),
+
+        shape =
+            RoundedCornerShape(12.dp),
+
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    Color.White
+            )
+
+    ) {
+
+        Text(
+            text = text,
+            modifier =
+                Modifier.padding(14.dp),
+            color = TextGray,
+            fontSize = 11.sp
+        )
+    }
+}
+
+
+// ============================================================
+// BOTTOM NAVIGATION
 // ============================================================
 
 @Composable
@@ -890,6 +1751,7 @@ fun SitePulseBottomNavigation(
     onTasksClick: () -> Unit,
 
     onProfileClick: () -> Unit
+
 ) {
 
     NavigationBar(
@@ -900,35 +1762,45 @@ fun SitePulseBottomNavigation(
         SitePulseNavigationItem(
             title = "Home",
             icon = Icons.Outlined.Home,
-            selected = selectedScreen == "dashboard",
+            selected =
+                selectedScreen == "dashboard",
             onClick = onHomeClick
         )
+
 
         SitePulseNavigationItem(
             title = "Projects",
             icon = Icons.Outlined.BusinessCenter,
-            selected = selectedScreen == "projects",
+            selected =
+                selectedScreen == "projects",
             onClick = onProjectsClick
         )
 
+
         SitePulseNavigationItem(
             title = "Messages",
-            icon = Icons.Outlined.ChatBubbleOutline,
-            selected = selectedScreen == "chat",
+            icon =
+                Icons.Outlined.ChatBubbleOutline,
+            selected =
+                selectedScreen == "chat",
             onClick = onMessagesClick
         )
+
 
         SitePulseNavigationItem(
             title = "Tasks",
             icon = Icons.Outlined.TaskAlt,
-            selected = selectedScreen == "tasks",
+            selected =
+                selectedScreen == "tasks",
             onClick = onTasksClick
         )
+
 
         SitePulseNavigationItem(
             title = "Profile",
             icon = Icons.Outlined.Person,
-            selected = selectedScreen == "profile",
+            selected =
+                selectedScreen == "profile",
             onClick = onProfileClick
         )
     }
@@ -949,20 +1821,26 @@ private fun RowScope.SitePulseNavigationItem(
     selected: Boolean,
 
     onClick: () -> Unit
+
 ) {
 
     NavigationBarItem(
 
-        selected = selected,
+        selected =
+            selected,
 
-        onClick = onClick,
+        onClick =
+            onClick,
 
         icon = {
 
             Icon(
-                imageVector = icon,
-                contentDescription = title,
-                modifier = Modifier.size(21.dp)
+                imageVector =
+                    icon,
+                contentDescription =
+                    title,
+                modifier =
+                    Modifier.size(21.dp)
             )
         },
 
@@ -974,17 +1852,23 @@ private fun RowScope.SitePulseNavigationItem(
             )
         },
 
-        colors = NavigationBarItemDefaults.colors(
+        colors =
+            NavigationBarItemDefaults.colors(
 
-            selectedIconColor = SitePulseOrange,
+                selectedIconColor =
+                    SitePulseOrange,
 
-            selectedTextColor = SitePulseOrange,
+                selectedTextColor =
+                    SitePulseOrange,
 
-            indicatorColor = Color(0xFFFFE6DC),
+                indicatorColor =
+                    Color(0xFFFFE6DC),
 
-            unselectedIconColor = Color(0xFF777777),
+                unselectedIconColor =
+                    Color(0xFF777777),
 
-            unselectedTextColor = Color(0xFF777777)
-        )
+                unselectedTextColor =
+                    Color(0xFF777777)
+            )
     )
 }

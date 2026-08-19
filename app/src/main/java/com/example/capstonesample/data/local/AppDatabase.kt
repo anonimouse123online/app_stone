@@ -10,7 +10,7 @@ import androidx.room.RoomDatabase
         UserEntity::class,
         TaskEntity::class
     ],
-    version = 6,
+    version =11,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

@@ -3,14 +3,6 @@ package com.example.capstonesample.data.model
 import com.google.gson.annotations.SerializedName
 
 
-// ============================================================
-// JOIN PROJECT REQUEST
-// Backend expects:
-// {
-//    "invite_code": "E9F7-DEB3"
-// }
-// ============================================================
-
 data class JoinProjectRequest(
 
     @SerializedName("invite_code")
@@ -18,41 +10,64 @@ data class JoinProjectRequest(
 )
 
 
-// ============================================================
-// JOIN PROJECT RESPONSE
-// ============================================================
-
 data class JoinProjectResponse(
+
     val success: Boolean,
+
     val message: String,
 
-    // Backend /projects/join currently returns project_id
-    // instead of a complete project object.
     @SerializedName("project_id")
     val projectId: String? = null
 )
 
 
-// ============================================================
-// PROJECT RESPONSE
-// Used when fetching projects
-// ============================================================
+data class ProjectsResponse(
+
+    val success: Boolean,
+
+    val data: List<ProjectResponse> = emptyList()
+)
+
+
+data class SingleProjectResponse(
+
+    val success: Boolean,
+
+    val data: ProjectResponse? = null,
+
+    val message: String? = null
+)
+
 
 data class ProjectResponse(
 
-    // KEEP Int for now if your GET /projects API
-    // currently returns the PostgreSQL numeric project ID.
-    val id: Int,
+    // IMPORTANT:
+    // PostgreSQL UUID
+    val id: String? = null,
 
-    val category: String?,
-    val name: String,
-    val manager: String?,
-    val progress: Int?,
-    val status: String?,
+    val code: String? = null,
 
-    @SerializedName("dueDate")
-    val dueDate: String?,
+    val name: String? = null,
 
-    @SerializedName("remainingText")
-    val remainingText: String?
+    val location: String? = null,
+
+    val scope: String? = null,
+
+    val client: String? = null,
+
+    val budget: String? = null,
+
+    val phase: String? = null,
+
+    val status: String? = null,
+
+    val progress: Int? = null,
+
+    @SerializedName("start_date")
+    val startDate: String? = null,
+
+    @SerializedName("due_date")
+    val dueDate: String? = null,
+
+    val manager: String? = null
 )
