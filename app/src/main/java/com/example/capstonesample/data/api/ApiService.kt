@@ -20,6 +20,7 @@ import com.example.capstonesample.data.model.SendMessageResponse
 
 
 
+
 import com.google.gson.annotations.SerializedName
 
 import retrofit2.Response
@@ -48,6 +49,11 @@ interface ApiService {
     suspend fun signup(
         @Body request: SignupRequest
     ): Response<SignupResponse>
+
+    @GET("projects/{code}/documents")
+    suspend fun getProjectDocuments(
+        @Path("code") code: String
+    ): Response<ProjectDocumentsResponse>
 
 
 
@@ -186,7 +192,50 @@ interface ApiService {
 //     ]
 // }
 // ============================================================
+// ============================================================
+// PROJECT DOCUMENTS API RESPONSE
+//
+// Backend:
+//
+// {
+//     "success": true,
+//     "data": [
+//         {
+//             "id": 1,
+//             "name": "Structural Plan.pdf",
+//             "type": "PDF",
+//             "category": "Design & Engineering",
+//             "uploaded_at": "2026-08-18T..."
+//         }
+//     ]
+// }
+// ============================================================
 
+data class ProjectDocumentsResponse(
+
+    val success: Boolean = false,
+
+    val data: List<ProjectDocumentResponse> = emptyList()
+)
+
+
+// ============================================================
+// PROJECT DOCUMENT RESPONSE
+// ============================================================
+
+data class ProjectDocumentResponse(
+
+    val id: String? = null,
+
+    val name: String? = null,
+
+    val type: String? = null,
+
+    val category: String? = null,
+
+    @SerializedName("uploaded_at")
+    val uploadedAt: String? = null
+)
 data class TasksResponse(
 
     val success: Boolean = false,

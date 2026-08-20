@@ -2,13 +2,24 @@
 
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Existing image files -->
     <files-path
         name="images"
         path="images/" />
 
+    <!-- Existing reports -->
     <files-path
         name="reports"
         path="reports/" />
-    <cache-path name="inspection_images" path="." />
+
+    <!-- Existing inspection images -->
+    <cache-path
+        name="inspection_images"
+        path="." />
+
+    <!-- Camera photos saved in Pictures/SitePulse -->
+    <external-files-path
+        name="sitepulse_camera_images"
+        path="Pictures/SitePulse/" />
 
 </paths>

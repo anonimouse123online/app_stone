@@ -2,17 +2,24 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Network Permissions -->
+    <!-- ================================================== -->
+    <!-- NETWORK -->
+    <!-- ================================================== -->
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Camera Permission -->
+
+    <!-- ================================================== -->
+    <!-- CAMERA -->
+    <!-- ================================================== -->
+
     <uses-permission android:name="android.permission.CAMERA" />
 
-    <!-- Camera is optional -->
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
+
 
     <application
         android:allowBackup="true"
@@ -24,6 +31,12 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.CapstoneSample"
         android:usesCleartextTraffic="true">
+
+
+        <!-- ================================================== -->
+        <!-- FILE PROVIDER -->
+        <!-- CAMERA PHOTOS + PDF REPORTS -->
+        <!-- ================================================== -->
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -37,6 +50,11 @@
 
         </provider>
 
+
+        <!-- ================================================== -->
+        <!-- MAIN ACTIVITY -->
+        <!-- ================================================== -->
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -45,9 +63,11 @@
             android:windowSoftInputMode="adjustResize">
 
             <intent-filter>
+
                 <action android:name="android.intent.action.MAIN" />
 
                 <category android:name="android.intent.category.LAUNCHER" />
+
             </intent-filter>
 
         </activity>

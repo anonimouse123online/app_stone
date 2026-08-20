@@ -3,215 +3,1188 @@ package com.example.capstonesample.ai
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.ImageDecoder
-import android.graphics.Matrix
 import android.graphics.RectF
 import android.net.Uri
-import android.os.Build
-import androidx.exifinterface.media.ExifInterface
+import android.util.Log
+
 import org.tensorflow.lite.Interpreter
+
+import java.io.FileInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.nio.channels.FileChannel
 import kotlin.math.max
 import kotlin.math.min
 
-/**
- * Single detected object.
- * box coordinates are scaled to the ORIGINAL bitmap size (not the 640x640 model input).
- */
+
 data class Detection(
     val label: String,
     val confidence: Float,
     val box: RectF
 )
 
-/**
- * Wraps the trained YOLO11n .tflite model (4 classes: helmet, vest, without_helmet, without_vest).
- *
- * Confirmed real output shape from the LiteRT export log: [1, 8, 8400]
- * (4 box coords + 4 classes = 8 attributes, 8400 candidate boxes). Single output tensor -
- * NOT three separate boxes/scores/classes tensors.
- */
+
 class YoloDetector(
+
     private val appContext: Context,
+
     modelAssetPath: String = "yolo11n.tflite",
+
     labelsAssetPath: String = "labels.txt",
+
     private val inputSize: Int = 640,
+
     private val confThreshold: Float = 0.25f,
+
     private val iouThreshold: Float = 0.45f
+
 ) {
 
+    companion object {
+
+        private const val TAG =
+            "YOLO_TEST"
+    }
+
+
     private val interpreter: Interpreter
+
     private val labels: List<String>
 
+
+    // ============================================================
+    // INITIALIZE YOLO
+    // ============================================================
+
     init {
-        val model = loadModelFile(appContext, modelAssetPath)
-        val options = Interpreter.Options().apply {
-            numThreads = 4
-        }
-        interpreter = Interpreter(model, options)
-        labels = appContext.assets.open(labelsAssetPath).bufferedReader().readLines()
-            .filter { it.isNotBlank() }
-    }
 
-    private fun loadModelFile(context: Context, assetPath: String): ByteBuffer {
-        val bytes = context.assets.open(assetPath).readBytes()
-        return ByteBuffer.allocateDirect(bytes.size).apply {
-            order(ByteOrder.nativeOrder())
-            put(bytes)
-            rewind()
-        }
-    }
+        Log.d(
+            TAG,
+            "Initializing YOLO..."
+        )
 
-    /** Convenience overload: decode a Bitmap from a content Uri, then run detection.
-     * Always call from a background coroutine (Dispatchers.Default/IO) - never the main thread. */
-    fun detect(uri: Uri): List<Detection> {
-        val bitmap = uriToBitmap(appContext, uri)
-        return detect(bitmap)
-    }
 
-    private fun uriToBitmap(context: Context, uri: Uri): Bitmap {
-        val bitmap = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            val source = ImageDecoder.createSource(context.contentResolver, uri)
-            ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
-                decoder.isMutableRequired = true
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            context.contentResolver.openInputStream(uri).use { stream ->
-                BitmapFactory.decodeStream(stream)
-            }
-        }
+        // --------------------------------------------------------
+        // LOAD LABELS
+        // --------------------------------------------------------
 
-        // Camera photos frequently carry an EXIF rotation tag rather than storing pixels
-        // already right-side-up. Without correcting for it, the model sees a sideways or
-        // upside-down image, which can tank detection confidence to near zero.
-        val rotationDegrees = try {
-            context.contentResolver.openInputStream(uri)?.use { stream ->
-                val exif = ExifInterface(stream)
-                when (exif.getAttributeInt(
-                    ExifInterface.TAG_ORIENTATION,
-                    ExifInterface.ORIENTATION_NORMAL
-                )) {
-                    ExifInterface.ORIENTATION_ROTATE_90 -> 90
-                    ExifInterface.ORIENTATION_ROTATE_180 -> 180
-                    ExifInterface.ORIENTATION_ROTATE_270 -> 270
-                    else -> 0
+        labels =
+            appContext.assets
+                .open(labelsAssetPath)
+                .bufferedReader()
+                .useLines {
+
+                        lines ->
+
+                    lines
+                        .map {
+                            it.trim()
+                        }
+                        .filter {
+                            it.isNotBlank()
+                        }
+                        .toList()
                 }
-            } ?: 0
+
+
+        Log.d(
+            TAG,
+            "Labels loaded: ${labels.size}"
+        )
+
+
+        // --------------------------------------------------------
+        // LOAD TFLITE MODEL
+        // --------------------------------------------------------
+
+        val modelBuffer =
+            loadModelFile(
+                modelAssetPath
+            )
+
+
+        val options =
+            Interpreter.Options().apply {
+
+                setNumThreads(4)
+            }
+
+
+        interpreter =
+            Interpreter(
+                modelBuffer,
+                options
+            )
+
+
+        Log.d(
+            TAG,
+            "YOLO model loaded successfully."
+        )
+
+
+        // --------------------------------------------------------
+        // PRINT MODEL INFORMATION
+        // --------------------------------------------------------
+
+        try {
+
+            val inputTensor =
+                interpreter.getInputTensor(0)
+
+            val outputTensor =
+                interpreter.getOutputTensor(0)
+
+
+            Log.d(
+                TAG,
+                "Input shape: ${
+                    inputTensor.shape()
+                        .contentToString()
+                }"
+            )
+
+
+            Log.d(
+                TAG,
+                "Output shape: ${
+                    outputTensor.shape()
+                        .contentToString()
+                }"
+            )
+
+
+            Log.d(
+                TAG,
+                "Input type: ${inputTensor.dataType()}"
+            )
+
+
+            Log.d(
+                TAG,
+                "Output type: ${outputTensor.dataType()}"
+            )
+
         } catch (e: Exception) {
-            0
-        }
 
-        return if (rotationDegrees != 0) {
-            val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
-            Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        } else {
-            bitmap
+            Log.e(
+                TAG,
+                "Unable to read model tensor info.",
+                e
+            )
         }
     }
 
-    fun detect(bitmap: Bitmap): List<Detection> {
-        val resized = Bitmap.createScaledBitmap(bitmap, inputSize, inputSize, true)
-        val inputBuffer = bitmapToInputBuffer(resized)
 
-        // Real shape confirmed from export log: [1, 8, 8400] -> read dynamically so this
-        // keeps working even if you retrain with a different number of classes later.
-        val outputShape = interpreter.getOutputTensor(0).shape() // [1, numAttrs, numBoxes]
-        val numAttrs = outputShape[1]
-        val numBoxes = outputShape[2]
-        val numClasses = numAttrs - 4
+    // ============================================================
+    // DETECT FROM URI
+    // ============================================================
 
-        val output = Array(1) { Array(numAttrs) { FloatArray(numBoxes) } }
+    fun detect(
+        uri: Uri
+    ): List<Detection> {
 
-        // Single output tensor -> plain run(), NOT runForMultipleInputsOutputs
-        interpreter.run(inputBuffer, output)
+        Log.d(
+            TAG,
+            "Detection requested from URI."
+        )
 
-        val scaleX = bitmap.width.toFloat() / inputSize
-        val scaleY = bitmap.height.toFloat() / inputSize
 
-        val candidates = mutableListOf<Detection>()
-        var maxScoreSeen = 0f
+        val bitmap =
+            appContext
+                .contentResolver
+                .openInputStream(uri)
+                ?.use {
 
-        for (i in 0 until numBoxes) {
-            var bestClass = -1
-            var bestScore = 0f
-            for (c in 0 until numClasses) {
-                val score = output[0][4 + c][i]
-                if (score > bestScore) {
-                    bestScore = score
-                    bestClass = c
+                    BitmapFactory.decodeStream(it)
+                }
+
+
+        if (bitmap == null) {
+
+            Log.e(
+                TAG,
+                "Unable to decode image URI."
+            )
+
+            return emptyList()
+        }
+
+
+        return detect(
+            bitmap
+        )
+    }
+
+
+    // ============================================================
+    // DETECT FROM BITMAP
+    // ============================================================
+
+    fun detect(
+        bitmap: Bitmap
+    ): List<Detection> {
+
+        try {
+
+            Log.d(
+                TAG,
+                "YOLO detection started."
+            )
+
+
+            Log.d(
+                TAG,
+                "Original bitmap: ${bitmap.width}x${bitmap.height}"
+            )
+
+
+            // ----------------------------------------------------
+            // RESIZE IMAGE
+            // ----------------------------------------------------
+
+            val resizedBitmap =
+                Bitmap.createScaledBitmap(
+                    bitmap,
+                    inputSize,
+                    inputSize,
+                    true
+                )
+
+
+            // ----------------------------------------------------
+            // CONVERT IMAGE TO FLOAT BUFFER
+            // ----------------------------------------------------
+
+            val inputBuffer =
+                convertBitmapToByteBuffer(
+                    resizedBitmap
+                )
+
+
+            // ----------------------------------------------------
+            // READ OUTPUT SHAPE
+            // ----------------------------------------------------
+
+            val outputTensor =
+                interpreter.getOutputTensor(0)
+
+            val outputShape =
+                outputTensor.shape()
+
+
+            Log.d(
+                TAG,
+                "Output tensor shape: ${
+                    outputShape.contentToString()
+                }"
+            )
+
+
+            if (
+                outputShape.size != 3
+            ) {
+
+                Log.e(
+                    TAG,
+                    "Unsupported YOLO output shape."
+                )
+
+                return emptyList()
+            }
+
+
+            // Usually:
+            //
+            // [1, 84, 8400]
+            //
+            // 4 box values +
+            // 80 class confidence values
+            // ----------------------------------------------------
+
+            val dimension1 =
+                outputShape[1]
+
+            val dimension2 =
+                outputShape[2]
+
+
+            val detections =
+
+                if (
+                    dimension1 <
+                    dimension2
+                ) {
+
+                    // Example:
+                    // [1, 84, 8400]
+
+                    val output =
+                        Array(1) {
+
+                            Array(
+                                dimension1
+                            ) {
+
+                                FloatArray(
+                                    dimension2
+                                )
+                            }
+                        }
+
+
+                    interpreter.run(
+                        inputBuffer,
+                        output
+                    )
+
+
+                    parseChannelsFirstOutput(
+                        output[0],
+                        bitmap.width,
+                        bitmap.height
+                    )
+
+                } else {
+
+                    // Possible:
+                    // [1, 8400, 84]
+
+                    val output =
+                        Array(1) {
+
+                            Array(
+                                dimension1
+                            ) {
+
+                                FloatArray(
+                                    dimension2
+                                )
+                            }
+                        }
+
+
+                    interpreter.run(
+                        inputBuffer,
+                        output
+                    )
+
+
+                    parsePredictionsFirstOutput(
+                        output[0],
+                        bitmap.width,
+                        bitmap.height
+                    )
+                }
+
+
+            val finalDetections =
+                nonMaximumSuppression(
+                    detections
+                )
+
+
+            Log.d(
+                TAG,
+                "Final detections: ${finalDetections.size}"
+            )
+
+
+            finalDetections.forEach {
+
+                Log.d(
+                    TAG,
+                    "Detected: ${it.label} " +
+                            "confidence=${it.confidence}"
+                )
+            }
+
+
+            return finalDetections
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "YOLO detection failed.",
+                e
+            )
+
+            return emptyList()
+        }
+    }
+
+
+    // ============================================================
+    // PARSE [1, CHANNELS, PREDICTIONS]
+    //
+    // Example:
+    // [1, 84, 8400]
+    // ============================================================
+
+    private fun parseChannelsFirstOutput(
+
+        output: Array<FloatArray>,
+
+        originalWidth: Int,
+
+        originalHeight: Int
+
+    ): List<Detection> {
+
+        val detections =
+            mutableListOf<Detection>()
+
+
+        val channels =
+            output.size
+
+        if (
+            channels < 5
+        ) {
+
+            return detections
+        }
+
+
+        val predictions =
+            output[0].size
+
+
+        val classCount =
+            min(
+                labels.size,
+                channels - 4
+            )
+
+
+        for (
+        index in 0 until predictions
+        ) {
+
+            val centerX =
+                output[0][index]
+
+            val centerY =
+                output[1][index]
+
+            val width =
+                output[2][index]
+
+            val height =
+                output[3][index]
+
+
+            var bestScore =
+                0f
+
+            var bestClass =
+                -1
+
+
+            for (
+            classIndex in 0 until classCount
+            ) {
+
+                val score =
+                    output[
+                        classIndex + 4
+                    ][index]
+
+
+                if (
+                    score > bestScore
+                ) {
+
+                    bestScore =
+                        score
+
+                    bestClass =
+                        classIndex
                 }
             }
-            if (bestScore > maxScoreSeen) maxScoreSeen = bestScore
-            if (bestScore < confThreshold) continue
 
-            val cx = output[0][0][i] * inputSize
-            val cy = output[0][1][i] * inputSize
-            val w = output[0][2][i] * inputSize
-            val h = output[0][3][i] * inputSize
 
-            val left = (cx - w / 2f) * scaleX
-            val top = (cy - h / 2f) * scaleY
-            val right = (cx + w / 2f) * scaleX
-            val bottom = (cy + h / 2f) * scaleY
+            if (
+                bestScore <
+                confThreshold ||
+                bestClass < 0
+            ) {
 
-            candidates.add(
-                Detection(
-                    label = labels.getOrElse(bestClass) { "class_$bestClass" },
-                    confidence = bestScore,
-                    box = RectF(left, top, right, bottom)
-                )
+                continue
+            }
+
+
+            addDetection(
+
+                detections =
+                    detections,
+
+                centerX =
+                    centerX,
+
+                centerY =
+                    centerY,
+
+                width =
+                    width,
+
+                height =
+                    height,
+
+                classIndex =
+                    bestClass,
+
+                confidence =
+                    bestScore,
+
+                originalWidth =
+                    originalWidth,
+
+                originalHeight =
+                    originalHeight
             )
         }
 
-        android.util.Log.d("YoloDetector", "Max confidence seen across all boxes: $maxScoreSeen (threshold: $confThreshold)")
 
-        return nonMaxSuppression(candidates, iouThreshold)
+        return detections
     }
 
-    private fun nonMaxSuppression(detections: List<Detection>, iouThresh: Float): List<Detection> {
-        val sorted = detections.sortedByDescending { it.confidence }.toMutableList()
-        val result = mutableListOf<Detection>()
 
-        while (sorted.isNotEmpty()) {
-            val best = sorted.removeAt(0)
-            result.add(best)
-            sorted.removeAll { iou(best.box, it.box) > iouThresh && it.label == best.label }
+    // ============================================================
+    // PARSE [1, PREDICTIONS, CHANNELS]
+    //
+    // Example:
+    // [1, 8400, 84]
+    // ============================================================
+
+    private fun parsePredictionsFirstOutput(
+
+        output: Array<FloatArray>,
+
+        originalWidth: Int,
+
+        originalHeight: Int
+
+    ): List<Detection> {
+
+        val detections =
+            mutableListOf<Detection>()
+
+
+        for (
+        prediction in output
+        ) {
+
+            if (
+                prediction.size < 5
+            ) {
+
+                continue
+            }
+
+
+            val centerX =
+                prediction[0]
+
+            val centerY =
+                prediction[1]
+
+            val width =
+                prediction[2]
+
+            val height =
+                prediction[3]
+
+
+            val classCount =
+                min(
+                    labels.size,
+                    prediction.size - 4
+                )
+
+
+            var bestScore =
+                0f
+
+            var bestClass =
+                -1
+
+
+            for (
+            classIndex in 0 until classCount
+            ) {
+
+                val score =
+                    prediction[
+                        classIndex + 4
+                    ]
+
+
+                if (
+                    score > bestScore
+                ) {
+
+                    bestScore =
+                        score
+
+                    bestClass =
+                        classIndex
+                }
+            }
+
+
+            if (
+                bestScore <
+                confThreshold ||
+                bestClass < 0
+            ) {
+
+                continue
+            }
+
+
+            addDetection(
+
+                detections =
+                    detections,
+
+                centerX =
+                    centerX,
+
+                centerY =
+                    centerY,
+
+                width =
+                    width,
+
+                height =
+                    height,
+
+                classIndex =
+                    bestClass,
+
+                confidence =
+                    bestScore,
+
+                originalWidth =
+                    originalWidth,
+
+                originalHeight =
+                    originalHeight
+            )
         }
-        return result
+
+
+        return detections
     }
 
-    private fun iou(a: RectF, b: RectF): Float {
-        val interLeft = max(a.left, b.left)
-        val interTop = max(a.top, b.top)
-        val interRight = min(a.right, b.right)
-        val interBottom = min(a.bottom, b.bottom)
 
-        val interArea = max(0f, interRight - interLeft) * max(0f, interBottom - interTop)
-        val aArea = (a.right - a.left) * (a.bottom - a.top)
-        val bArea = (b.right - b.left) * (b.bottom - b.top)
+    // ============================================================
+    // ADD DETECTION
+    // ============================================================
 
-        return if (aArea + bArea - interArea <= 0f) 0f else interArea / (aArea + bArea - interArea)
+    private fun addDetection(
+
+        detections:
+        MutableList<Detection>,
+
+        centerX: Float,
+
+        centerY: Float,
+
+        width: Float,
+
+        height: Float,
+
+        classIndex: Int,
+
+        confidence: Float,
+
+        originalWidth: Int,
+
+        originalHeight: Int
+
+    ) {
+
+        // Most Ultralytics exported models return
+        // normalized xywh values in this stage.
+        //
+        // Handle both normalized and pixel-style values.
+        // --------------------------------------------------------
+
+        val normalized =
+            centerX <= 1.5f &&
+                    centerY <= 1.5f &&
+                    width <= 1.5f &&
+                    height <= 1.5f
+
+
+        val scaleX =
+            if (normalized) {
+
+                originalWidth.toFloat()
+
+            } else {
+
+                originalWidth.toFloat() /
+                        inputSize.toFloat()
+            }
+
+
+        val scaleY =
+            if (normalized) {
+
+                originalHeight.toFloat()
+
+            } else {
+
+                originalHeight.toFloat() /
+                        inputSize.toFloat()
+            }
+
+
+        val left =
+            (centerX - width / 2f) *
+                    scaleX
+
+        val top =
+            (centerY - height / 2f) *
+                    scaleY
+
+        val right =
+            (centerX + width / 2f) *
+                    scaleX
+
+        val bottom =
+            (centerY + height / 2f) *
+                    scaleY
+
+
+        val safeLeft =
+            left.coerceIn(
+                0f,
+                originalWidth.toFloat()
+            )
+
+        val safeTop =
+            top.coerceIn(
+                0f,
+                originalHeight.toFloat()
+            )
+
+        val safeRight =
+            right.coerceIn(
+                0f,
+                originalWidth.toFloat()
+            )
+
+        val safeBottom =
+            bottom.coerceIn(
+                0f,
+                originalHeight.toFloat()
+            )
+
+
+        if (
+            safeRight <= safeLeft ||
+            safeBottom <= safeTop
+        ) {
+
+            return
+        }
+
+
+        detections.add(
+
+            Detection(
+
+                label =
+                    labels.getOrElse(
+                        classIndex
+                    ) {
+                        "class_$classIndex"
+                    },
+
+                confidence =
+                    confidence,
+
+                box =
+                    RectF(
+                        safeLeft,
+                        safeTop,
+                        safeRight,
+                        safeBottom
+                    )
+            )
+        )
     }
 
-    private fun bitmapToInputBuffer(bitmap: Bitmap): ByteBuffer {
-        val buffer = ByteBuffer.allocateDirect(4 * inputSize * inputSize * 3)
-        buffer.order(ByteOrder.nativeOrder())
 
-        val pixels = IntArray(inputSize * inputSize)
-        bitmap.getPixels(pixels, 0, inputSize, 0, 0, inputSize, inputSize)
+    // ============================================================
+    // PREPROCESS BITMAP
+    // ============================================================
+
+    private fun convertBitmapToByteBuffer(
+        bitmap: Bitmap
+    ): ByteBuffer {
+
+        /*
+         * MODEL INPUT:
+         *
+         * [1, 3, 640, 640]
+         *
+         * This is NCHW format:
+         *
+         * N = batch
+         * C = channels
+         * H = height
+         * W = width
+         *
+         * Therefore the buffer must contain:
+         *
+         * ALL RED values
+         * then
+         * ALL GREEN values
+         * then
+         * ALL BLUE values
+         */
+
+        val pixelCount =
+            inputSize * inputSize
+
+
+        val buffer =
+            ByteBuffer.allocateDirect(
+                4 *          // FLOAT32
+                        3 *          // RGB
+                        pixelCount
+            )
+
+
+        buffer.order(
+            ByteOrder.nativeOrder()
+        )
+
+
+        val pixels =
+            IntArray(
+                pixelCount
+            )
+
+
+        bitmap.getPixels(
+            pixels,
+            0,
+            inputSize,
+            0,
+            0,
+            inputSize,
+            inputSize
+        )
+
+
+        // ============================================================
+        // RED CHANNEL
+        // ============================================================
 
         for (pixel in pixels) {
-            buffer.putFloat(((pixel shr 16) and 0xFF) / 255f) // R
-            buffer.putFloat(((pixel shr 8) and 0xFF) / 255f)  // G
-            buffer.putFloat((pixel and 0xFF) / 255f)          // B
+
+            val red =
+                ((pixel shr 16) and 0xFF) /
+                        255.0f
+
+
+            buffer.putFloat(
+                red
+            )
         }
+
+
+        // ============================================================
+        // GREEN CHANNEL
+        // ============================================================
+
+        for (pixel in pixels) {
+
+            val green =
+                ((pixel shr 8) and 0xFF) /
+                        255.0f
+
+
+            buffer.putFloat(
+                green
+            )
+        }
+
+
+        // ============================================================
+        // BLUE CHANNEL
+        // ============================================================
+
+        for (pixel in pixels) {
+
+            val blue =
+                (pixel and 0xFF) /
+                        255.0f
+
+
+            buffer.putFloat(
+                blue
+            )
+        }
+
+
         buffer.rewind()
+
+
+        Log.d(
+            TAG,
+            "Input buffer prepared in NCHW format."
+        )
+
+
         return buffer
     }
 
+
+    // ============================================================
+    // NON MAXIMUM SUPPRESSION
+    // ============================================================
+
+    private fun nonMaximumSuppression(
+
+        detections:
+        List<Detection>
+
+    ): List<Detection> {
+
+        if (
+            detections.isEmpty()
+        ) {
+
+            return emptyList()
+        }
+
+
+        val sorted =
+            detections
+                .sortedByDescending {
+                    it.confidence
+                }
+                .toMutableList()
+
+
+        val selected =
+            mutableListOf<Detection>()
+
+
+        while (
+            sorted.isNotEmpty()
+        ) {
+
+            val best =
+                sorted.removeAt(0)
+
+
+            selected.add(
+                best
+            )
+
+
+            val iterator =
+                sorted.iterator()
+
+
+            while (
+                iterator.hasNext()
+            ) {
+
+                val candidate =
+                    iterator.next()
+
+
+                if (
+                    candidate.label ==
+                    best.label
+                ) {
+
+                    val overlap =
+                        calculateIoU(
+                            best.box,
+                            candidate.box
+                        )
+
+
+                    if (
+                        overlap >
+                        iouThreshold
+                    ) {
+
+                        iterator.remove()
+                    }
+                }
+            }
+        }
+
+
+        return selected
+    }
+
+
+    // ============================================================
+    // IOU
+    // ============================================================
+
+    private fun calculateIoU(
+
+        first: RectF,
+
+        second: RectF
+
+    ): Float {
+
+        val intersectionLeft =
+            max(
+                first.left,
+                second.left
+            )
+
+
+        val intersectionTop =
+            max(
+                first.top,
+                second.top
+            )
+
+
+        val intersectionRight =
+            min(
+                first.right,
+                second.right
+            )
+
+
+        val intersectionBottom =
+            min(
+                first.bottom,
+                second.bottom
+            )
+
+
+        val intersectionWidth =
+            max(
+                0f,
+                intersectionRight -
+                        intersectionLeft
+            )
+
+
+        val intersectionHeight =
+            max(
+                0f,
+                intersectionBottom -
+                        intersectionTop
+            )
+
+
+        val intersectionArea =
+            intersectionWidth *
+                    intersectionHeight
+
+
+        val firstArea =
+            first.width() *
+                    first.height()
+
+
+        val secondArea =
+            second.width() *
+                    second.height()
+
+
+        val unionArea =
+            firstArea +
+                    secondArea -
+                    intersectionArea
+
+
+        if (
+            unionArea <= 0f
+        ) {
+
+            return 0f
+        }
+
+
+        return intersectionArea /
+                unionArea
+    }
+
+
+    // ============================================================
+    // LOAD MODEL
+    // ============================================================
+
+    private fun loadModelFile(
+
+        assetName: String
+
+    ): ByteBuffer {
+
+        val fileDescriptor =
+            appContext.assets
+                .openFd(
+                    assetName
+                )
+
+
+        FileInputStream(
+            fileDescriptor.fileDescriptor
+        ).use {
+
+                inputStream ->
+
+
+            val fileChannel =
+                inputStream.channel
+
+
+            return fileChannel.map(
+
+                FileChannel.MapMode.READ_ONLY,
+
+                fileDescriptor.startOffset,
+
+                fileDescriptor.declaredLength
+            )
+        }
+    }
+
+
+    // ============================================================
+    // CLOSE
+    // ============================================================
+
     fun close() {
-        interpreter.close()
+
+        try {
+
+            interpreter.close()
+
+
+            Log.d(
+                TAG,
+                "YOLO detector closed."
+            )
+
+        } catch (e: Exception) {
+
+            Log.e(
+                TAG,
+                "Error closing YOLO.",
+                e
+            )
+        }
     }
 }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.BusinessCenter
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -112,6 +113,13 @@ fun ProjectsScreen(
         mutableStateOf<List<SiteProject>>(
             emptyList()
         )
+    }
+
+    // Project currently opened by the user.
+    // Keeping this state here makes project cards work immediately,
+    // even before you add a NavHost route for project details.
+    var selectedProject by remember {
+        mutableStateOf<SiteProject?>(null)
     }
 
     var showJoinDialog by remember {
@@ -767,6 +775,22 @@ fun ProjectsScreen(
 
 
     // ============================================================
+    // OPENED PROJECT DETAILS
+    // ============================================================
+
+    selectedProject?.let { project ->
+        ProjectDetailsScreen(
+            project = project,
+            onBackClick = { selectedProject = null },
+            onHomeClick = onHomeClick,
+            onMessagesClick = onMessagesClick,
+            onTasksClick = onTasksClick,
+            onProfileClick = onProfileClick
+        )
+        return
+    }
+
+    // ============================================================
     // UI
     // ============================================================
 
@@ -1186,10 +1210,18 @@ fun ProjectsScreen(
                                 project,
 
                             onClick = {
+                                println("====================================")
+                                println("📂 PROJECT CLICKED")
+                                println("NAME = ${project.name}")
+                                println("CODE = ${project.code}")
+                                println("====================================")
 
-                                onProjectClick(
-                                    project
-                                )
+                                // Open the project immediately inside this screen.
+                                selectedProject = project
+
+                                // Keep this callback so MainActivity/NavHost can also
+                                // react to the project click later if you want.
+                                onProjectClick(project)
                             }
                         )
                     }
@@ -1938,6 +1970,169 @@ private fun ProjectDetailRow(
         )
     }
 }
+// ============================================================
+// PROJECT DETAILS SCREEN
+// ============================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProjectDetailsScreen(
+    project: SiteProject,
+    onBackClick: () -> Unit,
+    onHomeClick: () -> Unit,
+    onMessagesClick: () -> Unit,
+    onTasksClick: () -> Unit,
+    onProfileClick: () -> Unit
+) {
+    Scaffold(
+        containerColor = ProjectBackground,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Column {
+                        Text(
+                            text = project.name,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = project.code,
+                            fontSize = 10.sp,
+                            color = GrayText
+                        )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(
+                            imageVector = Icons.Default.ArrowBack,
+                            contentDescription = "Back"
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color.White
+                )
+            )
+        },
+        bottomBar = {
+            ProjectsBottomNavigationBar(
+                selectedScreen = "projects",
+                onHomeClick = onHomeClick,
+                onProjectsClick = onBackClick,
+                onMessagesClick = onMessagesClick,
+                onTasksClick = onTasksClick,
+                onProfileClick = onProfileClick
+            )
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Text(
+                            text = "Project Overview",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(Modifier.height(14.dp))
+
+                        ProjectDetailRow("Project Code", project.code)
+                        ProjectDetailRow("Location", project.location)
+                        ProjectDetailRow("Client", project.client)
+                        ProjectDetailRow("Manager", project.manager)
+                        ProjectDetailRow("Scope", project.scope)
+                        ProjectDetailRow("Budget", project.budget)
+                        ProjectDetailRow("Phase", project.phase)
+                        ProjectDetailRow("Status", project.status)
+                        ProjectDetailRow("Start Date", project.startDate)
+                        ProjectDetailRow("Due Date", project.dueDate)
+                    }
+                }
+            }
+
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Project Progress",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(Modifier.weight(1f))
+                            Text(
+                                text = "${project.progress.coerceIn(0, 100)}%",
+                                fontWeight = FontWeight.Bold,
+                                color = ProjectOrange
+                            )
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+
+                        LinearProgressIndicator(
+                            progress = {
+                                project.progress.coerceIn(0, 100) / 100f
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp),
+                            color = ProjectOrange,
+                            trackColor = Color(0xFFEAE4E1)
+                        )
+                    }
+                }
+            }
+
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(modifier = Modifier.padding(18.dp)) {
+                        Text(
+                            text = "Project Modules",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Spacer(Modifier.height(8.dp))
+
+                        Text(
+                            text = "This is now the opened project. You can connect Documents, Tasks, Issues, Reports, and other project-specific screens here using project.code = ${project.code}.",
+                            fontSize = 12.sp,
+                            color = GrayText
+                        )
+                    }
+                }
+            }
+
+            item {
+                Spacer(Modifier.height(60.dp))
+            }
+        }
+    }
+}
+
 // ============================================================
 // BOTTOM NAV
 // ============================================================

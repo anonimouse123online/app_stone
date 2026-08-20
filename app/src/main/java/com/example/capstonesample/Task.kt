@@ -1,5 +1,15 @@
 package com.example.capstonesample
 
+import android.content.Intent
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.os.Environment
+import android.util.Log
+
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -13,14 +23,29 @@ import androidx.compose.material.icons.outlined.*
 
 import androidx.compose.material3.*
 
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+import androidx.core.content.FileProvider
+
+import com.example.capstonesample.ai.AiPipeline
+import com.example.capstonesample.ai.ModelStatusChecker
+import com.example.capstonesample.pdf.PdfReportGenerator
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+import java.io.File
 
 
 // ============================================================
@@ -55,11 +80,239 @@ fun TaskDetailScreen(
 
     onBackClick: () -> Unit,
 
-    onCameraClick: () -> Unit,
+    // Keep this so your existing navigation code will not break.
+    // Camera is now handled directly inside this screen.
+    onCameraClick: () -> Unit = {},
 
     onReportClick: () -> Unit
 
 ) {
+
+    val context =
+        LocalContext.current
+
+
+    // ============================================================
+    // AI / LLM STATE
+    // ============================================================
+
+    val aiScope =
+        rememberCoroutineScope()
+
+    val modelStatusChecker =
+        remember {
+            ModelStatusChecker(
+                context.applicationContext
+            )
+        }
+
+    fun isGemmaInstalled(): Boolean {
+
+        return try {
+
+            modelStatusChecker.isGemmaReady()
+
+        } catch (_: Exception) {
+
+            false
+        }
+    }
+
+    var aiModelInstalled by remember {
+        mutableStateOf(
+            isGemmaInstalled()
+        )
+    }
+
+    var isPreparingAi by remember {
+        mutableStateOf(
+            !aiModelInstalled
+        )
+    }
+
+    var isGeneratingAiReport by remember {
+        mutableStateOf(false)
+    }
+
+    var detectedObjects by remember {
+        mutableStateOf("")
+    }
+
+    var aiReport by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var aiError by remember {
+        mutableStateOf<String?>(null)
+    }
+
+
+    // ============================================================
+    // PREPARE BUNDLED GEMMA MODEL
+    // ============================================================
+
+    LaunchedEffect(Unit) {
+
+        if (aiModelInstalled) {
+
+            isPreparingAi =
+                false
+
+            return@LaunchedEffect
+        }
+
+
+        isPreparingAi =
+            true
+
+        aiError =
+            null
+
+
+        val ready =
+            withContext(
+                Dispatchers.IO
+            ) {
+
+                modelStatusChecker
+                    .ensureGemmaInstalled()
+            }
+
+
+        aiModelInstalled =
+            ready
+
+        isPreparingAi =
+            false
+
+
+        if (!ready) {
+
+            aiError =
+                "Unable to prepare the bundled Gemma AI model."
+        }
+    }
+
+
+    // ============================================================
+    // CAMERA STATE
+    // ============================================================
+
+    // URI of the photo that has successfully been captured.
+    var capturedPhotoUri by remember {
+        mutableStateOf<Uri?>(null)
+    }
+
+
+    // URI where the next photo will be saved.
+    var pendingPhotoUri by remember {
+        mutableStateOf<Uri?>(null)
+    }
+
+
+    // ============================================================
+    // CAMERA RESULT
+    // ============================================================
+
+    val cameraLauncher =
+        rememberLauncherForActivityResult(
+            contract =
+                ActivityResultContracts.TakePicture()
+        ) { success ->
+
+            if (success) {
+
+                // The camera successfully saved the image.
+                capturedPhotoUri =
+                    pendingPhotoUri
+
+                // New photo = clear old AI result.
+                detectedObjects = ""
+                aiReport = null
+                aiError = null
+
+            } else {
+
+                // User cancelled the camera.
+                pendingPhotoUri =
+                    null
+            }
+        }
+
+
+    // ============================================================
+    // OPEN CAMERA FUNCTION
+    // ============================================================
+
+    fun openCamera() {
+
+        try {
+
+            // ----------------------------------------------------
+            // CREATE LOCAL SITEPULSE PICTURES FOLDER
+            // ----------------------------------------------------
+
+            val picturesDirectory =
+                File(
+                    context.getExternalFilesDir(
+                        Environment.DIRECTORY_PICTURES
+                    ),
+                    "SitePulse"
+                )
+
+
+            if (!picturesDirectory.exists()) {
+
+                picturesDirectory.mkdirs()
+            }
+
+
+            // ----------------------------------------------------
+            // CREATE IMAGE FILE
+            // ----------------------------------------------------
+
+            val imageFile =
+                File(
+                    picturesDirectory,
+                    "evidence_${System.currentTimeMillis()}.jpg"
+                )
+
+
+            // ----------------------------------------------------
+            // CREATE SECURE CONTENT URI
+            // ----------------------------------------------------
+
+            val photoUri =
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.provider",
+                    imageFile
+                )
+
+
+            pendingPhotoUri =
+                photoUri
+
+
+            // ----------------------------------------------------
+            // OPEN PHONE CAMERA
+            // ----------------------------------------------------
+
+            cameraLauncher.launch(
+                photoUri
+            )
+
+
+            // Optional callback from your existing code.
+            onCameraClick()
+
+
+        } catch (e: Exception) {
+
+            e.printStackTrace()
+        }
+    }
+
 
     Scaffold(
 
@@ -75,18 +328,30 @@ fun TaskDetailScreen(
                     Column {
 
                         Text(
-                            text = "Task Details",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
+                            text =
+                                "Task Details",
+
+                            fontWeight =
+                                FontWeight.Bold,
+
+                            fontSize =
+                                18.sp
                         )
 
+
                         Text(
-                            text = task.project,
-                            fontSize = 10.sp,
-                            color = TaskDetailGray
+                            text =
+                                task.project,
+
+                            fontSize =
+                                10.sp,
+
+                            color =
+                                TaskDetailGray
                         )
                     }
                 },
+
 
                 navigationIcon = {
 
@@ -107,6 +372,7 @@ fun TaskDetailScreen(
                         )
                     }
                 },
+
 
                 colors =
                     TopAppBarDefaults
@@ -139,7 +405,8 @@ fun TaskDetailScreen(
             // ====================================================
 
             TaskHeaderCard(
-                task = task
+                task =
+                    task
             )
 
 
@@ -154,7 +421,8 @@ fun TaskDetailScreen(
             // ====================================================
 
             TaskInformationCard(
-                task = task
+                task =
+                    task
             )
 
 
@@ -169,7 +437,8 @@ fun TaskDetailScreen(
             // ====================================================
 
             TaskProgressCard(
-                task = task
+                task =
+                    task
             )
 
 
@@ -184,8 +453,13 @@ fun TaskDetailScreen(
             // ====================================================
 
             FieldEvidenceCard(
-                onCameraClick =
-                    onCameraClick
+
+                capturedPhotoUri =
+                    capturedPhotoUri,
+
+                onCameraClick = {
+                    openCamera()
+                }
             )
 
 
@@ -215,7 +489,207 @@ fun TaskDetailScreen(
             // FUTURE AI
             // ====================================================
 
-            FutureAiCard()
+            AiFieldAnalysisCard(
+
+                capturedPhotoUri =
+                    capturedPhotoUri,
+
+                aiModelInstalled =
+                    aiModelInstalled,
+
+                isPreparing =
+                    isPreparingAi,
+
+                isGenerating =
+                    isGeneratingAiReport,
+
+                detectedObjects =
+                    detectedObjects,
+
+                report =
+                    aiReport,
+
+                error =
+                    aiError,
+
+                onGenerateReport = {
+
+                    val imageUri =
+                        capturedPhotoUri
+
+
+                    when {
+
+                        imageUri == null -> {
+
+                            aiError =
+                                "Capture a field photo first."
+                        }
+
+
+                        isPreparingAi -> {
+
+                            aiError =
+                                "Gemma AI is still being prepared."
+                        }
+
+
+                        !aiModelInstalled -> {
+
+                            aiError =
+                                "The bundled Gemma AI model is not ready."
+                        }
+
+
+                        !isGeneratingAiReport -> {
+
+                            isGeneratingAiReport =
+                                true
+
+                            detectedObjects =
+                                ""
+
+                            aiReport =
+                                null
+
+                            aiError =
+                                null
+
+
+                            aiScope.launch {
+
+                                try {
+
+                                    val pipeline =
+                                        AiPipeline(
+                                            context.applicationContext
+                                        )
+
+
+                                    try {
+
+                                        pipeline.initialize()
+
+
+                                        val result =
+                                            pipeline.analyzeImage(
+                                                imageUri
+                                            )
+
+
+                                        detectedObjects =
+                                            result.detectionSummary
+
+
+                                        aiReport =
+                                            result.report
+
+
+                                    } finally {
+
+                                        pipeline.release()
+                                    }
+
+
+                                } catch (e: Throwable) {
+
+                                    Log.e(
+                                        "AI_FIELD",
+                                        "AI report generation failed",
+                                        e
+                                    )
+
+
+                                    aiError =
+                                        e.message
+                                            ?: "AI report generation failed."
+
+
+                                } finally {
+
+                                    isGeneratingAiReport =
+                                        false
+                                }
+                            }
+                        }
+                    }
+                },
+
+                onDownloadPdf = {
+
+                    val reportText =
+                        aiReport
+
+
+                    if (reportText.isNullOrBlank()) {
+
+                        aiError =
+                            "Generate an AI report first."
+
+                    } else {
+
+                        try {
+
+                            val pdfUri =
+                                PdfReportGenerator.generate(
+
+                                    context =
+                                        context,
+
+                                    taskTitle =
+                                        task.title,
+
+                                    engineer =
+                                        task.assignee,
+
+                                    status =
+                                        task.status,
+
+                                    reportText =
+                                        reportText
+                                )
+
+
+                            val shareIntent =
+                                Intent(
+                                    Intent.ACTION_SEND
+                                ).apply {
+
+                                    type =
+                                        "application/pdf"
+
+
+                                    putExtra(
+                                        Intent.EXTRA_STREAM,
+                                        pdfUri
+                                    )
+
+
+                                    addFlags(
+                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                                    )
+                                }
+
+
+                            context.startActivity(
+
+                                Intent.createChooser(
+                                    shareIntent,
+                                    "Save or Share AI Report"
+                                )
+                            )
+
+
+                        } catch (e: Exception) {
+
+                            aiError =
+                                "Unable to create PDF: ${
+                                    e.message ?: "Unknown error"
+                                }"
+                        }
+                    }
+                }
+            )
 
 
             Spacer(
@@ -503,7 +977,8 @@ private fun InformationRow(
             Modifier
                 .fillMaxWidth()
                 .padding(
-                    vertical = 7.dp
+                    vertical =
+                        7.dp
                 ),
 
         verticalAlignment =
@@ -723,9 +1198,15 @@ private fun TaskProgressCard(
 @Composable
 private fun FieldEvidenceCard(
 
+    capturedPhotoUri: Uri?,
+
     onCameraClick: () -> Unit
 
 ) {
+
+    val context =
+        LocalContext.current
+
 
     Card(
 
@@ -750,6 +1231,10 @@ private fun FieldEvidenceCard(
 
         ) {
 
+
+            // ====================================================
+            // FIELD EVIDENCE HEADER
+            // ====================================================
 
             Row(
                 verticalAlignment =
@@ -812,6 +1297,10 @@ private fun FieldEvidenceCard(
             )
 
 
+            // ====================================================
+            // CAMERA BUTTON
+            // ====================================================
+
             Button(
 
                 onClick =
@@ -851,12 +1340,197 @@ private fun FieldEvidenceCard(
 
 
                 Text(
+
                     text =
-                        "Open Camera",
+                        if (capturedPhotoUri == null) {
+
+                            "Open Camera"
+
+                        } else {
+
+                            "Take Another Photo"
+                        },
 
                     fontWeight =
                         FontWeight.Bold
                 )
+            }
+
+
+            // ====================================================
+            // SHOW CAPTURED PHOTO
+            // ====================================================
+
+            if (capturedPhotoUri != null) {
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(16.dp)
+                )
+
+
+                Text(
+
+                    text =
+                        "Captured Photo",
+
+                    fontSize =
+                        13.sp,
+
+                    fontWeight =
+                        FontWeight.Bold
+                )
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(8.dp)
+                )
+
+
+                // ------------------------------------------------
+                // LOAD LOCAL PHOTO
+                // ------------------------------------------------
+
+                val bitmap =
+                    remember(capturedPhotoUri) {
+
+                        try {
+
+                            context
+                                .contentResolver
+                                .openInputStream(
+                                    capturedPhotoUri
+                                )
+                                ?.use { inputStream ->
+
+                                    BitmapFactory
+                                        .decodeStream(
+                                            inputStream
+                                        )
+                                }
+
+                        } catch (e: Exception) {
+
+                            e.printStackTrace()
+
+                            null
+                        }
+                    }
+
+
+                // ------------------------------------------------
+                // DISPLAY PHOTO
+                // ------------------------------------------------
+
+                if (bitmap != null) {
+
+                    Card(
+
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        shape =
+                            RoundedCornerShape(14.dp),
+
+                        colors =
+                            CardDefaults.cardColors(
+                                containerColor =
+                                    Color(0xFFF4F4F4)
+                            )
+
+                    ) {
+
+                        Image(
+
+                            bitmap =
+                                bitmap.asImageBitmap(),
+
+                            contentDescription =
+                                "Captured field evidence",
+
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(240.dp),
+
+                            contentScale =
+                                ContentScale.Crop
+                        )
+                    }
+
+                } else {
+
+                    Text(
+
+                        text =
+                            "Unable to display captured photo.",
+
+                        fontSize =
+                            10.sp,
+
+                        color =
+                            TaskDetailRed
+                    )
+                }
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(10.dp)
+                )
+
+
+                // =================================================
+                // SAVED LOCALLY INDICATOR
+                // =================================================
+
+                Row(
+
+                    verticalAlignment =
+                        Alignment.CenterVertically
+
+                ) {
+
+
+                    Icon(
+
+                        imageVector =
+                            Icons.Outlined.CheckCircle,
+
+                        contentDescription =
+                            null,
+
+                        tint =
+                            TaskDetailGreen,
+
+                        modifier =
+                            Modifier.size(17.dp)
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.width(6.dp)
+                    )
+
+
+                    Text(
+
+                        text =
+                            "Photo saved locally on this device.",
+
+                        fontSize =
+                            10.sp,
+
+                        fontWeight =
+                            FontWeight.Medium,
+
+                        color =
+                            TaskDetailGreen
+                    )
+                }
             }
 
 
@@ -869,7 +1543,7 @@ private fun FieldEvidenceCard(
             Text(
 
                 text =
-                    "Camera upload will be connected with CameraX and the evidence API later.",
+                    "Photos stay on this phone and are not uploaded to the backend.",
 
                 fontSize =
                     9.sp,
@@ -1035,7 +1709,27 @@ private fun ReportTaskCard(
 // ============================================================
 
 @Composable
-private fun FutureAiCard() {
+private fun AiFieldAnalysisCard(
+
+    capturedPhotoUri: Uri?,
+
+    aiModelInstalled: Boolean,
+
+    isPreparing: Boolean,
+
+    isGenerating: Boolean,
+
+    detectedObjects: String,
+
+    report: String?,
+
+    error: String?,
+
+    onGenerateReport: () -> Unit,
+
+    onDownloadPdf: () -> Unit
+
+) {
 
     Card(
 
@@ -1053,45 +1747,339 @@ private fun FutureAiCard() {
 
     ) {
 
-        Row(
+        Column(
 
             modifier =
-                Modifier.padding(18.dp),
-
-            verticalAlignment =
-                Alignment.Top
+                Modifier.padding(18.dp)
 
         ) {
 
 
-            Icon(
+            // ====================================================
+            // HEADER
+            // ====================================================
 
-                imageVector =
-                    Icons.Outlined.AutoAwesome,
+            Row(
 
-                contentDescription =
-                    null,
+                verticalAlignment =
+                    Alignment.CenterVertically
 
-                tint =
-                    TaskDetailOrange
+            ) {
+
+                Icon(
+
+                    imageVector =
+                        Icons.Outlined.AutoAwesome,
+
+                    contentDescription =
+                        null,
+
+                    tint =
+                        TaskDetailOrange
+                )
+
+
+                Spacer(
+                    modifier =
+                        Modifier.width(10.dp)
+                )
+
+
+                Column {
+
+                    Text(
+
+                        text =
+                            "AI Field Analysis",
+
+                        fontSize =
+                            16.sp,
+
+                        fontWeight =
+                            FontWeight.Bold
+                    )
+
+
+                    Text(
+
+                        text =
+                            "YOLO object detection + bundled Gemma field reporting.",
+
+                        fontSize =
+                            10.sp,
+
+                        color =
+                            TaskDetailGray
+                    )
+                }
+            }
+
+
+            Spacer(
+                modifier =
+                    Modifier.height(16.dp)
+            )
+
+
+            // ====================================================
+            // PHOTO STATUS
+            // ====================================================
+
+            AiStatusRow(
+
+                good =
+                    capturedPhotoUri != null,
+
+                text =
+                    if (capturedPhotoUri != null) {
+
+                        "Field photo ready"
+
+                    } else {
+
+                        "Capture a field photo first"
+                    }
             )
 
 
             Spacer(
                 modifier =
-                    Modifier.width(12.dp)
+                    Modifier.height(8.dp)
             )
 
 
-            Column {
+            // ====================================================
+            // GEMMA STATUS
+            // ====================================================
+
+            AiStatusRow(
+
+                good =
+                    aiModelInstalled,
+
+                text =
+                    when {
+
+                        isPreparing ->
+                            "Preparing bundled Gemma AI model..."
+
+                        aiModelInstalled ->
+                            "Gemma AI model ready"
+
+                        else ->
+                            "Gemma AI model is not ready"
+                    }
+            )
+
+
+            Spacer(
+                modifier =
+                    Modifier.height(16.dp)
+            )
+
+
+            // ====================================================
+            // PREPARING GEMMA
+            // ====================================================
+
+            if (isPreparing) {
+
+                Row(
+
+                    verticalAlignment =
+                        Alignment.CenterVertically
+
+                ) {
+
+                    CircularProgressIndicator(
+
+                        modifier =
+                            Modifier.size(20.dp),
+
+                        strokeWidth =
+                            2.dp,
+
+                        color =
+                            TaskDetailOrange
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.width(10.dp)
+                    )
+
+
+                    Text(
+
+                        text =
+                            "Preparing AI for first use...",
+
+                        fontSize =
+                            11.sp,
+
+                        color =
+                            TaskDetailGray
+                    )
+                }
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(12.dp)
+                )
+            }
+
+
+            // ====================================================
+            // GENERATE REPORT
+            // ====================================================
+
+            Button(
+
+                onClick =
+                    onGenerateReport,
+
+                enabled =
+                    capturedPhotoUri != null &&
+                            aiModelInstalled &&
+                            !isPreparing &&
+                            !isGenerating,
+
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+
+                shape =
+                    RoundedCornerShape(12.dp),
+
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor =
+                            TaskDetailOrange
+                    )
+
+            ) {
+
+                if (isGenerating) {
+
+                    CircularProgressIndicator(
+
+                        modifier =
+                            Modifier.size(20.dp),
+
+                        strokeWidth =
+                            2.dp,
+
+                        color =
+                            Color.White
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.width(8.dp)
+                    )
+
+
+                    Text(
+                        text =
+                            "Generating AI Report..."
+                    )
+
+                } else {
+
+                    Icon(
+
+                        imageVector =
+                            Icons.Outlined.AutoAwesome,
+
+                        contentDescription =
+                            null
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.width(8.dp)
+                    )
+
+
+                    Text(
+
+                        text =
+                            "Generate AI Report",
+
+                        fontWeight =
+                            FontWeight.Bold
+                    )
+                }
+            }
+
+
+            // ====================================================
+            // ERROR
+            // ====================================================
+
+            if (!error.isNullOrBlank()) {
+
+                Spacer(
+                    modifier =
+                        Modifier.height(14.dp)
+                )
+
+
+                Card(
+
+                    modifier =
+                        Modifier.fillMaxWidth(),
+
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor =
+                                Color(0xFFFFE5E5)
+                        )
+
+                ) {
+
+                    Text(
+
+                        text =
+                            error,
+
+                        modifier =
+                            Modifier.padding(12.dp),
+
+                        color =
+                            TaskDetailRed,
+
+                        fontSize =
+                            11.sp
+                    )
+                }
+            }
+
+
+            // ====================================================
+            // DETECTED OBJECTS
+            // ====================================================
+
+            if (detectedObjects.isNotBlank()) {
+
+                Spacer(
+                    modifier =
+                        Modifier.height(16.dp)
+                )
+
 
                 Text(
 
                     text =
-                        "AI Field Analysis",
+                        "Detected Objects",
 
                     fontSize =
-                        15.sp,
+                        13.sp,
 
                     fontWeight =
                         FontWeight.Bold
@@ -1100,67 +2088,216 @@ private fun FutureAiCard() {
 
                 Spacer(
                     modifier =
-                        Modifier.height(4.dp)
+                        Modifier.height(6.dp)
                 )
 
 
-                Text(
+                Card(
 
-                    text =
-                        "AI analysis will be available here later. " +
-                                "Captured photos can be analyzed for possible " +
-                                "site issues, visible defects, safety concerns " +
-                                "or progress observations.",
+                    modifier =
+                        Modifier.fillMaxWidth(),
 
-                    fontSize =
-                        10.sp,
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor =
+                                Color.White
+                        ),
 
-                    lineHeight =
-                        14.sp,
+                    shape =
+                        RoundedCornerShape(12.dp)
 
-                    color =
-                        TaskDetailGray
+                ) {
+
+                    Text(
+
+                        text =
+                            detectedObjects,
+
+                        modifier =
+                            Modifier.padding(12.dp),
+
+                        fontSize =
+                            11.sp,
+
+                        lineHeight =
+                            16.sp
+                    )
+                }
+            }
+
+
+            // ====================================================
+            // GENERATED REPORT
+            // ====================================================
+
+            if (!report.isNullOrBlank()) {
+
+                Spacer(
+                    modifier =
+                        Modifier.height(18.dp)
                 )
+
+
+                Row(
+
+                    verticalAlignment =
+                        Alignment.CenterVertically
+
+                ) {
+
+                    Icon(
+
+                        imageVector =
+                            Icons.Outlined.Description,
+
+                        contentDescription =
+                            null,
+
+                        tint =
+                            TaskDetailGreen
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.width(7.dp)
+                    )
+
+
+                    Text(
+
+                        text =
+                            "Generated AI Report",
+
+                        fontSize =
+                            14.sp,
+
+                        fontWeight =
+                            FontWeight.Bold
+                    )
+                }
 
 
                 Spacer(
                     modifier =
-                        Modifier.height(10.dp)
+                        Modifier.height(8.dp)
                 )
 
 
-                AssistChip(
+                Card(
 
-                    onClick = {
-                        // TODO: Connect AI analysis later
-                    },
+                    modifier =
+                        Modifier.fillMaxWidth(),
 
-                    enabled =
-                        false,
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor =
+                                Color.White
+                        ),
 
-                    label = {
-                        Text(
-                            "AI Analysis Coming Soon"
-                        )
-                    },
+                    shape =
+                        RoundedCornerShape(12.dp)
 
-                    leadingIcon = {
+                ) {
 
-                        Icon(
+                    Text(
 
-                            imageVector =
-                                Icons.Outlined.AutoAwesome,
+                        text =
+                            report,
 
-                            contentDescription =
-                                null,
+                        modifier =
+                            Modifier.padding(14.dp),
 
-                            modifier =
-                                Modifier.size(16.dp)
-                        )
-                    }
+                        fontSize =
+                            11.sp,
+
+                        lineHeight =
+                            17.sp
+                    )
+                }
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(12.dp)
                 )
+
+
+                OutlinedButton(
+
+                    onClick =
+                        onDownloadPdf,
+
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(48.dp)
+
+                ) {
+
+                    Icon(
+
+                        imageVector =
+                            Icons.Outlined.PictureAsPdf,
+
+                        contentDescription =
+                            null
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.width(8.dp)
+                    )
+
+
+                    Text(
+
+                        text =
+                            "Download AI Report PDF",
+
+                        fontWeight =
+                            FontWeight.Bold
+                    )
+                }
             }
         }
+    }
+}
+
+
+@Composable
+private fun AiStatusRow(
+    good: Boolean,
+    text: String
+) {
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+
+        Icon(
+            imageVector = if (good) {
+                Icons.Outlined.CheckCircle
+            } else {
+                Icons.Outlined.Info
+            },
+            contentDescription = null,
+            tint = if (good) {
+                TaskDetailGreen
+            } else {
+                TaskDetailOrange
+            },
+            modifier = Modifier.size(17.dp)
+        )
+
+        Spacer(Modifier.width(7.dp))
+
+        Text(
+            text = text,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium
+        )
     }
 }
 
@@ -1221,8 +2358,10 @@ private fun TaskDetailStatusBadge(
                     RoundedCornerShape(9.dp)
                 )
                 .padding(
-                    horizontal = 9.dp,
-                    vertical = 5.dp
+                    horizontal =
+                        9.dp,
+                    vertical =
+                        5.dp
                 )
 
     ) {

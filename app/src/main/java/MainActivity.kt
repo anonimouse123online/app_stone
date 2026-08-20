@@ -1,33 +1,17 @@
 package com.example.capstonesample
 
-import android.Manifest
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.net.Uri
 import android.os.Bundle
-import com.example.capstonesample.data.api.RetrofitClient
-import com.example.capstonesample.security.TokenManager
 
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 
-import androidx.core.content.ContextCompat
-import androidx.core.content.FileProvider
-
-import com.example.capstonesample.ai.*
-import com.example.capstonesample.pdf.PdfReportGenerator
+import com.example.capstonesample.data.api.RetrofitClient
+import com.example.capstonesample.security.TokenManager
 import com.example.capstonesample.sync.SyncManager
 import com.example.capstonesample.ui.theme.CapstoneSampleTheme
-
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 
 class MainActivity : ComponentActivity() {
@@ -35,6 +19,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
 
         super.onCreate(savedInstanceState)
+
+
+        // ============================================================
+        // RETROFIT
+        // ============================================================
+
         RetrofitClient.init(this)
 
 
@@ -42,22 +32,21 @@ class MainActivity : ComponentActivity() {
         // BACKGROUND SYNC
         // ============================================================
 
-        // Runs periodically whenever Android allows it.
+        // Periodic synchronization.
         //
-        // SyncManager itself requires network connectivity,
-        // so if there is no internet WorkManager waits.
+        // WorkManager will wait for network connectivity
+        // before running the SyncWorker.
+
         SyncManager.startPeriodicSync(
             applicationContext
         )
 
 
-        // Queue a sync immediately.
+        // Request synchronization when the application starts.
         //
-        // If there is internet:
-        //     SyncWorker runs.
-        //
-        // If there is NO internet:
-        //     WorkManager waits until internet becomes available.
+        // If there is no internet connection,
+        // WorkManager will wait automatically.
+
         SyncManager.requestImmediateSync(
             applicationContext
         )
@@ -71,398 +60,62 @@ class MainActivity : ComponentActivity() {
 
             CapstoneSampleTheme {
 
-                val context = LocalContext.current
+                val context =
+                    LocalContext.current
 
 
-                // ============================================================
-                // AI MODEL STATUS
-                // ============================================================
-
-                val statusChecker =
-                    remember {
-                        ModelStatusChecker(context)
-                    }
-
-                var aiReady by remember {
-                    mutableStateOf(
-                        statusChecker.isReady()
-                    )
-                }
-
-
-                // ============================================================
+                // ====================================================
                 // NAVIGATION STATE
-                // ============================================================
+                // ====================================================
 
                 var currentScreen by remember {
                     mutableStateOf("login")
                 }
 
 
-                // ============================================================
-                // AUTH TOKEN
-                // ============================================================
+                // ====================================================
+                // AUTHENTICATION STATE
+                // ====================================================
 
                 var authToken by remember {
                     mutableStateOf("")
                 }
+
+
                 var loggedInFullName by remember {
                     mutableStateOf("")
                 }
 
+
                 var loggedInEmail by remember {
                     mutableStateOf("")
                 }
+
 
                 var loggedInRole by remember {
                     mutableStateOf("")
                 }
 
 
-                // ============================================================
+                // ====================================================
                 // SELECTED PROJECT
-                // ============================================================
+                // ====================================================
 
                 var selectedProject by remember {
                     mutableStateOf<SiteProject?>(null)
                 }
 
 
-                // ============================================================
-                // TASK STATE
-                // ============================================================
-
-                var selectedTask by remember {
-                    mutableStateOf<Task?>(null)
-                }
-
-
-                // ============================================================
-                // CAMERA / AI STATE
-                // ============================================================
-
-                var capturedImageUri by remember {
-                    mutableStateOf<Uri?>(null)
-                }
-
-                var aiReport by remember {
-                    mutableStateOf<String?>(null)
-                }
-
-                var isAnalyzing by remember {
-                    mutableStateOf(false)
-                }
-
-                var pendingCameraUri by remember {
-                    mutableStateOf<Uri?>(null)
-                }
-
-
-                val activityScope =
-                    rememberCoroutineScope()
-
-
-                // ============================================================
-                // AI PIPELINE
-                // ============================================================
-
-                var aiPipeline by remember {
-                    mutableStateOf<AiPipeline?>(null)
-                }
-
-                var isLoadingPipeline by remember {
-                    mutableStateOf(false)
-                }
-
-
-                LaunchedEffect(aiReady) {
-
-                    if (
-                        aiReady &&
-                        aiPipeline == null
-                    ) {
-
-                        isLoadingPipeline = true
-
-                        aiPipeline =
-                            withContext(
-                                Dispatchers.Default
-                            ) {
-
-                                try {
-
-                                    AiPipeline(context)
-
-                                } catch (e: Throwable) {
-
-                                    aiReady = false
-                                    null
-                                }
-                            }
-
-                        isLoadingPipeline = false
-                    }
-                }
-
-
-                // ============================================================
-                // CAMERA
-                // ============================================================
-
-                val cameraLauncher =
-                    rememberLauncherForActivityResult(
-                        ActivityResultContracts.TakePicture()
-                    ) { success ->
-
-                        if (success) {
-
-                            capturedImageUri =
-                                pendingCameraUri
-
-                            aiReport = null
-
-                        } else {
-
-                            pendingCameraUri = null
-                        }
-                    }
-
-
-                val cameraPermissionLauncher =
-                    rememberLauncherForActivityResult(
-                        ActivityResultContracts.RequestPermission()
-                    ) { granted ->
-
-                        if (granted) {
-
-                            val uri =
-                                createImageUri(context)
-
-                            pendingCameraUri = uri
-
-                            cameraLauncher.launch(uri)
-                        }
-                    }
-
-
-                // ============================================================
-                // GALLERY
-                // ============================================================
-
-                val galleryLauncher =
-                    rememberLauncherForActivityResult(
-                        ActivityResultContracts.PickVisualMedia()
-                    ) { uri ->
-
-                        if (uri != null) {
-
-                            capturedImageUri = uri
-                            aiReport = null
-                        }
-                    }
-
-
-                val onTakePhoto: () -> Unit = {
-
-                    val permission =
-                        ContextCompat.checkSelfPermission(
-                            context,
-                            Manifest.permission.CAMERA
-                        )
-
-                    if (
-                        permission ==
-                        PackageManager.PERMISSION_GRANTED
-                    ) {
-
-                        val uri =
-                            createImageUri(context)
-
-                        pendingCameraUri = uri
-
-                        cameraLauncher.launch(uri)
-
-                    } else {
-
-                        cameraPermissionLauncher.launch(
-                            Manifest.permission.CAMERA
-                        )
-                    }
-                }
-
-
-                val onUploadPhoto: () -> Unit = {
-
-                    galleryLauncher.launch(
-                        PickVisualMediaRequest(
-                            ActivityResultContracts
-                                .PickVisualMedia
-                                .ImageOnly
-                        )
-                    )
-                }
-
-
-                // ============================================================
-                // AI ANALYSIS
-                // ============================================================
-
-                val onAnalyzeImage: (Uri) -> Unit = { uri ->
-
-                    val task =
-                        selectedTask
-
-                    val pipeline =
-                        aiPipeline
-
-
-                    if (
-                        !aiReady ||
-                        pipeline == null
-                    ) {
-
-                        aiReport =
-                            "Error: AI models not downloaded. Please download from settings."
-
-                    } else if (task == null) {
-
-                        aiReport =
-                            "Error: No task selected."
-
-                    } else {
-
-                        isAnalyzing = true
-                        aiReport = null
-
-
-                        activityScope.launch {
-
-                            val report =
-                                withContext(
-                                    Dispatchers.Default
-                                ) {
-
-                                    try {
-
-                                        val prompt = """
-                                            Generate a professional structural inspection report for the
-                                            following task, based on the attached site photo:
-
-                                            Task: ${task.title}
-                                            Lead Engineer: ${task.engineer}
-                                            Status: ${task.status}
-
-                                            Format the report with:
-                                            - Executive Summary
-                                            - Observed Conditions
-                                            - Recommendations
-                                            - Safety Notes
-                                        """.trimIndent()
-
-
-                                        pipeline.generateReport(
-                                            prompt
-                                        )
-
-                                    } catch (e: Exception) {
-
-                                        "Report generation failed: ${
-                                            e.message ?: "unknown error"
-                                        }"
-                                    }
-                                }
-
-
-                            aiReport = report
-
-                            isAnalyzing = false
-                        }
-                    }
-                }
-
-
-                // ============================================================
-                // PDF
-                // ============================================================
-
-                val onDownloadPdf: () -> Unit = {
-
-                    val task =
-                        selectedTask
-
-                    val report =
-                        aiReport
-
-
-                    if (
-                        task != null &&
-                        report != null
-                    ) {
-
-                        try {
-
-                            val pdfUri =
-                                PdfReportGenerator.generate(
-
-                                    context = context,
-
-                                    taskTitle =
-                                        task.title,
-
-                                    engineer =
-                                        task.engineer,
-
-                                    status =
-                                        task.status,
-
-                                    reportText =
-                                        report
-                                )
-
-
-                            val shareIntent =
-                                Intent(
-                                    Intent.ACTION_SEND
-                                ).apply {
-
-                                    type =
-                                        "application/pdf"
-
-                                    putExtra(
-                                        Intent.EXTRA_STREAM,
-                                        pdfUri
-                                    )
-
-                                    addFlags(
-                                        Intent.FLAG_GRANT_READ_URI_PERMISSION
-                                    )
-                                }
-
-
-                            context.startActivity(
-                                Intent.createChooser(
-                                    shareIntent,
-                                    "Share Report"
-                                )
-                            )
-
-                        } catch (e: Exception) {
-
-                            aiReport =
-                                "Error: Failed to generate PDF (${
-                                    e.message ?: "unknown error"
-                                })."
-                        }
-                    }
-                }
-
-
-                // ============================================================
+                // ====================================================
                 // NAVIGATION
-                // ============================================================
+                // ====================================================
 
                 when (currentScreen) {
 
+
+                    // =================================================
+                    // LOGIN
+                    // =================================================
 
                     "login" -> {
 
@@ -474,18 +127,26 @@ class MainActivity : ComponentActivity() {
                                     email: String,
                                     role: String ->
 
+
                                 authToken =
                                     token
+
 
                                 loggedInFullName =
                                     fullName
 
+
                                 loggedInEmail =
                                     email
+
 
                                 loggedInRole =
                                     role
 
+
+                                // =====================================
+                                // SAVE REAL JWT TOKEN
+                                // =====================================
 
                                 if (
                                     token.isNotBlank() &&
@@ -497,15 +158,23 @@ class MainActivity : ComponentActivity() {
                                         token = token
                                     )
 
+
+                                    // Sync data after successful login.
+
                                     SyncManager.requestImmediateSync(
                                         context
                                     )
                                 }
 
 
+                                // =====================================
+                                // GO TO DASHBOARD
+                                // =====================================
+
                                 currentScreen =
                                     "dashboard"
                             },
+
 
                             onSignupClick = {
 
@@ -516,6 +185,10 @@ class MainActivity : ComponentActivity() {
                     }
 
 
+                    // =================================================
+                    // SIGNUP
+                    // =================================================
+
                     "signup" -> {
 
                         SignupScreen(
@@ -524,15 +197,14 @@ class MainActivity : ComponentActivity() {
 
                                 // Registration completed.
                                 //
-                                // Queue another sync.
+                                // Queue another synchronization.
                                 //
-                                // If there's no internet,
-                                // WorkManager waits automatically.
+                                // WorkManager waits automatically
+                                // if internet is unavailable.
 
-                                SyncManager
-                                    .requestImmediateSync(
-                                        context
-                                    )
+                                SyncManager.requestImmediateSync(
+                                    context
+                                )
 
 
                                 currentScreen =
@@ -549,36 +221,62 @@ class MainActivity : ComponentActivity() {
                     }
 
 
+                    // =================================================
+                    // DASHBOARD
+                    // =================================================
+
                     "dashboard" -> {
 
                         DashboardScreen(
 
-                            token = authToken,
+                            token =
+                                authToken,
 
-                            selectedScreen = "dashboard",
+
+                            selectedScreen =
+                                "dashboard",
+
 
                             onHomeClick = {
-                                currentScreen = "dashboard"
+
+                                currentScreen =
+                                    "dashboard"
                             },
+
 
                             onProjectsClick = {
-                                currentScreen = "projects"
+
+                                currentScreen =
+                                    "projects"
                             },
+
 
                             onChatClick = {
-                                currentScreen = "chat"
+
+                                currentScreen =
+                                    "chat"
                             },
+
 
                             onTasksClick = {
-                                currentScreen = "tasks"
+
+                                currentScreen =
+                                    "tasks"
                             },
 
+
                             onProfileClick = {
-                                currentScreen = "profile"
+
+                                currentScreen =
+                                    "profile"
                             }
                         )
                     }
 
+
+                    // =================================================
+                    // PROJECTS
+                    // =================================================
 
                     "projects" -> {
 
@@ -590,11 +288,13 @@ class MainActivity : ComponentActivity() {
                                     "dashboard"
                             },
 
+
                             onMessagesClick = {
 
                                 currentScreen =
                                     "chat"
                             },
+
 
                             onTasksClick = {
 
@@ -602,17 +302,46 @@ class MainActivity : ComponentActivity() {
                                     "tasks"
                             },
 
+
                             onProfileClick = {
 
                                 currentScreen =
                                     "profile"
                             },
 
+
                             onProjectClick = { project ->
+
+
+                                println(
+                                    "===================================="
+                                )
+
+                                println(
+                                    "📂 OPEN PROJECT DETAILS"
+                                )
+
+                                println(
+                                    "PROJECT = ${project.name}"
+                                )
+
+                                println(
+                                    "CODE = ${project.code}"
+                                )
+
+                                println(
+                                    "===================================="
+                                )
+
 
                                 selectedProject =
                                     project
+
+
+                                currentScreen =
+                                    "project_detail"
                             },
+
 
                             token =
                                 authToken
@@ -620,62 +349,163 @@ class MainActivity : ComponentActivity() {
                     }
 
 
+                    // =================================================
+                    // PROJECT DETAILS
+                    // =================================================
+
+                    "project_detail" -> {
+
+                        val project =
+                            selectedProject
+
+
+                        if (project != null) {
+
+                            ProjectDetailsScreen(
+
+                                project =
+                                    project,
+
+
+                                token =
+                                    authToken,
+
+
+                                onBackClick = {
+
+                                    currentScreen =
+                                        "projects"
+                                }
+                            )
+
+                        } else {
+
+                            // Safety fallback.
+                            //
+                            // If the project information was somehow
+                            // lost, return to the projects page.
+
+                            LaunchedEffect(Unit) {
+
+                                currentScreen =
+                                    "projects"
+                            }
+                        }
+                    }
+
+
+                    // =================================================
+                    // CHAT
+                    // =================================================
+
                     "chat" -> {
 
                         ChatScreen(
+
                             onHomeClick = {
-                                currentScreen = "dashboard"
+
+                                currentScreen =
+                                    "dashboard"
                             },
+
 
                             onProjectsClick = {
-                                currentScreen = "projects"
+
+                                currentScreen =
+                                    "projects"
                             },
+
 
                             onTasksClick = {
-                                currentScreen = "tasks"
+
+                                currentScreen =
+                                    "tasks"
                             },
 
+
                             onProfileClick = {
-                                currentScreen = "profile"
+
+                                currentScreen =
+                                    "profile"
                             }
                         )
                     }
 
+
+                    // =================================================
+                    // TASKS
+                    // =================================================
 
                     "tasks" -> {
 
                         TasksScreen(
 
                             onHomeClick = {
-                                currentScreen = "dashboard"
+
+                                currentScreen =
+                                    "dashboard"
                             },
+
 
                             onProjectsClick = {
-                                currentScreen = "projects"
+
+                                currentScreen =
+                                    "projects"
                             },
+
 
                             onMessagesClick = {
-                                currentScreen = "chat"
+
+                                currentScreen =
+                                    "chat"
                             },
 
+
                             onProfileClick = {
-                                currentScreen = "profile"
+
+                                currentScreen =
+                                    "profile"
                             },
+
 
                             onTaskClick = { siteTask ->
 
                                 println(
-                                    "OPEN TASK = ${siteTask.id}"
+                                    "===================================="
                                 )
 
-                                // We will connect this to TaskScreen later.
+                                println(
+                                    "📋 OPEN TASK"
+                                )
+
+                                println(
+                                    "TASK ID = ${siteTask.id}"
+                                )
+
+                                println(
+                                    "===================================="
+                                )
+
+
+                                // =====================================
+                                // AI REMOVED FOR NOW
+                                // =====================================
+                                //
+                                // Later we can open TaskDetailsScreen
+                                // here and add the camera + AI analysis
+                                // only when the user requests it.
                             },
 
-                            // Pass real JWT to TasksScreen
-                            token = authToken
+
+                            token =
+                                authToken
                         )
                     }
 
+
+                    // =================================================
+                    // PROFILE
+                    // =================================================
 
                     "profile" -> {
 
@@ -684,61 +514,99 @@ class MainActivity : ComponentActivity() {
                             token =
                                 authToken,
 
+
                             profile =
                                 ProfileUiModel(
 
                                     fullName =
                                         loggedInFullName,
 
+
                                     email =
                                         loggedInEmail,
+
 
                                     role =
                                         loggedInRole,
 
+
                                     completedCount =
                                         0,
+
 
                                     loggedHours =
                                         "0h"
                                 ),
 
+
                             onHomeClick = {
-                                currentScreen = "dashboard"
+
+                                currentScreen =
+                                    "dashboard"
                             },
+
 
                             onProjectsClick = {
-                                currentScreen = "projects"
+
+                                currentScreen =
+                                    "projects"
                             },
+
 
                             onMessagesClick = {
-                                currentScreen = "chat"
+
+                                currentScreen =
+                                    "chat"
                             },
 
+
                             onTasksClick = {
-                                currentScreen = "tasks"
+
+                                currentScreen =
+                                    "tasks"
                             },
+
 
                             onProjectClick = { project ->
 
                                 selectedProject =
                                     project
 
+
                                 currentScreen =
                                     "project_detail"
                             },
 
+
                             onLogoutClick = {
 
-                                authToken = ""
 
-                                loggedInFullName = ""
-                                loggedInEmail = ""
-                                loggedInRole = ""
+                                // =====================================
+                                // CLEAR LOCAL LOGIN STATE
+                                // =====================================
+
+                                authToken =
+                                    ""
+
+                                loggedInFullName =
+                                    ""
+
+                                loggedInEmail =
+                                    ""
+
+                                loggedInRole =
+                                    ""
+
+
+                                // =====================================
+                                // DELETE STORED JWT
+                                // =====================================
 
                                 TokenManager.clearToken(
                                     context
                                 )
+
+
 
                                 currentScreen =
                                     "login"
@@ -748,30 +616,5 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-
-    // ============================================================
-    // CREATE CAMERA IMAGE URI
-    // ============================================================
-
-    private fun createImageUri(
-        context: android.content.Context
-    ): Uri {
-
-        val imageFile =
-            java.io.File(
-                context.cacheDir,
-                "inspection_${
-                    System.currentTimeMillis()
-                }.jpg"
-            )
-
-
-        return FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.provider",
-            imageFile
-        )
     }
 }
