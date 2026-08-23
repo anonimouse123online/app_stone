@@ -147,5 +147,4 @@ obj/
 # Uncomment this if google-services.json contains credentials
 # you do not want committed.
 # ============================================================
-
-# google-services.json
+google-services.json
