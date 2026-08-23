@@ -1,5 +1,23 @@
 package com.example.capstonesample
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Geocoder
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import com.example.capstonesample.data.api.NotificationData
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,9 +36,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.api.TaskResponse
+import com.example.capstonesample.data.api.TimeLogCreateRequest
+import java.time.OffsetDateTime
+import java.time.Duration
 
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -45,6 +67,15 @@ data class DashboardProjectUi(
     val progress: Int,
     val status: String
 )
+
+
+data class DashboardLocationUi(
+    val latitude: Double,
+    val longitude: Double,
+    val label: String
+)
+
+
 
 
 data class DashboardFieldActivityUi(
@@ -103,6 +134,18 @@ fun DashboardScreen(
     var projects by remember {
         mutableStateOf<List<DashboardProjectUi>>(emptyList())
     }
+    var notifications by remember {
+        mutableStateOf<List<NotificationData>>(emptyList())
+    }
+
+    var notificationsLoading by remember {
+        mutableStateOf(false)
+    }
+
+    var notificationError by remember {
+        mutableStateOf<String?>(null)
+    }
+
 
     var tasks by remember {
         mutableStateOf<List<TaskResponse>>(emptyList())
@@ -116,6 +159,268 @@ fun DashboardScreen(
         mutableStateOf<String?>(null)
     }
 
+    var showNotifications by remember {
+        mutableStateOf(false)
+    }
+
+
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    var currentLocation by remember {
+        mutableStateOf<DashboardLocationUi?>(null)
+    }
+
+    var locationMessage by remember {
+        mutableStateOf("No location found")
+    }
+
+    var isLocating by remember {
+        mutableStateOf(false)
+    }
+
+    var isLoggingTime by remember {
+        mutableStateOf(false)
+    }
+
+    var logTimeMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    fun loadNotifications() {
+
+        coroutineScope.launch {
+
+            notificationsLoading = true
+            notificationError = null
+
+            try {
+
+                val authorizationToken =
+                    if (token.startsWith("Bearer ")) {
+                        token
+                    } else {
+                        "Bearer $token"
+                    }
+
+
+                val response =
+                    RetrofitClient.api.getNotifications(
+                        token = authorizationToken
+                    )
+
+
+                if (response.isSuccessful) {
+
+                    val body =
+                        response.body()
+
+
+                    if (body?.success == true) {
+
+                        notifications =
+                            body.data
+
+                    } else {
+
+                        notificationError =
+                            "Unable to load notifications."
+                    }
+
+                } else {
+
+                    notificationError =
+                        when (response.code()) {
+
+                            401 ->
+                                "Session expired. Please login again."
+
+                            403 ->
+                                "You do not have permission to view notifications."
+
+                            404 ->
+                                "Notifications API was not found."
+
+                            500 ->
+                                "Server error while loading notifications."
+
+                            else ->
+                                "Unable to load notifications (${response.code()})."
+                        }
+                }
+
+            } catch (e: Exception) {
+
+                notificationError =
+                    e.message
+                        ?: "Unable to connect to SitePulse server."
+
+            } finally {
+
+                notificationsLoading = false
+            }
+        }
+    }
+
+    fun loadCurrentLocation() {
+        isLocating = true
+        locationMessage = "Getting current location..."
+
+        getCurrentDeviceLocation(
+            context = context,
+            onSuccess = { location ->
+                coroutineScope.launch {
+                    val readableLocation = resolveLocationLabel(
+                        context = context,
+                        location = location
+                    )
+
+                    currentLocation = DashboardLocationUi(
+                        latitude = location.latitude,
+                        longitude = location.longitude,
+                        label = readableLocation
+                    )
+
+                    locationMessage = readableLocation
+                    isLocating = false
+                }
+            },
+            onError = { message ->
+                currentLocation = null
+                locationMessage = message
+                isLocating = false
+            }
+        )
+    }
+
+    val locationPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestMultiplePermissions()
+        ) { permissions ->
+
+            val granted =
+                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                        permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+
+            if (granted) {
+                loadCurrentLocation()
+            } else {
+                currentLocation = null
+                locationMessage = "No location found"
+            }
+        }
+
+    fun requestLocation() {
+        val fineGranted =
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+
+        val coarseGranted =
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+
+        if (fineGranted || coarseGranted) {
+            loadCurrentLocation()
+        } else {
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+        }
+    }
+
+    fun submitTimeLog() {
+        val location = currentLocation
+
+        if (location == null) {
+            logTimeMessage = "Location is required before logging time."
+            requestLocation()
+            return
+        }
+
+        coroutineScope.launch {
+            isLoggingTime = true
+            logTimeMessage = null
+
+            try {
+                val authorizationToken =
+                    if (token.startsWith("Bearer ")) {
+                        token
+                    } else {
+                        "Bearer $token"
+                    }
+
+                val response =
+                    RetrofitClient.api.createTimeLog(
+                        token = authorizationToken,
+                        request = TimeLogCreateRequest(
+                            projectName =
+                                projects.firstOrNull()?.name
+                                    ?: "Unknown Project",
+
+                            engineerName =
+                                "Site Engineer",
+
+                            date =
+                                SimpleDateFormat(
+                                    "yyyy-MM-dd",
+                                    Locale.US
+                                ).format(Date()),
+
+                            workOnSite = 0,
+
+                            supervisors = 0,
+
+                            subContractors = 0,
+
+                            totalWorkHours = "0",
+
+                            weather = "Sunny",
+
+                            temperature = null,
+
+                            workCompleted = "",
+
+                            materialsDelivered = "",
+
+                            equipmentUsed = "",
+
+                            additionalNotes =
+                                "Time logged from ${location.label} " +
+                                        "(${location.latitude}, ${location.longitude})",
+
+                            hasIncident = false
+                        )
+                    )
+
+                if (response.isSuccessful && response.body()?.success == true) {
+                    logTimeMessage = "Time logged successfully."
+                } else {
+                    logTimeMessage =
+                        when (response.code()) {
+                            400 -> "Unable to log time. Check the submitted data."
+                            401 -> "Session expired. Please login again."
+                            403 -> "You do not have permission to log time."
+                            404 -> "POST /timelogs API was not found."
+                            500 -> "Server error while logging time."
+                            else -> "Unable to log time (${response.code()})."
+                        }
+                }
+
+            } catch (e: Exception) {
+                logTimeMessage =
+                    e.message ?: "Unable to connect to SitePulse server."
+            } finally {
+                isLoggingTime = false
+            }
+        }
+    }
 
     // ========================================================
     // LOAD PROJECTS + TASKS
@@ -168,7 +473,8 @@ fun DashboardScreen(
                                     "PROJECT",
 
                                 progress =
-                                    (project.progress ?: 0)
+                                    (project.progress ?: 0.0)
+                                        .toInt()
                                         .coerceIn(0, 100),
 
                                 status =
@@ -480,7 +786,13 @@ fun DashboardScreen(
         topBar = {
 
             DashboardTopBar(
-                initials = initials
+                initials = initials,
+                onNotificationClick = {
+
+                    showNotifications = true
+
+                    loadNotifications()
+                }
             )
         },
 
@@ -676,6 +988,38 @@ fun DashboardScreen(
                         color =
                             TextGray
                     )
+
+
+                    Spacer(
+                        modifier = Modifier.height(7.dp)
+                    )
+
+                    DashboardLocationRow(
+                        locationText = locationMessage,
+                        isLoading = isLocating,
+                        hasLocation = currentLocation != null,
+                        onClick = {
+                            requestLocation()
+                        }
+                    )
+
+                    logTimeMessage?.let { message ->
+
+                        Spacer(
+                            modifier = Modifier.height(6.dp)
+                        )
+
+                        Text(
+                            text = message,
+                            fontSize = 10.sp,
+                            color =
+                                if (message.contains("success", ignoreCase = true)) {
+                                    Green
+                                } else {
+                                    SitePulseOrange
+                                }
+                        )
+                    }
                 }
             }
 
@@ -723,7 +1067,12 @@ fun DashboardScreen(
             // =================================================
 
             item {
-                QuickActions()
+                QuickActions(
+                    isLoggingTime = isLoggingTime,
+                    onLogTimeClick = {
+                        submitTimeLog()
+                    }
+                )
             }
 
 
@@ -934,6 +1283,127 @@ fun DashboardScreen(
             }
         }
     }
+
+    if (showNotifications) {
+
+        NotificationDialog(
+            notifications = notifications,
+            isLoading = notificationsLoading,
+            errorMessage = notificationError,
+
+            onRefresh = {
+                loadNotifications()
+            },
+
+            onDismiss = {
+                showNotifications = false
+            }
+        )
+    }
+}
+
+
+
+// ============================================================
+// FORMAT NOTIFICATION TIME
+// ============================================================
+
+private fun formatNotificationTime(
+    createdAt: String?
+): String {
+
+    if (createdAt.isNullOrBlank()) {
+        return ""
+    }
+
+    return try {
+
+        val inputFormats =
+            listOf(
+                SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+                    Locale.US
+                ),
+                SimpleDateFormat(
+                    "yyyy-MM-dd'T'HH:mm:ssXXX",
+                    Locale.US
+                ),
+                SimpleDateFormat(
+                    "yyyy-MM-dd HH:mm:ss.SSSXXX",
+                    Locale.US
+                ),
+                SimpleDateFormat(
+                    "yyyy-MM-dd HH:mm:ssXXX",
+                    Locale.US
+                )
+            )
+
+        var notificationDate: Date? = null
+
+        for (format in inputFormats) {
+            try {
+                notificationDate =
+                    format.parse(createdAt)
+
+                if (notificationDate != null) {
+                    break
+                }
+            } catch (_: Exception) {
+                // Try next format
+            }
+        }
+
+        if (notificationDate == null) {
+            return createdAt
+        }
+
+        val now =
+            Date()
+
+        val difference =
+            now.time -
+                    notificationDate.time
+
+        val seconds =
+            difference / 1000
+
+        val minutes =
+            seconds / 60
+
+        val hours =
+            minutes / 60
+
+        val days =
+            hours / 24
+
+
+        when {
+
+            seconds < 60 ->
+                "Just now"
+
+            minutes < 60 ->
+                "$minutes minute${if (minutes == 1L) "" else "s"} ago"
+
+            hours < 24 ->
+                "$hours hour${if (hours == 1L) "" else "s"} ago"
+
+            days < 7 ->
+                "$days day${if (days == 1L) "" else "s"} ago"
+
+            else ->
+                SimpleDateFormat(
+                    "MMM dd, yyyy",
+                    Locale.getDefault()
+                ).format(
+                    notificationDate
+                )
+        }
+
+    } catch (_: Exception) {
+
+        createdAt
+    }
 }
 
 
@@ -986,7 +1456,8 @@ private fun generateInitials(
 )
 @Composable
 private fun DashboardTopBar(
-    initials: String
+    initials: String,
+    onNotificationClick: () -> Unit
 ) {
 
     TopAppBar(
@@ -1004,9 +1475,7 @@ private fun DashboardTopBar(
         actions = {
 
             IconButton(
-                onClick = {
-                    // TODO: Connect notifications API later
-                }
+                onClick = onNotificationClick
             ) {
 
                 Icon(
@@ -1050,6 +1519,860 @@ private fun DashboardTopBar(
                     containerColor =
                         Color.White
                 )
+    )
+}
+
+
+// ============================================================
+// NOTIFICATION DIALOG
+// ============================================================
+
+@Composable
+private fun NotificationDialog(
+
+    notifications: List<NotificationData>,
+
+    isLoading: Boolean,
+
+    errorMessage: String?,
+
+    onRefresh: () -> Unit,
+
+    onDismiss: () -> Unit
+
+) {
+
+    Dialog(
+        onDismissRequest = onDismiss
+    ) {
+
+        Card(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.82f),
+
+            shape =
+                RoundedCornerShape(24.dp),
+
+            colors =
+                CardDefaults.cardColors(
+                    containerColor = Color.White
+                )
+        ) {
+
+            Column(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .padding(20.dp)
+            ) {
+
+                // ====================================================
+                // HEADER
+                // ====================================================
+
+                Row(
+                    modifier =
+                        Modifier.fillMaxWidth(),
+
+                    verticalAlignment =
+                        Alignment.CenterVertically
+                ) {
+
+                    Box(
+                        modifier =
+                            Modifier
+                                .size(46.dp)
+                                .background(
+                                    Color(0xFFFFEEE7),
+                                    CircleShape
+                                ),
+
+                        contentAlignment =
+                            Alignment.Center
+                    ) {
+
+                        Icon(
+                            imageVector =
+                                Icons.Outlined.Notifications,
+
+                            contentDescription = null,
+
+                            modifier =
+                                Modifier.size(24.dp),
+
+                            tint =
+                                SitePulseOrange
+                        )
+                    }
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.width(12.dp)
+                    )
+
+
+                    Column(
+                        modifier =
+                            Modifier.weight(1f)
+                    ) {
+
+                        Text(
+                            text =
+                                "Notifications",
+
+                            fontSize =
+                                22.sp,
+
+                            fontWeight =
+                                FontWeight.Bold,
+
+                            color =
+                                Color.Black
+                        )
+
+
+                        Text(
+                            text =
+                                "Updates and announcements from SitePulse",
+
+                            fontSize =
+                                11.sp,
+
+                            color =
+                                TextGray
+                        )
+                    }
+
+
+                    IconButton(
+                        onClick = onRefresh,
+                        enabled = !isLoading
+                    ) {
+
+                        Icon(
+                            imageVector =
+                                Icons.Outlined.Refresh,
+
+                            contentDescription =
+                                "Refresh notifications",
+
+                            tint =
+                                SitePulseOrange
+                        )
+                    }
+
+
+                    IconButton(
+                        onClick = onDismiss
+                    ) {
+
+                        Icon(
+                            imageVector =
+                                Icons.Outlined.Close,
+
+                            contentDescription =
+                                "Close notifications"
+                        )
+                    }
+                }
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(18.dp)
+                )
+
+
+                HorizontalDivider(
+                    color =
+                        Color(0xFFEAEAEA)
+                )
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(12.dp)
+                )
+
+
+                // ====================================================
+                // LOADING
+                // ====================================================
+
+                if (isLoading) {
+
+                    Box(
+                        modifier =
+                            Modifier.fillMaxSize(),
+
+                        contentAlignment =
+                            Alignment.Center
+                    ) {
+
+                        CircularProgressIndicator(
+                            color =
+                                SitePulseOrange
+                        )
+                    }
+
+                    return@Column
+                }
+
+
+                // ====================================================
+                // ERROR
+                // ====================================================
+
+                if (errorMessage != null) {
+
+                    Card(
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        shape =
+                            RoundedCornerShape(12.dp),
+
+                        colors =
+                            CardDefaults.cardColors(
+                                containerColor =
+                                    Color(0xFFFFE7E7)
+                            )
+                    ) {
+
+                        Column(
+                            modifier =
+                                Modifier.padding(14.dp)
+                        ) {
+
+                            Text(
+                                text =
+                                    errorMessage,
+
+                                fontSize =
+                                    11.sp,
+
+                                color =
+                                    Color.Red
+                            )
+
+
+                            Spacer(
+                                modifier =
+                                    Modifier.height(8.dp)
+                            )
+
+
+                            Text(
+                                text =
+                                    "Try again",
+
+                                fontSize =
+                                    11.sp,
+
+                                fontWeight =
+                                    FontWeight.Bold,
+
+                                color =
+                                    SitePulseOrange,
+
+                                modifier =
+                                    Modifier.clickable {
+                                        onRefresh()
+                                    }
+                            )
+                        }
+                    }
+
+                    return@Column
+                }
+
+
+                // ====================================================
+                // EMPTY
+                // ====================================================
+
+                if (notifications.isEmpty()) {
+
+                    Box(
+                        modifier =
+                            Modifier.fillMaxSize(),
+
+                        contentAlignment =
+                            Alignment.Center
+                    ) {
+
+                        Column(
+                            horizontalAlignment =
+                                Alignment.CenterHorizontally
+                        ) {
+
+                            Icon(
+                                imageVector =
+                                    Icons.Outlined.NotificationsNone,
+
+                                contentDescription =
+                                    null,
+
+                                modifier =
+                                    Modifier.size(48.dp),
+
+                                tint =
+                                    TextGray
+                            )
+
+
+                            Spacer(
+                                modifier =
+                                    Modifier.height(10.dp)
+                            )
+
+
+                            Text(
+                                text =
+                                    "No notifications yet",
+
+                                fontSize =
+                                    14.sp,
+
+                                fontWeight =
+                                    FontWeight.Bold
+                            )
+
+
+                            Text(
+                                text =
+                                    "Announcements from the admin will appear here.",
+
+                                fontSize =
+                                    10.sp,
+
+                                color =
+                                    TextGray
+                            )
+                        }
+                    }
+
+                    return@Column
+                }
+
+
+                // ====================================================
+                // API NOTIFICATIONS
+                // ====================================================
+
+                LazyColumn(
+                    modifier =
+                        Modifier.fillMaxSize(),
+
+                    verticalArrangement =
+                        Arrangement.spacedBy(10.dp)
+                ) {
+
+                    items(
+                        items =
+                            notifications,
+
+                        key = {
+                            it.id
+                        }
+                    ) { notification ->
+
+                        NotificationItem(
+                            title =
+                                notification.title,
+
+                            message =
+                                notification.message,
+
+                            time =
+                                formatNotificationTime(
+                                    notification.createdAt
+                                ),
+
+                            unread =
+                                true
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================
+// NOTIFICATION ITEM
+// ============================================================
+
+@Composable
+private fun NotificationItem(
+    title: String,
+    message: String,
+    time: String,
+    unread: Boolean
+) {
+
+    Card(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable {
+                    // TODO: Open notification details or mark as read later
+                },
+
+        shape =
+            RoundedCornerShape(16.dp),
+
+        colors =
+            CardDefaults.cardColors(
+                containerColor =
+                    if (unread) {
+                        Color(0xFFFFF4EE)
+                    } else {
+                        Color(0xFFF8F8F8)
+                    }
+            )
+    ) {
+
+        Row(
+            modifier =
+                Modifier.padding(14.dp),
+
+            verticalAlignment =
+                Alignment.Top
+        ) {
+
+            Box(
+                modifier =
+                    Modifier
+                        .size(42.dp)
+                        .background(
+                            if (unread) {
+                                Color(0xFFFFE2D5)
+                            } else {
+                                Color(0xFFECECEC)
+                            },
+                            CircleShape
+                        ),
+
+                contentAlignment =
+                    Alignment.Center
+            ) {
+
+                Icon(
+                    imageVector =
+                        Icons.Outlined.Campaign,
+
+                    contentDescription = null,
+
+                    modifier =
+                        Modifier.size(21.dp),
+
+                    tint =
+                        if (unread) {
+                            SitePulseOrange
+                        } else {
+                            TextGray
+                        }
+                )
+            }
+
+
+            Spacer(
+                modifier =
+                    Modifier.width(12.dp)
+            )
+
+
+            Column(
+                modifier =
+                    Modifier.weight(1f)
+            ) {
+
+                Row(
+                    verticalAlignment =
+                        Alignment.CenterVertically
+                ) {
+
+                    Text(
+                        text = title,
+                        modifier = Modifier.weight(1f),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
+
+                    if (unread) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .size(8.dp)
+                                    .background(
+                                        SitePulseOrange,
+                                        CircleShape
+                                    )
+                        )
+                    }
+                }
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(5.dp)
+                )
+
+
+                Text(
+                    text = message,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                    color = TextGray
+                )
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(7.dp)
+                )
+
+
+                Text(
+                    text = time,
+                    fontSize = 9.sp,
+                    color = SitePulseOrange,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+
+// ============================================================
+// LOCATION
+// ============================================================
+
+@Composable
+private fun DashboardLocationRow(
+    locationText: String,
+    isLoading: Boolean,
+    hasLocation: Boolean,
+    onClick: () -> Unit
+) {
+
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clickable(
+                    enabled = !isLoading,
+                    onClick = onClick
+                ),
+        verticalAlignment =
+            Alignment.CenterVertically
+    ) {
+
+        Icon(
+            imageVector =
+                if (hasLocation) {
+                    Icons.Outlined.LocationOn
+                } else {
+                    Icons.Outlined.LocationOff
+                },
+            contentDescription = "Current location",
+            modifier = Modifier.size(16.dp),
+            tint =
+                if (hasLocation) {
+                    Green
+                } else {
+                    SitePulseOrange
+                }
+        )
+
+        Spacer(
+            modifier = Modifier.width(5.dp)
+        )
+
+        Text(
+            text = locationText,
+            modifier = Modifier.weight(1f),
+            fontSize = 11.sp,
+            color =
+                if (hasLocation) {
+                    Color(0xFF444444)
+                } else {
+                    TextGray
+                },
+            maxLines = 2
+        )
+
+        if (isLoading) {
+
+            Spacer(
+                modifier = Modifier.width(8.dp)
+            )
+
+            CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 2.dp,
+                color = SitePulseOrange
+            )
+
+        } else {
+
+            Text(
+                text =
+                    if (hasLocation) {
+                        "Refresh"
+                    } else {
+                        "Enable"
+                    },
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = SitePulseOrange
+            )
+        }
+    }
+}
+
+
+private fun getCurrentDeviceLocation(
+    context: Context,
+    onSuccess: (Location) -> Unit,
+    onError: (String) -> Unit
+) {
+
+    val fineGranted =
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+    val coarseGranted =
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+
+    if (!fineGranted && !coarseGranted) {
+        onError("No location found")
+        return
+    }
+
+    val locationManager =
+        context.getSystemService(
+            Context.LOCATION_SERVICE
+        ) as LocationManager
+
+    val gpsEnabled =
+        try {
+            locationManager.isProviderEnabled(
+                LocationManager.GPS_PROVIDER
+            )
+        } catch (_: Exception) {
+            false
+        }
+
+    val networkEnabled =
+        try {
+            locationManager.isProviderEnabled(
+                LocationManager.NETWORK_PROVIDER
+            )
+        } catch (_: Exception) {
+            false
+        }
+
+    if (!gpsEnabled && !networkEnabled) {
+        onError("No location found")
+        return
+    }
+
+    val provider =
+        when {
+            gpsEnabled ->
+                LocationManager.GPS_PROVIDER
+
+            networkEnabled ->
+                LocationManager.NETWORK_PROVIDER
+
+            else -> null
+        }
+
+    if (provider == null) {
+        onError("No location found")
+        return
+    }
+
+    try {
+
+        val lastKnown =
+            locationManager.getLastKnownLocation(
+                provider
+            )
+
+        if (lastKnown != null) {
+            onSuccess(lastKnown)
+            return
+        }
+
+        val listener =
+            object : LocationListener {
+
+                override fun onLocationChanged(
+                    location: Location
+                ) {
+                    locationManager.removeUpdates(this)
+                    onSuccess(location)
+                }
+
+                override fun onProviderDisabled(
+                    provider: String
+                ) {
+                    locationManager.removeUpdates(this)
+                    onError("No location found")
+                }
+
+                override fun onProviderEnabled(
+                    provider: String
+                ) = Unit
+
+                @Deprecated("Deprecated in Android")
+                override fun onStatusChanged(
+                    provider: String?,
+                    status: Int,
+                    extras: Bundle?
+                ) = Unit
+            }
+
+        locationManager.requestLocationUpdates(
+            provider,
+            0L,
+            0f,
+            listener
+        )
+
+    } catch (_: SecurityException) {
+
+        onError("No location found")
+
+    } catch (e: Exception) {
+
+        onError(
+            e.message ?: "No location found"
+        )
+    }
+}
+
+
+private suspend fun resolveLocationLabel(
+    context: Context,
+    location: Location
+): String {
+
+    return withContext(Dispatchers.IO) {
+
+        try {
+
+            if (!Geocoder.isPresent()) {
+                return@withContext formatCoordinates(
+                    location
+                )
+            }
+
+            val geocoder =
+                Geocoder(
+                    context,
+                    Locale.getDefault()
+                )
+
+            @Suppress("DEPRECATION")
+            val addresses =
+                geocoder.getFromLocation(
+                    location.latitude,
+                    location.longitude,
+                    1
+                )
+
+            val address =
+                addresses?.firstOrNull()
+
+            if (address == null) {
+
+                formatCoordinates(
+                    location
+                )
+
+            } else {
+
+                buildString {
+
+                    address.subLocality
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+                        ?.let {
+                            append(it)
+                        }
+
+                    address.locality
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+                        ?.let {
+
+                            if (isNotEmpty()) {
+                                append(", ")
+                            }
+
+                            append(it)
+                        }
+
+                    address.adminArea
+                        ?.takeIf {
+                            it.isNotBlank()
+                        }
+                        ?.let {
+
+                            if (isNotEmpty()) {
+                                append(", ")
+                            }
+
+                            append(it)
+                        }
+
+                    if (isEmpty()) {
+
+                        append(
+                            address.getAddressLine(0)
+                                ?: formatCoordinates(
+                                    location
+                                )
+                        )
+                    }
+                }
+            }
+
+        } catch (_: Exception) {
+
+            formatCoordinates(
+                location
+            )
+        }
+    }
+}
+
+
+private fun formatCoordinates(
+    location: Location
+): String {
+
+    return String.format(
+        Locale.US,
+        "%.6f, %.6f",
+        location.latitude,
+        location.longitude
     )
 }
 
@@ -1374,7 +2697,10 @@ private fun StatusBadge(
 // ============================================================
 
 @Composable
-private fun QuickActions() {
+private fun QuickActions(
+    isLoggingTime: Boolean,
+    onLogTimeClick: () -> Unit
+) {
 
     Row(
 
@@ -1387,21 +2713,34 @@ private fun QuickActions() {
     ) {
 
         QuickActionButton(
-            title = "Log Time",
+            title =
+                if (isLoggingTime) {
+                    "Logging..."
+                } else {
+                    "Log Time"
+                },
             icon = Icons.Outlined.Schedule,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            enabled = !isLoggingTime,
+            onClick = onLogTimeClick
         )
 
         QuickActionButton(
             title = "Capture",
             icon = Icons.Outlined.CameraAlt,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            onClick = {
+                // TODO: Connect camera action.
+            }
         )
 
         QuickActionButton(
             title = "Report",
             icon = Icons.Outlined.PriorityHigh,
-            modifier = Modifier.weight(1f)
+            modifier = Modifier.weight(1f),
+            onClick = {
+                // TODO: Connect report action.
+            }
         )
     }
 }
@@ -1418,7 +2757,11 @@ private fun QuickActionButton(
 
     icon: ImageVector,
 
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+
+    enabled: Boolean = true,
+
+    onClick: () -> Unit
 
 ) {
 
@@ -1427,9 +2770,10 @@ private fun QuickActionButton(
         modifier =
             modifier
                 .height(48.dp)
-                .clickable {
-                    // TODO: Connect action/navigation later
-                },
+                .clickable(
+                    enabled = enabled,
+                    onClick = onClick
+                ),
 
         shape =
             RoundedCornerShape(10.dp),

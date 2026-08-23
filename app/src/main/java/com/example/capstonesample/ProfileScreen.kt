@@ -262,6 +262,7 @@ fun ProfileScreen(
 
                                     progress =
                                         project.progress
+                                            ?.toInt()
                                             ?: 0,
 
                                     startDate =

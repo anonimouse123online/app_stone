@@ -3,7 +3,9 @@ package com.example.capstonesample
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -12,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -38,11 +41,6 @@ import java.net.UnknownHostException
 
 @Composable
 fun LoginScreen(
-
-    // ========================================================
-    // UPDATED:
-    // Pass login token + real user information to MainActivity
-    // ========================================================
 
     onLoginClick: (
         token: String,
@@ -116,6 +114,7 @@ fun LoginScreen(
 
     // ============================================================
     // COLORS
+    // KEEPING YOUR ORIGINAL COLOR LOGIC
     // ============================================================
 
     val orange =
@@ -136,708 +135,796 @@ fun LoginScreen(
     val blue =
         Color(0xFF007AFF)
 
+    val screenBackground =
+        Color(0xFFFDFCFB)
+
+    val cardBorder =
+        Color(0xFFF0EAE7)
+
 
     // ============================================================
     // MAIN UI
     // ============================================================
 
     Box(
-
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                Color.White
-            )
-
+            .background(screenBackground)
     ) {
 
+        // ========================================================
+        // TOP BACKGROUND
+        // ========================================================
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(270.dp)
+                .clip(
+                    RoundedCornerShape(
+                        bottomStart = 32.dp,
+                        bottomEnd = 32.dp
+                    )
+                )
+                .background(headerBeige)
+        )
+
+
+        // ========================================================
+        // SCROLLABLE CONTENT
+        // ========================================================
+
         Column(
-
-            modifier =
-                Modifier.fillMaxSize()
-
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(
+                    rememberScrollState()
+                )
+                .padding(
+                    horizontal = 20.dp
+                )
         ) {
 
+            Spacer(
+                modifier = Modifier.height(32.dp)
+            )
+
 
             // ====================================================
-            // HEADER
+            // BRAND
             // ====================================================
 
-            Column(
-
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-
-                        color =
-                            headerBeige,
-
-                        shape =
-                            RoundedCornerShape(
-                                bottomStart = 24.dp,
-                                bottomEnd = 24.dp
-                            )
-                    )
-                    .padding(
-                        start = 22.dp,
-                        end = 22.dp,
-                        top = 22.dp,
-                        bottom = 24.dp
-                    )
-
+            Row(
+                verticalAlignment =
+                    Alignment.CenterVertically
             ) {
 
-                Row(
-
-                    verticalAlignment =
-                        Alignment.CenterVertically
-
-                ) {
-
-                    Box(
-
-                        modifier = Modifier
-                            .size(7.dp)
-                            .background(
-                                orange,
-                                RoundedCornerShape(50)
-                            )
-                    )
-
-
-                    Spacer(
-
-                        modifier =
-                            Modifier.width(7.dp)
-                    )
-
-
-                    Text(
-                        text = "SITEPULSE",
-                        color = orange,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
+                Box(
+                    modifier = Modifier
+                        .size(9.dp)
+                        .background(
+                            color = orange,
+                            shape = RoundedCornerShape(50)
+                        )
+                )
 
                 Spacer(
-
-                    modifier =
-                        Modifier.height(7.dp)
+                    modifier = Modifier.width(8.dp)
                 )
-
 
                 Text(
-                    text = "Welcome back !",
-                    fontSize = 27.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.Black
-                )
-
-
-                Spacer(
-
-                    modifier =
-                        Modifier.height(4.dp)
-                )
-
-
-                Text(
-                    text =
-                        "Real Time Field-Tracking and Issue Reporting",
-                    color = Color.Gray,
-                    fontSize = 13.sp
+                    text = "SITEPULSE",
+                    color = orange,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 1.2.sp
                 )
             }
 
 
+            Spacer(
+                modifier = Modifier.height(22.dp)
+            )
+
+
             // ====================================================
-            // LOGIN CONTENT
+            // WELCOME TEXT
             // ====================================================
 
-            Column(
+            Text(
+                text = "Welcome back",
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1B1B1B)
+            )
 
+
+            Spacer(
+                modifier = Modifier.height(7.dp)
+            )
+
+
+            Text(
+                text =
+                    "Sign in to continue managing your field projects.",
+                color = Color(0xFF6F6A67),
+                fontSize = 14.sp,
+                lineHeight = 20.sp
+            )
+
+
+            Spacer(
+                modifier = Modifier.height(27.dp)
+            )
+
+
+            // ====================================================
+            // LOGIN CARD
+            // ====================================================
+
+            Card(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(
-                        horizontal = 22.dp
-                    )
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(22.dp),
 
+                colors =
+                    CardDefaults.cardColors(
+                        containerColor = Color.White
+                    ),
+
+                elevation =
+                    CardDefaults.cardElevation(
+                        defaultElevation = 5.dp
+                    ),
+
+                border =
+                    androidx.compose.foundation.BorderStroke(
+                        width = 1.dp,
+                        color = cardBorder
+                    )
             ) {
 
-                Spacer(
-
-                    modifier =
-                        Modifier.height(106.dp)
-                )
-
-
-                // =================================================
-                // EMAIL
-                // =================================================
-
-                Text(
-                    text = "Username / Email",
-                    color = Color.Black,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-
-                Spacer(
-
-                    modifier =
-                        Modifier.height(7.dp)
-                )
-
-
-                OutlinedTextField(
-
-                    value =
-                        username,
-
-                    onValueChange = {
-
-                        username = it
-                        message = ""
-                    },
-
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(55.dp),
-
-                    placeholder = {
-
-                        Text(
-                            text = "Enter your email",
-                            color = Color(0xFF999999),
-                            fontSize = 13.sp
+                        .padding(
+                            horizontal = 20.dp,
+                            vertical = 24.dp
                         )
-                    },
-
-                    enabled =
-                        !isLoading,
-
-                    singleLine =
-                        true,
-
-                    shape =
-                        RoundedCornerShape(10.dp),
-
-                    colors =
-                        OutlinedTextFieldDefaults.colors(
-
-                            focusedContainerColor =
-                                fieldBackground,
-
-                            unfocusedContainerColor =
-                                fieldBackground,
-
-                            focusedBorderColor =
-                                orange,
-
-                            unfocusedBorderColor =
-                                fieldBorder,
-
-                            cursorColor =
-                                orange,
-
-                            focusedTextColor =
-                                Color.Black,
-
-                            unfocusedTextColor =
-                                Color.Black
-                        )
-                )
-
-
-                Spacer(
-
-                    modifier =
-                        Modifier.height(16.dp)
-                )
-
-
-                // =================================================
-                // PASSWORD
-                // =================================================
-
-                Text(
-                    text = "Password",
-                    color = Color.Black,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-
-                Spacer(
-
-                    modifier =
-                        Modifier.height(7.dp)
-                )
-
-
-                OutlinedTextField(
-
-                    value =
-                        password,
-
-                    onValueChange = {
-
-                        password = it
-                        message = ""
-                    },
-
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(55.dp),
-
-                    placeholder = {
-
-                        Text(
-                            text = "Enter your password",
-                            color = Color(0xFF999999),
-                            fontSize = 13.sp
-                        )
-                    },
-
-                    enabled =
-                        !isLoading,
-
-                    visualTransformation =
-
-                        if (passwordVisible) {
-
-                            VisualTransformation.None
-
-                        } else {
-
-                            PasswordVisualTransformation()
-                        },
-
-                    trailingIcon = {
-
-                        IconButton(
-
-                            onClick = {
-
-                                passwordVisible =
-                                    !passwordVisible
-                            }
-
-                        ) {
-
-                            Icon(
-
-                                imageVector =
-
-                                    if (passwordVisible) {
-
-                                        Icons.Default.VisibilityOff
-
-                                    } else {
-
-                                        Icons.Default.Visibility
-                                    },
-
-                                contentDescription =
-                                    "Toggle password",
-
-                                tint =
-                                    Color(0xFF777777),
-
-                                modifier =
-                                    Modifier.size(21.dp)
-                            )
-                        }
-                    },
-
-                    singleLine =
-                        true,
-
-                    shape =
-                        RoundedCornerShape(10.dp),
-
-                    colors =
-                        OutlinedTextFieldDefaults.colors(
-
-                            focusedContainerColor =
-                                fieldBackground,
-
-                            unfocusedContainerColor =
-                                fieldBackground,
-
-                            focusedBorderColor =
-                                orange,
-
-                            unfocusedBorderColor =
-                                fieldBorder,
-
-                            cursorColor =
-                                orange,
-
-                            focusedTextColor =
-                                Color.Black,
-
-                            unfocusedTextColor =
-                                Color.Black
-                        )
-                )
-
-
-                Spacer(
-
-                    modifier =
-                        Modifier.height(13.dp)
-                )
-
-
-                // =================================================
-                // REMEMBER ME / FORGOT PASSWORD
-                // =================================================
-
-                Row(
-
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    verticalAlignment =
-                        Alignment.CenterVertically
-
                 ) {
 
-                    Checkbox(
+                    // ============================================
+                    // LOGIN TITLE
+                    // ============================================
 
-                        checked =
-                            rememberMe,
+                    Text(
+                        text = "Sign in",
+                        color = Color(0xFF1F1F1F),
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.Bold
+                    )
 
-                        onCheckedChange = {
 
-                            rememberMe = it
+                    Spacer(
+                        modifier = Modifier.height(5.dp)
+                    )
+
+
+                    Text(
+                        text =
+                            "Enter your account details below.",
+                        color = grayText,
+                        fontSize = 12.sp
+                    )
+
+
+                    Spacer(
+                        modifier = Modifier.height(24.dp)
+                    )
+
+
+                    // ============================================
+                    // EMAIL LABEL
+                    // ============================================
+
+                    Text(
+                        text = "Username / Email",
+                        color = Color(0xFF292929),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+
+                    Spacer(
+                        modifier = Modifier.height(8.dp)
+                    )
+
+
+                    // ============================================
+                    // EMAIL FIELD
+                    // ============================================
+
+                    OutlinedTextField(
+
+                        value =
+                            username,
+
+                        onValueChange = {
+
+                            username = it
+                            message = ""
+                        },
+
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(58.dp),
+
+                        placeholder = {
+
+                            Text(
+                                text =
+                                    "Enter your email address",
+                                color =
+                                    Color(0xFF999999),
+                                fontSize =
+                                    13.sp
+                            )
                         },
 
                         enabled =
                             !isLoading,
 
-                        modifier =
-                            Modifier.size(20.dp),
+                        singleLine =
+                            true,
+
+                        shape =
+                            RoundedCornerShape(14.dp),
 
                         colors =
-                            CheckboxDefaults.colors(
+                            OutlinedTextFieldDefaults.colors(
 
-                                checkedColor =
+                                focusedContainerColor =
+                                    fieldBackground,
+
+                                unfocusedContainerColor =
+                                    fieldBackground,
+
+                                disabledContainerColor =
+                                    fieldBackground,
+
+                                focusedBorderColor =
                                     orange,
 
-                                uncheckedColor =
-                                    Color.Gray,
+                                unfocusedBorderColor =
+                                    fieldBorder,
 
-                                checkmarkColor =
-                                    Color.White
+                                disabledBorderColor =
+                                    fieldBorder,
+
+                                cursorColor =
+                                    orange,
+
+                                focusedTextColor =
+                                    Color.Black,
+
+                                unfocusedTextColor =
+                                    Color.Black
                             )
                     )
 
 
                     Spacer(
-
-                        modifier =
-                            Modifier.width(7.dp)
+                        modifier = Modifier.height(18.dp)
                     )
 
 
+                    // ============================================
+                    // PASSWORD LABEL
+                    // ============================================
+
                     Text(
-                        text = "Remember me",
-                        fontSize = 12.sp,
-                        color = Color.Black
+                        text = "Password",
+                        color = Color(0xFF292929),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
 
 
                     Spacer(
-
-                        modifier =
-                            Modifier.weight(1f)
+                        modifier = Modifier.height(8.dp)
                     )
 
 
-                    Text(
+                    // ============================================
+                    // PASSWORD FIELD
+                    // ============================================
 
-                        text =
-                            "Forgot Password?",
+                    OutlinedTextField(
 
-                        fontSize =
-                            12.sp,
+                        value =
+                            password,
 
-                        color =
-                            blue,
+                        onValueChange = {
 
-                        fontWeight =
-                            FontWeight.Medium,
+                            password = it
+                            message = ""
+                        },
 
-                        modifier =
-                            Modifier.clickable {
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(58.dp),
 
-                                if (!isLoading) {
+                        placeholder = {
 
-                                    message =
-                                        "Password recovery is not available yet."
-                                }
+                            Text(
+                                text =
+                                    "Enter your password",
+                                color =
+                                    Color(0xFF999999),
+                                fontSize =
+                                    13.sp
+                            )
+                        },
+
+                        enabled =
+                            !isLoading,
+
+                        visualTransformation =
+
+                            if (passwordVisible) {
+
+                                VisualTransformation.None
+
+                            } else {
+
+                                PasswordVisualTransformation()
+                            },
+
+                        trailingIcon = {
+
+                            IconButton(
+
+                                onClick = {
+
+                                    passwordVisible =
+                                        !passwordVisible
+                                },
+
+                                enabled =
+                                    !isLoading
+
+                            ) {
+
+                                Icon(
+
+                                    imageVector =
+
+                                        if (passwordVisible) {
+
+                                            Icons.Default.VisibilityOff
+
+                                        } else {
+
+                                            Icons.Default.Visibility
+                                        },
+
+                                    contentDescription =
+                                        "Toggle password visibility",
+
+                                    tint =
+                                        Color(0xFF777777),
+
+                                    modifier =
+                                        Modifier.size(21.dp)
+                                )
                             }
+                        },
+
+                        singleLine =
+                            true,
+
+                        shape =
+                            RoundedCornerShape(14.dp),
+
+                        colors =
+                            OutlinedTextFieldDefaults.colors(
+
+                                focusedContainerColor =
+                                    fieldBackground,
+
+                                unfocusedContainerColor =
+                                    fieldBackground,
+
+                                disabledContainerColor =
+                                    fieldBackground,
+
+                                focusedBorderColor =
+                                    orange,
+
+                                unfocusedBorderColor =
+                                    fieldBorder,
+
+                                disabledBorderColor =
+                                    fieldBorder,
+
+                                cursorColor =
+                                    orange,
+
+                                focusedTextColor =
+                                    Color.Black,
+
+                                unfocusedTextColor =
+                                    Color.Black
+                            )
                     )
-                }
 
 
-                Spacer(
-
-                    modifier =
-                        Modifier.height(18.dp)
-                )
+                    Spacer(
+                        modifier = Modifier.height(12.dp)
+                    )
 
 
-                // =================================================
-                // SIGN IN BUTTON
-                // =================================================
+                    // ============================================
+                    // REMEMBER ME / FORGOT PASSWORD
+                    // ============================================
 
-                Button(
+                    Row(
+                        modifier =
+                            Modifier.fillMaxWidth(),
 
-                    onClick = {
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
 
-                        // ============================================
-                        // VALIDATE
-                        // ============================================
+                        Row(
+                            verticalAlignment =
+                                Alignment.CenterVertically,
 
-                        if (
-                            username.isBlank() ||
-                            password.isBlank()
+                            modifier =
+                                Modifier.clickable(
+                                    enabled =
+                                        !isLoading
+                                ) {
+
+                                    rememberMe =
+                                        !rememberMe
+                                }
                         ) {
 
-                            message =
-                                "Please enter your email and password."
+                            Checkbox(
 
-                            return@Button
+                                checked =
+                                    rememberMe,
+
+                                onCheckedChange = {
+
+                                    rememberMe = it
+                                },
+
+                                enabled =
+                                    !isLoading,
+
+                                modifier =
+                                    Modifier.size(20.dp),
+
+                                colors =
+                                    CheckboxDefaults.colors(
+
+                                        checkedColor =
+                                            orange,
+
+                                        uncheckedColor =
+                                            Color.Gray,
+
+                                        checkmarkColor =
+                                            Color.White
+                                    )
+                            )
+
+
+                            Spacer(
+                                modifier =
+                                    Modifier.width(8.dp)
+                            )
+
+
+                            Text(
+                                text =
+                                    "Remember me",
+                                fontSize =
+                                    12.sp,
+                                color =
+                                    Color(0xFF444444)
+                            )
                         }
 
 
-                        // ============================================
-                        // LOGIN
-                        // ============================================
-
-                        scope.launch {
-
-                            isLoading =
-                                true
-
-                            message =
-                                ""
+                        Spacer(
+                            modifier =
+                                Modifier.weight(1f)
+                        )
 
 
-                            val cleanEmail =
-                                username
-                                    .trim()
-                                    .lowercase()
+                        Text(
+
+                            text =
+                                "Forgot Password?",
+
+                            fontSize =
+                                12.sp,
+
+                            color =
+                                blue,
+
+                            fontWeight =
+                                FontWeight.SemiBold,
+
+                            modifier =
+                                Modifier.clickable {
+
+                                    if (!isLoading) {
+
+                                        message =
+                                            "Password recovery is not available yet."
+                                    }
+                                }
+                        )
+                    }
 
 
-                            // ========================================
-                            // GET LOCAL USER
-                            //
-                            // Used for:
-                            // - offline login
-                            // - local fallback profile information
-                            // ========================================
+                    Spacer(
+                        modifier =
+                            Modifier.height(23.dp)
+                    )
 
-                            val localUser =
+
+                    // ============================================
+                    // SIGN IN BUTTON
+                    // ============================================
+
+                    Button(
+
+                        onClick = {
+
+                            // ====================================
+                            // VALIDATE
+                            // ====================================
+
+                            if (
+                                username.isBlank() ||
+                                password.isBlank()
+                            ) {
+
+                                message =
+                                    "Please enter your email and password."
+
+                                return@Button
+                            }
+
+
+                            // ====================================
+                            // LOGIN
+                            // ====================================
+
+                            scope.launch {
+
+                                isLoading =
+                                    true
+
+                                message =
+                                    ""
+
+
+                                val cleanEmail =
+                                    username
+                                        .trim()
+                                        .lowercase()
+
+
+                                // ================================
+                                // GET LOCAL USER
+                                // ================================
+
+                                val localUser =
+
+                                    try {
+
+                                        userDao.getUserByEmail(
+                                            cleanEmail
+                                        )
+
+                                    } catch (
+                                        e: Exception
+                                    ) {
+
+                                        e.printStackTrace()
+
+                                        null
+                                    }
+
+
+                                // ================================
+                                // TRY ONLINE LOGIN FIRST
+                                // ================================
 
                                 try {
 
-                                    userDao.getUserByEmail(
-                                        cleanEmail
+                                    println(
+                                        "===================================="
                                     )
 
-                                } catch (
-                                    e: Exception
-                                ) {
+                                    println(
+                                        "🌐 TRYING ONLINE LOGIN"
+                                    )
 
-                                    e.printStackTrace()
+                                    println(
+                                        "EMAIL = $cleanEmail"
+                                    )
 
-                                    null
-                                }
-
-
-                            // ========================================
-                            // TRY ONLINE LOGIN FIRST
-                            // ========================================
-
-                            try {
-
-                                println(
-                                    "===================================="
-                                )
-
-                                println(
-                                    "🌐 TRYING ONLINE LOGIN"
-                                )
-
-                                println(
-                                    "EMAIL = $cleanEmail"
-                                )
-
-                                println(
-                                    "===================================="
-                                )
+                                    println(
+                                        "===================================="
+                                    )
 
 
-                                val response =
-                                    RetrofitClient.api.login(
+                                    val response =
+                                        RetrofitClient.api.login(
 
-                                        LoginRequest(
-                                            email =
-                                                cleanEmail,
+                                            LoginRequest(
+                                                email =
+                                                    cleanEmail,
 
-                                            password =
-                                                password
+                                                password =
+                                                    password
+                                            )
                                         )
-                                    )
-
-
-                                println(
-                                    "LOGIN HTTP = ${response.code()}"
-                                )
-
-                                println(
-                                    "LOGIN SUCCESS = ${response.isSuccessful}"
-                                )
-
-
-                                // ====================================
-                                // ONLINE LOGIN SUCCESS
-                                // ====================================
-
-                                if (
-                                    response.isSuccessful
-                                ) {
-
-                                    val result =
-                                        response.body()
-
-                                    val jwt =
-                                        result?.token
-
-                                    val serverUser =
-                                        result?.user
 
 
                                     println(
-                                        "TOKEN EXISTS = ${!jwt.isNullOrBlank()}"
+                                        "LOGIN HTTP = ${response.code()}"
                                     )
 
                                     println(
-                                        "SERVER USER = $serverUser"
+                                        "LOGIN SUCCESS = ${response.isSuccessful}"
                                     )
 
+
+                                    // ============================
+                                    // ONLINE LOGIN SUCCESS
+                                    // ============================
 
                                     if (
-                                        !jwt.isNullOrBlank()
+                                        response.isSuccessful
                                     ) {
 
-                                        println(
-                                            "✅ ONLINE LOGIN SUCCESS"
-                                        )
+                                        val result =
+                                            response.body()
 
+                                        val jwt =
+                                            result?.token
 
-                                        // ================================
-                                        // SAVE JWT
-                                        // ================================
-
-                                        TokenManager.saveToken(
-                                            context = context,
-                                            token = jwt
-                                        )
+                                        val serverUser =
+                                            result?.user
 
 
                                         println(
-                                            "🔐 JWT TOKEN SAVED"
+                                            "TOKEN EXISTS = ${!jwt.isNullOrBlank()}"
                                         )
 
+                                        println(
+                                            "SERVER USER = $serverUser"
+                                        )
 
-                                        // ================================
-                                        // MARK LOCAL USER AS SYNCED
-                                        // ================================
 
                                         if (
-                                            localUser != null
+                                            !jwt.isNullOrBlank()
                                         ) {
 
-                                            try {
+                                            println(
+                                                "✅ ONLINE LOGIN SUCCESS"
+                                            )
 
-                                                userDao.markUserSynced(
 
-                                                    email =
-                                                        cleanEmail,
+                                            // ====================
+                                            // SAVE JWT
+                                            // ====================
 
-                                                    serverUserId =
-                                                        serverUser?.id
-                                                )
+                                            TokenManager.saveToken(
+                                                context = context,
+                                                token = jwt
+                                            )
 
-                                            } catch (
-                                                e: Exception
+
+                                            println(
+                                                "🔐 JWT TOKEN SAVED"
+                                            )
+
+
+                                            // ====================
+                                            // MARK LOCAL USER SYNCED
+                                            // ====================
+
+                                            if (
+                                                localUser != null
                                             ) {
 
-                                                e.printStackTrace()
+                                                try {
 
-                                                println(
-                                                    "Failed to update local sync status: ${e.message}"
-                                                )
+                                                    userDao.markUserSynced(
+
+                                                        email =
+                                                            cleanEmail,
+
+                                                        serverUserId =
+                                                            serverUser?.id
+                                                    )
+
+                                                } catch (
+                                                    e: Exception
+                                                ) {
+
+                                                    e.printStackTrace()
+
+                                                    println(
+                                                        "Failed to update local sync status: ${e.message}"
+                                                    )
+                                                }
                                             }
+
+
+                                            // ====================
+                                            // PROFILE INFORMATION
+                                            // ====================
+
+                                            val profileFullName =
+                                                serverUser?.name
+                                                    ?: localUser?.fullName
+                                                    ?: ""
+
+                                            val profileEmail =
+                                                serverUser?.email
+                                                    ?: localUser?.email
+                                                    ?: cleanEmail
+
+                                            val profileRole =
+                                                serverUser?.role
+                                                    ?: localUser?.role
+                                                    ?: "engineer"
+
+
+                                            println(
+                                                "PROFILE NAME = $profileFullName"
+                                            )
+
+                                            println(
+                                                "PROFILE EMAIL = $profileEmail"
+                                            )
+
+                                            println(
+                                                "PROFILE ROLE = $profileRole"
+                                            )
+
+
+                                            // ====================
+                                            // PASS TOKEN + PROFILE
+                                            // ====================
+
+                                            onLoginClick(
+                                                jwt,
+                                                profileFullName,
+                                                profileEmail,
+                                                profileRole
+                                            )
+
+
+                                            isLoading =
+                                                false
+
+                                            return@launch
                                         }
 
 
-                                        // ================================
-                                        // PROFILE INFORMATION
-                                        //
-                                        // Prefer server information.
-                                        // Fall back to local Room data.
-                                        // ================================
-
-                                        val profileFullName =
-                                            serverUser?.name
-                                                ?: localUser?.fullName
-                                                ?: ""
-
-                                        val profileEmail =
-                                            serverUser?.email
-                                                ?: localUser?.email
-                                                ?: cleanEmail
-
-                                        val profileRole =
-                                            serverUser?.role
-                                                ?: localUser?.role
-                                                ?: "engineer"
-
-
-                                        println(
-                                            "PROFILE NAME = $profileFullName"
-                                        )
-
-                                        println(
-                                            "PROFILE EMAIL = $profileEmail"
-                                        )
-
-                                        println(
-                                            "PROFILE ROLE = $profileRole"
-                                        )
-
-
-                                        // ================================
-                                        // PASS TOKEN + PROFILE
-                                        // ================================
-
-                                        onLoginClick(
-                                            jwt,
-                                            profileFullName,
-                                            profileEmail,
-                                            profileRole
-                                        )
-
+                                        message =
+                                            "Login succeeded but the server did not return an authentication token."
 
                                         isLoading =
                                             false
@@ -846,8 +933,121 @@ fun LoginScreen(
                                     }
 
 
+                                    // ============================
+                                    // SERVER REPLIED WITH ERROR
+                                    // ============================
+
+                                    val serverError =
+
+                                        try {
+
+                                            response
+                                                .errorBody()
+                                                ?.string()
+
+                                        } catch (
+                                            _: Exception
+                                        ) {
+
+                                            null
+                                        }
+
+
+                                    println(
+                                        "❌ SERVER LOGIN FAILED"
+                                    )
+
+                                    println(
+                                        "HTTP = ${response.code()}"
+                                    )
+
+                                    println(
+                                        "SERVER ERROR = $serverError"
+                                    )
+
+
                                     message =
-                                        "Login succeeded but the server did not return an authentication token."
+
+                                        when (
+                                            response.code()
+                                        ) {
+
+                                            400 ->
+                                                "Invalid login request."
+
+                                            401 ->
+                                                "Incorrect email or password."
+
+                                            403 ->
+                                                "Your account is not authorized."
+
+                                            404 ->
+                                                "Account was not found."
+
+                                            500 ->
+                                                "The server encountered an error."
+
+                                            else ->
+                                                "Login failed (${response.code()})."
+                                        }
+
+
+                                    isLoading =
+                                        false
+
+                                    return@launch
+
+
+                                } catch (
+                                    e: ConnectException
+                                ) {
+
+                                    println(
+                                        "📴 SERVER CONNECTION REFUSED"
+                                    )
+
+                                    println(
+                                        "TRYING OFFLINE LOGIN..."
+                                    )
+
+
+                                } catch (
+                                    e: SocketTimeoutException
+                                ) {
+
+                                    println(
+                                        "📴 SERVER TIMEOUT"
+                                    )
+
+                                    println(
+                                        "TRYING OFFLINE LOGIN..."
+                                    )
+
+
+                                } catch (
+                                    e: UnknownHostException
+                                ) {
+
+                                    println(
+                                        "📴 NO NETWORK / SERVER HOST"
+                                    )
+
+                                    println(
+                                        "TRYING OFFLINE LOGIN..."
+                                    )
+
+
+                                } catch (
+                                    e: Exception
+                                ) {
+
+                                    e.printStackTrace()
+
+                                    message =
+                                        "Login error: ${
+                                            e.message
+                                                ?: "Unknown error"
+                                        }"
 
                                     isLoading =
                                         false
@@ -856,438 +1056,383 @@ fun LoginScreen(
                                 }
 
 
-                                // ====================================
-                                // SERVER REPLIED WITH ERROR
-                                // ====================================
-
-                                val serverError =
-
-                                    try {
-
-                                        response
-                                            .errorBody()
-                                            ?.string()
-
-                                    } catch (
-                                        _: Exception
-                                    ) {
-
-                                        null
-                                    }
-
-
-                                println(
-                                    "❌ SERVER LOGIN FAILED"
-                                )
-
-                                println(
-                                    "HTTP = ${response.code()}"
-                                )
-
-                                println(
-                                    "SERVER ERROR = $serverError"
-                                )
-
-
-                                // If server replies with HTTP error,
-                                // don't use offline fallback because
-                                // the server itself was reachable.
-
-                                message =
-
-                                    when (
-                                        response.code()
-                                    ) {
-
-                                        400 ->
-                                            "Invalid login request."
-
-                                        401 ->
-                                            "Incorrect email or password."
-
-                                        403 ->
-                                            "Your account is not authorized."
-
-                                        404 ->
-                                            "Account was not found."
-
-                                        500 ->
-                                            "The server encountered an error."
-
-                                        else ->
-                                            "Login failed (${response.code()})."
-                                    }
-
-
-                                isLoading =
-                                    false
-
-                                return@launch
-
-
-                            } catch (
-                                e: ConnectException
-                            ) {
-
-                                println(
-                                    "📴 SERVER CONNECTION REFUSED"
-                                )
-
-                                println(
-                                    "TRYING OFFLINE LOGIN..."
-                                )
-
-
-                            } catch (
-                                e: SocketTimeoutException
-                            ) {
-
-                                println(
-                                    "📴 SERVER TIMEOUT"
-                                )
-
-                                println(
-                                    "TRYING OFFLINE LOGIN..."
-                                )
-
-
-                            } catch (
-                                e: UnknownHostException
-                            ) {
-
-                                println(
-                                    "📴 NO NETWORK / SERVER HOST"
-                                )
-
-                                println(
-                                    "TRYING OFFLINE LOGIN..."
-                                )
-
-
-                            } catch (
-                                e: Exception
-                            ) {
-
-                                e.printStackTrace()
-
-                                message =
-                                    "Login error: ${
-                                        e.message
-                                            ?: "Unknown error"
-                                    }"
-
-                                isLoading =
-                                    false
-
-                                return@launch
-                            }
-
-
-                            // ========================================
-                            // OFFLINE LOGIN
-                            // ========================================
-
-                            if (
-                                localUser == null
-                            ) {
-
-                                message =
-                                    "No offline account is saved on this device."
-
-                                isLoading =
-                                    false
-
-                                return@launch
-                            }
-
-
-                            try {
-
-                                val enteredHash =
-                                    PasswordUtils.hashPassword(
-                                        password
-                                    )
-
+                                // ================================
+                                // OFFLINE LOGIN
+                                // ================================
 
                                 if (
-                                    enteredHash ==
-                                    localUser.passwordHash
+                                    localUser == null
                                 ) {
 
-                                    println(
-                                        "✅ OFFLINE LOGIN SUCCESS"
+                                    message =
+                                        "No offline account is saved on this device."
+
+                                    isLoading =
+                                        false
+
+                                    return@launch
+                                }
+
+
+                                try {
+
+                                    val enteredHash =
+                                        PasswordUtils.hashPassword(
+                                            password
+                                        )
+
+
+                                    if (
+                                        enteredHash ==
+                                        localUser.passwordHash
+                                    ) {
+
+                                        println(
+                                            "✅ OFFLINE LOGIN SUCCESS"
+                                        )
+
+
+                                        onLoginClick(
+
+                                            "LOCAL_${localUser.id}",
+
+                                            localUser.fullName,
+
+                                            localUser.email,
+
+                                            localUser.role
+                                        )
+
+
+                                    } else {
+
+                                        message =
+                                            "Incorrect email or password."
+                                    }
+
+
+                                } catch (
+                                    e: Exception
+                                ) {
+
+                                    e.printStackTrace()
+
+                                    message =
+                                        "Unable to verify offline login."
+                                }
+
+
+                                isLoading =
+                                    false
+                            }
+                        },
+
+                        enabled =
+                            !isLoading,
+
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp),
+
+                        shape =
+                            RoundedCornerShape(14.dp),
+
+                        colors =
+                            ButtonDefaults.buttonColors(
+
+                                containerColor =
+                                    orange,
+
+                                disabledContainerColor =
+                                    orange.copy(
+                                        alpha = 0.6f
                                     )
+                            )
+
+                    ) {
+
+                        if (
+                            isLoading
+                        ) {
+
+                            CircularProgressIndicator(
+
+                                modifier =
+                                    Modifier.size(20.dp),
+
+                                strokeWidth =
+                                    2.dp,
+
+                                color =
+                                    Color.White
+                            )
+
+                        } else {
+
+                            Text(
+                                text =
+                                    "Sign In",
+                                color =
+                                    Color.White,
+                                fontSize =
+                                    15.sp,
+                                fontWeight =
+                                    FontWeight.Bold
+                            )
+                        }
+                    }
 
 
-                                    // ================================
-                                    // PASS LOCAL USER PROFILE
-                                    // ================================
+                    // ============================================
+                    // MESSAGE
+                    // ============================================
 
-                                    onLoginClick(
+                    if (
+                        message.isNotEmpty()
+                    ) {
 
-                                        "LOCAL_${localUser.id}",
+                        Spacer(
+                            modifier =
+                                Modifier.height(12.dp)
+                        )
 
-                                        localUser.fullName,
 
-                                        localUser.email,
+                        Surface(
+                            modifier =
+                                Modifier.fillMaxWidth(),
 
-                                        localUser.role
+                            color =
+
+                                if (
+                                    message.contains(
+                                        "Invalid",
+                                        ignoreCase = true
+                                    ) ||
+
+                                    message.contains(
+                                        "Incorrect",
+                                        ignoreCase = true
+                                    ) ||
+
+                                    message.contains(
+                                        "failed",
+                                        ignoreCase = true
+                                    ) ||
+
+                                    message.contains(
+                                        "Unable",
+                                        ignoreCase = true
+                                    ) ||
+
+                                    message.contains(
+                                        "not found",
+                                        ignoreCase = true
+                                    ) ||
+
+                                    message.contains(
+                                        "not authorized",
+                                        ignoreCase = true
                                     )
+                                ) {
 
+                                    Color(0xFFFFF1F0)
 
                                 } else {
 
-                                    message =
-                                        "Incorrect email or password."
-                                }
+                                    Color(0xFFF7F7F7)
+                                },
 
+                            shape =
+                                RoundedCornerShape(10.dp)
+                        ) {
 
-                            } catch (
-                                e: Exception
-                            ) {
+                            Text(
 
-                                e.printStackTrace()
+                                text =
+                                    message,
 
-                                message =
-                                    "Unable to verify offline login."
-                            }
+                                modifier =
+                                    Modifier.padding(
+                                        horizontal = 12.dp,
+                                        vertical = 10.dp
+                                    ),
 
+                                color =
 
-                            isLoading =
-                                false
+                                    if (
+                                        message.contains(
+                                            "Invalid",
+                                            ignoreCase = true
+                                        ) ||
+
+                                        message.contains(
+                                            "Incorrect",
+                                            ignoreCase = true
+                                        ) ||
+
+                                        message.contains(
+                                            "failed",
+                                            ignoreCase = true
+                                        ) ||
+
+                                        message.contains(
+                                            "Unable",
+                                            ignoreCase = true
+                                        ) ||
+
+                                        message.contains(
+                                            "not found",
+                                            ignoreCase = true
+                                        ) ||
+
+                                        message.contains(
+                                            "not authorized",
+                                            ignoreCase = true
+                                        )
+                                    ) {
+
+                                        Color(0xFFD32F2F)
+
+                                    } else {
+
+                                        grayText
+                                    },
+
+                                fontSize =
+                                    11.sp,
+
+                                lineHeight =
+                                    16.sp
+                            )
                         }
-                    },
-
-                    enabled =
-                        !isLoading,
-
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp),
-
-                    shape =
-                        RoundedCornerShape(11.dp),
-
-                    colors =
-                        ButtonDefaults.buttonColors(
-
-                            containerColor =
-                                orange,
-
-                            disabledContainerColor =
-                                orange.copy(
-                                    alpha = 0.6f
-                                )
-                        )
-
-                ) {
-
-                    if (
-                        isLoading
-                    ) {
-
-                        CircularProgressIndicator(
-
-                            modifier =
-                                Modifier.size(20.dp),
-
-                            strokeWidth =
-                                2.dp,
-
-                            color =
-                                Color.White
-                        )
-
-                    } else {
-
-                        Text(
-                            text = "Sign In",
-                            color = Color.White,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
-                        )
                     }
-                }
 
-
-                // =================================================
-                // MESSAGE
-                // =================================================
-
-                if (
-                    message.isNotEmpty()
-                ) {
 
                     Spacer(
-
                         modifier =
-                            Modifier.height(8.dp)
+                            Modifier.height(24.dp)
                     )
 
 
-                    Text(
+                    // ============================================
+                    // DIVIDER
+                    // ============================================
 
-                        text =
-                            message,
+                    HorizontalDivider(
+                        color =
+                            Color(0xFFF0EBE8)
+                    )
 
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(20.dp)
+                    )
+
+
+                    // ============================================
+                    // SIGN UP
+                    // ============================================
+
+                    Row(
                         modifier =
                             Modifier.fillMaxWidth(),
 
-                        color =
+                        horizontalArrangement =
+                            Arrangement.Center,
 
-                            if (
-                                message.contains(
-                                    "Invalid",
-                                    ignoreCase = true
-                                ) ||
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
 
-                                message.contains(
-                                    "Incorrect",
-                                    ignoreCase = true
-                                ) ||
-
-                                message.contains(
-                                    "failed",
-                                    ignoreCase = true
-                                ) ||
-
-                                message.contains(
-                                    "Unable",
-                                    ignoreCase = true
-                                ) ||
-
-                                message.contains(
-                                    "not found",
-                                    ignoreCase = true
-                                ) ||
-
-                                message.contains(
-                                    "not authorized",
-                                    ignoreCase = true
-                                )
-                            ) {
-
-                                Color(0xFFD32F2F)
-
-                            } else {
-
-                                grayText
-                            },
-
-                        fontSize =
-                            11.sp
-                    )
-                }
-
-
-                Spacer(
-
-                    modifier =
-                        Modifier.height(23.dp)
-                )
-
-
-                // =================================================
-                // SIGN UP
-                // =================================================
-
-                Row(
-
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    horizontalArrangement =
-                        Arrangement.Center,
-
-                    verticalAlignment =
-                        Alignment.CenterVertically
-
-                ) {
-
-                    Text(
-                        text =
-                            "Don’t have an account? ",
-                        color =
-                            Color.Black,
-                        fontSize =
-                            12.sp
-                    )
-
-
-                    Text(
-
-                        text =
-                            "Sign up",
-
-                        color =
-                            blue,
-
-                        fontSize =
-                            12.sp,
-
-                        fontWeight =
-                            FontWeight.Bold,
-
-                        modifier =
-                            Modifier.clickable {
-
-                                if (
-                                    !isLoading
-                                ) {
-
-                                    onSignupClick()
-                                }
-                            }
-                    )
-                }
-
-
-                Spacer(
-
-                    modifier =
-                        Modifier.weight(1f)
-                )
-
-
-                // =================================================
-                // SECURITY INFO
-                // =================================================
-
-                Row(
-
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(
-                            bottom = 18.dp
+                        Text(
+                            text =
+                                "Don’t have an account? ",
+                            color =
+                                Color(0xFF666666),
+                            fontSize =
+                                12.sp
                         )
-                        .background(
+
+
+                        Text(
+
+                            text =
+                                "Create account",
 
                             color =
-                                Color(0xFFF5EFEF),
+                                blue,
 
-                            shape =
-                                RoundedCornerShape(
-                                    10.dp
-                                )
+                            fontSize =
+                                12.sp,
+
+                            fontWeight =
+                                FontWeight.Bold,
+
+                            modifier =
+                                Modifier.clickable {
+
+                                    if (
+                                        !isLoading
+                                    ) {
+
+                                        onSignupClick()
+                                    }
+                                }
                         )
-                        .padding(
+                    }
+                }
+            }
+
+
+            Spacer(
+                modifier =
+                    Modifier.height(20.dp)
+            )
+
+
+            // ====================================================
+            // SECURITY INFORMATION
+            // ====================================================
+
+            Surface(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
+                color =
+                    Color(0xFFF8F3F1),
+
+                shape =
+                    RoundedCornerShape(16.dp),
+
+                border =
+                    androidx.compose.foundation.BorderStroke(
+                        width = 1.dp,
+                        color = Color(0xFFF1E6E1)
+                    )
+            ) {
+
+                Row(
+                    modifier =
+                        Modifier.padding(
                             horizontal = 16.dp,
-                            vertical = 12.dp
+                            vertical = 14.dp
                         ),
 
                     verticalAlignment =
                         Alignment.CenterVertically
-
                 ) {
 
                     Box(
 
                         modifier = Modifier
-                            .size(27.dp)
+                            .size(36.dp)
                             .background(
-                                orange,
+                                orange.copy(
+                                    alpha = 0.12f
+                                ),
                                 RoundedCornerShape(
-                                    6.dp
+                                    10.dp
                                 )
                             ),
 
@@ -1305,38 +1450,63 @@ fun LoginScreen(
                                 null,
 
                             tint =
-                                Color.White,
+                                orange,
 
                             modifier =
-                                Modifier.size(16.dp)
+                                Modifier.size(19.dp)
                         )
                     }
 
 
                     Spacer(
-
                         modifier =
-                            Modifier.width(11.dp)
+                            Modifier.width(12.dp)
                     )
 
 
-                    Text(
+                    Column {
 
-                        text =
-                            "Online authentication is used when the server is available.\n" +
-                                    "Offline access uses your secure local account.",
+                        Text(
+                            text =
+                                "Secure access",
+                            color =
+                                Color(0xFF343434),
+                            fontSize =
+                                12.sp,
+                            fontWeight =
+                                FontWeight.SemiBold
+                        )
 
-                        color =
-                            Color(0xFF858585),
 
-                        fontSize =
-                            9.sp,
+                        Spacer(
+                            modifier =
+                                Modifier.height(3.dp)
+                        )
 
-                        lineHeight =
-                            12.sp
-                    )
+
+                        Text(
+
+                            text =
+                                "Online authentication is used when the server is available. Offline access uses your secure local account.",
+
+                            color =
+                                Color(0xFF858585),
+
+                            fontSize =
+                                10.sp,
+
+                            lineHeight =
+                                14.sp
+                        )
+                    }
                 }
             }
+
+
+            Spacer(
+                modifier =
+                    Modifier.height(28.dp)
+            )
         }
     }
 }

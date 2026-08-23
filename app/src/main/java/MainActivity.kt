@@ -1,12 +1,23 @@
 package com.example.capstonesample
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
+
+import com.google.firebase.messaging.FirebaseMessaging
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.os.Build
 
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.security.TokenManager
@@ -19,6 +30,110 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
 
         super.onCreate(savedInstanceState)
+
+        // ============================================================
+// CREATE SITEPULSE NOTIFICATION CHANNEL
+// ============================================================
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+
+            val channel = NotificationChannel(
+                "sitepulse_notifications",
+                "SitePulse Notifications",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+
+                description =
+                    "Notifications from SitePulse"
+
+                enableVibration(true)
+            }
+
+
+            val notificationManager =
+                getSystemService(
+                    NotificationManager::class.java
+                )
+
+
+            notificationManager.createNotificationChannel(
+                channel
+            )
+        }
+
+
+        // ============================================================
+        // NOTIFICATION PERMISSION
+        // Android 13+ requires runtime permission.
+        // ============================================================
+
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.POST_NOTIFICATIONS),
+                1001
+            )
+        }
+
+
+        // ============================================================
+        // FIREBASE CLOUD MESSAGING
+        // Subscribe this device to notifications sent to ALL USERS.
+        // ============================================================
+
+        FirebaseMessaging.getInstance()
+            .subscribeToTopic("all_users")
+            .addOnCompleteListener { task ->
+
+                if (task.isSuccessful) {
+
+                    Log.d(
+                        "FCM_TOPIC",
+                        "Subscribed to all_users"
+                    )
+
+                } else {
+
+                    Log.e(
+                        "FCM_TOPIC",
+                        "Failed to subscribe to all_users",
+                        task.exception
+                    )
+                }
+            }
+
+
+        // ============================================================
+        // GET FCM TOKEN FOR TESTING / FUTURE DIRECT MESSAGES
+        // ============================================================
+
+        FirebaseMessaging.getInstance()
+            .token
+            .addOnCompleteListener { task ->
+
+                if (!task.isSuccessful) {
+
+                    Log.e(
+                        "FCM_TOKEN",
+                        "Fetching FCM token failed",
+                        task.exception
+                    )
+
+                    return@addOnCompleteListener
+                }
+
+                Log.d(
+                    "FCM_TOKEN",
+                    "Token: ${task.result}"
+                )
+            }
 
 
         // ============================================================

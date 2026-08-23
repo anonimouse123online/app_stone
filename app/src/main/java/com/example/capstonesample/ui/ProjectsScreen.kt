@@ -185,7 +185,9 @@ fun ProjectsScreen(
                 project.status ?: "Planning",
 
             progress =
-                project.progress ?: 0,
+                project.progress
+                    ?.toInt()
+                    ?: 0,
 
             startDate =
                 project.startDate ?: "No start date",

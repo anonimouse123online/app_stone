@@ -9,6 +9,13 @@ import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -16,6 +23,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import com.example.capstonesample.data.model.CreateIssueRequest
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -44,6 +52,8 @@ import com.example.capstonesample.pdf.PdfReportGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.example.capstonesample.data.api.RetrofitClient
+import com.example.capstonesample.data.model.UploadTaskReportRequest
 
 import java.io.File
 
@@ -143,6 +153,34 @@ fun TaskDetailScreen(
     }
 
     var aiError by remember {
+        mutableStateOf<String?>(null)
+    }
+    var isUploadingReport by remember {
+        mutableStateOf(false)
+    }
+
+    var reportUploaded by remember {
+        mutableStateOf(false)
+    }
+
+    var isCompletingTask by remember {
+        mutableStateOf(false)
+    }
+
+    var taskCompleted by remember {
+        mutableStateOf(
+            task.status.equals(
+                "Completed",
+                ignoreCase = true
+            ) ||
+                    task.status.equals(
+                        "Done",
+                        ignoreCase = true
+                    )
+        )
+    }
+
+    var actionMessage by remember {
         mutableStateOf<String?>(null)
     }
 
@@ -474,8 +512,8 @@ fun TaskDetailScreen(
             // ====================================================
 
             ReportTaskCard(
-                onReportClick =
-                    onReportClick
+                task = task,
+                onReportClick = onReportClick
             )
 
 
@@ -512,11 +550,22 @@ fun TaskDetailScreen(
                 error =
                     aiError,
 
+                isUploading =
+                    isUploadingReport,
+
+                isCompleting =
+                    isCompletingTask,
+
+                reportUploaded =
+                    reportUploaded,
+
+                taskCompleted =
+                    taskCompleted,
+
                 onGenerateReport = {
 
                     val imageUri =
                         capturedPhotoUri
-
 
                     when {
 
@@ -526,20 +575,17 @@ fun TaskDetailScreen(
                                 "Capture a field photo first."
                         }
 
-
                         isPreparingAi -> {
 
                             aiError =
                                 "Gemma AI is still being prepared."
                         }
 
-
                         !aiModelInstalled -> {
 
                             aiError =
                                 "The bundled Gemma AI model is not ready."
                         }
-
 
                         !isGeneratingAiReport -> {
 
@@ -555,6 +601,11 @@ fun TaskDetailScreen(
                             aiError =
                                 null
 
+                            reportUploaded =
+                                false
+
+                            actionMessage =
+                                null
 
                             aiScope.launch {
 
@@ -565,31 +616,25 @@ fun TaskDetailScreen(
                                             context.applicationContext
                                         )
 
-
                                     try {
 
                                         pipeline.initialize()
-
 
                                         val result =
                                             pipeline.analyzeImage(
                                                 imageUri
                                             )
 
-
                                         detectedObjects =
                                             result.detectionSummary
 
-
                                         aiReport =
                                             result.report
-
 
                                     } finally {
 
                                         pipeline.release()
                                     }
-
 
                                 } catch (e: Throwable) {
 
@@ -599,11 +644,9 @@ fun TaskDetailScreen(
                                         e
                                     )
 
-
                                     aiError =
                                         e.message
                                             ?: "AI report generation failed."
-
 
                                 } finally {
 
@@ -619,7 +662,6 @@ fun TaskDetailScreen(
 
                     val reportText =
                         aiReport
-
 
                     if (reportText.isNullOrBlank()) {
 
@@ -649,7 +691,6 @@ fun TaskDetailScreen(
                                         reportText
                                 )
 
-
                             val shareIntent =
                                 Intent(
                                     Intent.ACTION_SEND
@@ -658,18 +699,15 @@ fun TaskDetailScreen(
                                     type =
                                         "application/pdf"
 
-
                                     putExtra(
                                         Intent.EXTRA_STREAM,
                                         pdfUri
                                     )
 
-
                                     addFlags(
                                         Intent.FLAG_GRANT_READ_URI_PERMISSION
                                     )
                                 }
-
 
                             context.startActivity(
 
@@ -679,7 +717,6 @@ fun TaskDetailScreen(
                                 )
                             )
 
-
                         } catch (e: Exception) {
 
                             aiError =
@@ -688,8 +725,227 @@ fun TaskDetailScreen(
                                 }"
                         }
                     }
+                },
+
+                onUploadReport = {
+
+                    val reportText =
+                        aiReport
+
+                    if (reportText.isNullOrBlank()) {
+
+                        aiError =
+                            "Generate an AI report first."
+
+                    } else if (!isUploadingReport) {
+
+                        isUploadingReport =
+                            true
+
+                        aiError =
+                            null
+
+                        actionMessage =
+                            null
+
+                        aiScope.launch {
+
+                            try {
+
+                                val response =
+                                    RetrofitClient.api
+                                        .uploadTaskReport(
+
+                                            taskId =
+                                                task.id,
+
+                                            request =
+                                                UploadTaskReportRequest(
+
+                                                    taskId =
+                                                        task.id,
+
+                                                    projectCode =
+                                                        task.projectCode
+                                                            ?: throw IllegalStateException(
+                                                                "Project code is missing for this task."
+                                                            ),
+
+                                                    title =
+                                                        "AI Field Report - ${task.title}",
+
+                                                    reportText =
+                                                        reportText
+                                                )
+                                        )
+
+                                if (
+                                    response.isSuccessful &&
+                                    response.body()?.success == true
+                                ) {
+
+                                    reportUploaded =
+                                        true
+
+                                    actionMessage =
+                                        "Report uploaded successfully."
+
+                                } else {
+
+                                    aiError =
+                                        response.body()
+                                            ?.message
+                                            ?: "Unable to upload report."
+                                }
+
+                            } catch (e: Exception) {
+
+                                Log.e(
+                                    "TASK_REPORT",
+                                    "Report upload failed",
+                                    e
+                                )
+
+                                aiError =
+                                    e.message
+                                        ?: "Unable to upload report."
+
+                            } finally {
+
+                                isUploadingReport =
+                                    false
+                            }
+                        }
+                    }
+                },
+
+                onMarkDone = {
+
+                    if (!isCompletingTask) {
+
+                        isCompletingTask =
+                            true
+
+                        aiError =
+                            null
+
+                        actionMessage =
+                            null
+
+                        aiScope.launch {
+
+                            try {
+
+                                val response =
+                                    RetrofitClient.api
+                                        .completeTask(
+                                            taskId =
+                                                task.id
+                                        )
+
+                                if (
+                                    response.isSuccessful &&
+                                    response.body()?.success == true
+                                ) {
+
+                                    taskCompleted =
+                                        true
+
+                                    actionMessage =
+                                        "Task marked as completed."
+
+                                } else {
+
+                                    aiError =
+                                        response.body()
+                                            ?.message
+                                            ?: "Unable to complete task."
+                                }
+
+                            } catch (e: Exception) {
+
+                                Log.e(
+                                    "TASK_COMPLETE",
+                                    "Task completion failed",
+                                    e
+                                )
+
+                                aiError =
+                                    e.message
+                                        ?: "Unable to complete task."
+
+                            } finally {
+
+                                isCompletingTask =
+                                    false
+                            }
+                        }
+                    }
                 }
             )
+
+
+            actionMessage?.let { message ->
+
+                Spacer(
+                    modifier =
+                        Modifier.height(10.dp)
+                )
+
+                Card(
+                    modifier =
+                        Modifier.fillMaxWidth(),
+
+                    colors =
+                        CardDefaults.cardColors(
+                            containerColor =
+                                Color(0xFFE1F5E7)
+                        ),
+
+                    shape =
+                        RoundedCornerShape(12.dp)
+                ) {
+
+                    Row(
+                        modifier =
+                            Modifier.padding(12.dp),
+
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
+
+                        Icon(
+                            imageVector =
+                                Icons.Outlined.CheckCircle,
+
+                            contentDescription =
+                                null,
+
+                            tint =
+                                TaskDetailGreen
+                        )
+
+                        Spacer(
+                            modifier =
+                                Modifier.width(8.dp)
+                        )
+
+                        Text(
+                            text =
+                                message,
+
+                            color =
+                                TaskDetailGreen,
+
+                            fontSize =
+                                11.sp,
+
+                            fontWeight =
+                                FontWeight.Medium
+                        )
+                    }
+                }
+            }
 
 
             Spacer(
@@ -1050,11 +1306,28 @@ private fun TaskProgressCard(
 ) {
 
     val safeProgress =
-        task.progress
-            .coerceIn(
-                0,
-                100
+        if (
+            task.status.equals(
+                "Completed",
+                ignoreCase = true
+            ) ||
+            task.status.equals(
+                "Done",
+                ignoreCase = true
+            ) ||
+            task.status.equals(
+                "Approved",
+                ignoreCase = true
             )
+        ) {
+            100
+        } else {
+            task.progress
+                .coerceIn(
+                    0,
+                    100
+                )
+        }
 
 
     Card(
@@ -1558,19 +1831,62 @@ private fun FieldEvidenceCard(
 
 // ============================================================
 // REPORT CARD
+// Manual issue report — separate from AI-generated reports.
 // ============================================================
 
 @Composable
 private fun ReportTaskCard(
-
+    task: SiteTask,
     onReportClick: () -> Unit
-
 ) {
+    val scope =
+        rememberCoroutineScope()
+
+    var isSending by remember {
+        mutableStateOf(false)
+    }
+
+    var expanded by remember {
+        mutableStateOf(false)
+    }
+
+    var reportTitle by remember {
+        mutableStateOf("")
+    }
+
+    var reportMessage by remember {
+        mutableStateOf("")
+    }
+
+    var attachmentUri by remember {
+        mutableStateOf<Uri?>(null)
+    }
+
+    var validationError by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var sentMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    val attachmentPicker =
+        rememberLauncherForActivityResult(
+            contract =
+                ActivityResultContracts.GetContent()
+        ) { uri ->
+
+            if (uri != null) {
+                attachmentUri = uri
+            }
+        }
+
 
     Card(
-
         modifier =
-            Modifier.fillMaxWidth(),
+            Modifier
+                .fillMaxWidth()
+                .animateContentSize(),
 
         shape =
             RoundedCornerShape(18.dp),
@@ -1580,25 +1896,26 @@ private fun ReportTaskCard(
                 containerColor =
                     Color.White
             )
-
     ) {
 
         Column(
-
             modifier =
                 Modifier.padding(18.dp)
-
         ) {
 
+            // ========================================================
+            // HEADER
+            // ========================================================
 
             Row(
+                modifier =
+                    Modifier.fillMaxWidth(),
+
                 verticalAlignment =
                     Alignment.CenterVertically
             ) {
 
-
                 Icon(
-
                     imageVector =
                         Icons.Outlined.ReportProblem,
 
@@ -1609,17 +1926,17 @@ private fun ReportTaskCard(
                         TaskDetailRed
                 )
 
-
                 Spacer(
                     modifier =
                         Modifier.width(10.dp)
                 )
 
-
-                Column {
+                Column(
+                    modifier =
+                        Modifier.weight(1f)
+                ) {
 
                     Text(
-
                         text =
                             "Report an Issue",
 
@@ -1630,11 +1947,9 @@ private fun ReportTaskCard(
                             FontWeight.Bold
                     )
 
-
                     Text(
-
                         text =
-                            "Report problems, delays, defects or safety concerns.",
+                            "Manually report delays, defects, safety concerns or site problems.",
 
                         fontSize =
                             10.sp,
@@ -1643,24 +1958,68 @@ private fun ReportTaskCard(
                             TaskDetailGray
                     )
                 }
+
+                IconButton(
+                    onClick = {
+                        expanded =
+                            !expanded
+
+                        validationError =
+                            null
+
+                        sentMessage =
+                            null
+                    }
+                ) {
+
+                    Icon(
+                        imageVector =
+                            if (expanded) {
+                                Icons.Outlined.KeyboardArrowUp
+                            } else {
+                                Icons.Outlined.KeyboardArrowDown
+                            },
+
+                        contentDescription =
+                            if (expanded) {
+                                "Collapse issue report"
+                            } else {
+                                "Expand issue report"
+                            },
+
+                        tint =
+                            TaskDetailRed
+                    )
+                }
             }
 
 
             Spacer(
                 modifier =
-                    Modifier.height(16.dp)
+                    Modifier.height(12.dp)
             )
 
 
-            OutlinedButton(
+            // ========================================================
+            // OPEN / CLOSE BUTTON
+            // ========================================================
 
-                onClick =
-                    onReportClick,
+            OutlinedButton(
+                onClick = {
+                    expanded =
+                        !expanded
+
+                    validationError =
+                        null
+
+                    sentMessage =
+                        null
+                },
 
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
+                        .height(48.dp),
 
                 shape =
                     RoundedCornerShape(12.dp),
@@ -1670,34 +2029,611 @@ private fun ReportTaskCard(
                         contentColor =
                             TaskDetailRed
                     )
-
             ) {
 
-
                 Icon(
-
                     imageVector =
-                        Icons.Outlined.ReportProblem,
+                        if (expanded) {
+                            Icons.Outlined.KeyboardArrowUp
+                        } else {
+                            Icons.Outlined.AddCircleOutline
+                        },
 
                     contentDescription =
                         null
                 )
-
 
                 Spacer(
                     modifier =
                         Modifier.width(8.dp)
                 )
 
-
                 Text(
-
                     text =
-                        "Create Report",
+                        if (expanded) {
+                            "Hide Issue Form"
+                        } else {
+                            "Create Issue Report"
+                        },
 
                     fontWeight =
                         FontWeight.Bold
                 )
+            }
+
+
+            // ========================================================
+            // SLIDE-DOWN ISSUE FORM
+            // ========================================================
+
+            AnimatedVisibility(
+                visible =
+                    expanded,
+
+                enter =
+                    fadeIn(
+                        animationSpec =
+                            tween(180)
+                    ) +
+                            expandVertically(
+                                animationSpec =
+                                    tween(220)
+                            ),
+
+                exit =
+                    fadeOut(
+                        animationSpec =
+                            tween(120)
+                    ) +
+                            shrinkVertically(
+                                animationSpec =
+                                    tween(180)
+                            )
+            ) {
+
+                Column {
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(16.dp)
+                    )
+
+
+                    Text(
+                        text =
+                            "Issue Title",
+
+                        fontSize =
+                            11.sp,
+
+                        fontWeight =
+                            FontWeight.SemiBold
+                    )
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(6.dp)
+                    )
+
+                    OutlinedTextField(
+                        value =
+                            reportTitle,
+
+                        onValueChange = {
+                            reportTitle =
+                                it
+
+                            validationError =
+                                null
+
+                            sentMessage =
+                                null
+                        },
+
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        placeholder = {
+                            Text(
+                                text =
+                                    "e.g. Cracked concrete near Column C4",
+
+                                fontSize =
+                                    11.sp
+                            )
+                        },
+
+                        singleLine =
+                            true,
+
+                        shape =
+                            RoundedCornerShape(12.dp)
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(14.dp)
+                    )
+
+
+                    Text(
+                        text =
+                            "Message / Description",
+
+                        fontSize =
+                            11.sp,
+
+                        fontWeight =
+                            FontWeight.SemiBold
+                    )
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(6.dp)
+                    )
+
+                    OutlinedTextField(
+                        value =
+                            reportMessage,
+
+                        onValueChange = {
+                            reportMessage =
+                                it
+
+                            validationError =
+                                null
+
+                            sentMessage =
+                                null
+                        },
+
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(
+                                    min =
+                                        120.dp
+                                ),
+
+                        placeholder = {
+                            Text(
+                                text =
+                                    "Describe what happened, where it happened, and why the admin should review it.",
+
+                                fontSize =
+                                    11.sp
+                            )
+                        },
+
+                        minLines =
+                            5,
+
+                        maxLines =
+                            8,
+
+                        shape =
+                            RoundedCornerShape(12.dp)
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(14.dp)
+                    )
+
+
+                    Text(
+                        text =
+                            "Attachment",
+
+                        fontSize =
+                            11.sp,
+
+                        fontWeight =
+                            FontWeight.SemiBold
+                    )
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(6.dp)
+                    )
+
+
+                    OutlinedButton(
+                        onClick = {
+                            attachmentPicker.launch(
+                                "image/*"
+                            )
+                        },
+
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(48.dp),
+
+                        shape =
+                            RoundedCornerShape(12.dp)
+                    ) {
+
+                        Icon(
+                            imageVector =
+                                Icons.Outlined.AttachFile,
+
+                            contentDescription =
+                                null
+                        )
+
+                        Spacer(
+                            modifier =
+                                Modifier.width(8.dp)
+                        )
+
+                        Text(
+                            text =
+                                if (attachmentUri == null) {
+                                    "Attach Image"
+                                } else {
+                                    "Change Attachment"
+                                },
+
+                            fontWeight =
+                                FontWeight.Medium
+                        )
+                    }
+
+
+                    if (attachmentUri != null) {
+
+                        Spacer(
+                            modifier =
+                                Modifier.height(8.dp)
+                        )
+
+                        Card(
+                            modifier =
+                                Modifier.fillMaxWidth(),
+
+                            shape =
+                                RoundedCornerShape(10.dp),
+
+                            colors =
+                                CardDefaults.cardColors(
+                                    containerColor =
+                                        Color(0xFFF7F7F7)
+                                )
+                        ) {
+
+                            Row(
+                                modifier =
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(
+                                            horizontal =
+                                                10.dp,
+                                            vertical =
+                                                8.dp
+                                        ),
+
+                                verticalAlignment =
+                                    Alignment.CenterVertically
+                            ) {
+
+                                Icon(
+                                    imageVector =
+                                        Icons.Outlined.Image,
+
+                                    contentDescription =
+                                        null,
+
+                                    modifier =
+                                        Modifier.size(18.dp),
+
+                                    tint =
+                                        TaskDetailOrange
+                                )
+
+                                Spacer(
+                                    modifier =
+                                        Modifier.width(8.dp)
+                                )
+
+                                Text(
+                                    text =
+                                        "Image attached",
+
+                                    modifier =
+                                        Modifier.weight(1f),
+
+                                    fontSize =
+                                        10.sp,
+
+                                    color =
+                                        TaskDetailGray
+                                )
+
+                                IconButton(
+                                    onClick = {
+                                        attachmentUri =
+                                            null
+                                    }
+                                ) {
+
+                                    Icon(
+                                        imageVector =
+                                            Icons.Outlined.Close,
+
+                                        contentDescription =
+                                            "Remove attachment",
+
+                                        tint =
+                                            TaskDetailRed
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+
+                    if (!validationError.isNullOrBlank()) {
+
+                        Spacer(
+                            modifier =
+                                Modifier.height(10.dp)
+                        )
+
+                        Text(
+                            text =
+                                validationError!!,
+
+                            fontSize =
+                                10.sp,
+
+                            color =
+                                TaskDetailRed
+                        )
+                    }
+
+
+                    if (!sentMessage.isNullOrBlank()) {
+
+                        Spacer(
+                            modifier =
+                                Modifier.height(10.dp)
+                        )
+
+                        Row(
+                            verticalAlignment =
+                                Alignment.CenterVertically
+                        ) {
+
+                            Icon(
+                                imageVector =
+                                    Icons.Outlined.CheckCircle,
+
+                                contentDescription =
+                                    null,
+
+                                modifier =
+                                    Modifier.size(17.dp),
+
+                                tint =
+                                    TaskDetailGreen
+                            )
+
+                            Spacer(
+                                modifier =
+                                    Modifier.width(6.dp)
+                            )
+
+                            Text(
+                                text =
+                                    sentMessage!!,
+
+                                fontSize =
+                                    10.sp,
+
+                                fontWeight =
+                                    FontWeight.Medium,
+
+                                color =
+                                    TaskDetailGreen
+                            )
+                        }
+                    }
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(14.dp)
+                    )
+
+
+                    Button(
+                        onClick = {
+
+                            when {
+
+                                reportTitle
+                                    .trim()
+                                    .isEmpty() -> {
+
+                                    validationError =
+                                        "Please enter a report title."
+                                }
+
+                                reportMessage
+                                    .trim()
+                                    .isEmpty() -> {
+
+                                    validationError =
+                                        "Please enter a report message."
+                                }
+
+                                else -> {
+
+                                    validationError = null
+                                    sentMessage = null
+
+                                    if (!isSending) {
+
+                                        isSending = true
+
+                                        scope.launch {
+
+                                            try {
+
+                                                Log.d(
+                                                    "ISSUE_REPORT",
+                                                    "taskId=${task.id}, projectId=${task.projectId}, projectCode=${task.projectCode}, project=${task.project}"
+                                                )
+
+                                                val response =
+                                                    RetrofitClient.api
+                                                        .createProjectIssue(
+                                                            projectCode = task.projectCode
+                                                                ?: throw IllegalStateException(
+                                                                    "Project code is missing for this task."
+                                                                ),
+                                                            request =
+                                                                CreateIssueRequest(
+                                                                    title =
+                                                                        reportTitle.trim(),
+
+                                                                    category =
+                                                                        "Safety Hazard",
+
+                                                                    priority =
+                                                                        task.priority.ifBlank {
+                                                                            "Medium"
+                                                                        },
+
+                                                                    location =
+                                                                        null,
+
+                                                                    description =
+                                                                        reportMessage.trim(),
+
+                                                                    assigned_to =
+                                                                        null
+                                                                )
+                                                        )
+
+
+                                                if (
+                                                    response.isSuccessful &&
+                                                    response.body()?.success == true
+                                                ) {
+
+                                                    sentMessage =
+                                                        response.body()?.message
+                                                            ?: "Issue report sent successfully."
+
+                                                    reportTitle = ""
+                                                    reportMessage = ""
+                                                    attachmentUri = null
+
+                                                    onReportClick()
+
+                                                } else {
+
+                                                    validationError =
+                                                        response.body()?.message
+                                                            ?: "Unable to send issue report."
+                                                }
+
+                                            } catch (e: Exception) {
+
+                                                Log.e(
+                                                    "ISSUE_REPORT",
+                                                    "Issue report failed",
+                                                    e
+                                                )
+
+                                                validationError =
+                                                    e.message
+                                                        ?: "Unable to send issue report."
+
+                                            } finally {
+
+                                                isSending =
+                                                    false
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+
+                        enabled =
+                            !isSending,
+
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
+
+                        shape =
+                            RoundedCornerShape(12.dp),
+
+                        colors =
+                            ButtonDefaults.buttonColors(
+                                containerColor =
+                                    TaskDetailRed
+                            )
+                    ) {
+
+                        if (isSending) {
+
+                            CircularProgressIndicator(
+                                modifier =
+                                    Modifier.size(19.dp),
+
+                                strokeWidth =
+                                    2.dp,
+
+                                color =
+                                    Color.White
+                            )
+
+                            Spacer(
+                                modifier =
+                                    Modifier.width(8.dp)
+                            )
+
+                            Text(
+                                text =
+                                    "Sending...",
+
+                                fontWeight =
+                                    FontWeight.Bold
+                            )
+
+                        } else {
+
+                            Icon(
+                                imageVector =
+                                    Icons.Outlined.Send,
+
+                                contentDescription =
+                                    null
+                            )
+
+                            Spacer(
+                                modifier =
+                                    Modifier.width(8.dp)
+                            )
+
+                            Text(
+                                text =
+                                    "Send Issue Report",
+
+                                fontWeight =
+                                    FontWeight.Bold
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -1725,11 +2661,23 @@ private fun AiFieldAnalysisCard(
 
     error: String?,
 
+    isUploading: Boolean,
+
+    isCompleting: Boolean,
+
+    reportUploaded: Boolean,
+
+    taskCompleted: Boolean,
+
     onGenerateReport: () -> Unit,
 
-    onDownloadPdf: () -> Unit
+    onDownloadPdf: () -> Unit,
 
-) {
+    onUploadReport: () -> Unit,
+
+    onMarkDone: () -> Unit
+
+){
 
     Card(
 
@@ -2259,6 +3207,221 @@ private fun AiFieldAnalysisCard(
                         fontWeight =
                             FontWeight.Bold
                     )
+                }
+
+
+                // ====================================================
+                // UPLOAD REPORT TO ADMIN
+                // ====================================================
+
+                Spacer(
+                    modifier =
+                        Modifier.height(10.dp)
+                )
+
+                Button(
+                    onClick =
+                        onUploadReport,
+
+                    enabled =
+                        !isUploading &&
+                                !reportUploaded,
+
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+
+                    shape =
+                        RoundedCornerShape(12.dp),
+
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor =
+                                TaskDetailOrange,
+
+                            disabledContainerColor =
+                                if (reportUploaded) {
+                                    Color(0xFFE1F5E7)
+                                } else {
+                                    Color(0xFFD8D8D8)
+                                },
+
+                            disabledContentColor =
+                                if (reportUploaded) {
+                                    TaskDetailGreen
+                                } else {
+                                    Color.Gray
+                                }
+                        )
+                ) {
+
+                    if (isUploading) {
+
+                        CircularProgressIndicator(
+                            modifier =
+                                Modifier.size(19.dp),
+
+                            strokeWidth =
+                                2.dp,
+
+                            color =
+                                Color.White
+                        )
+
+                        Spacer(
+                            modifier =
+                                Modifier.width(8.dp)
+                        )
+
+                        Text(
+                            text =
+                                "Uploading Report...",
+
+                            fontWeight =
+                                FontWeight.Bold
+                        )
+
+                    } else {
+
+                        Icon(
+                            imageVector =
+                                if (reportUploaded) {
+                                    Icons.Outlined.CheckCircle
+                                } else {
+                                    Icons.Outlined.CloudUpload
+                                },
+
+                            contentDescription =
+                                null
+                        )
+
+                        Spacer(
+                            modifier =
+                                Modifier.width(8.dp)
+                        )
+
+                        Text(
+                            text =
+                                if (reportUploaded) {
+                                    "Report Uploaded to Admin"
+                                } else {
+                                    "Upload Report to Admin"
+                                },
+
+                            fontWeight =
+                                FontWeight.Bold
+                        )
+                    }
+                }
+
+
+                // ====================================================
+                // MARK TASK AS DONE
+                // Available only after report upload succeeds
+                // ====================================================
+
+                Spacer(
+                    modifier =
+                        Modifier.height(10.dp)
+                )
+
+                Button(
+                    onClick =
+                        onMarkDone,
+
+                    enabled =
+                        reportUploaded &&
+                                !isCompleting &&
+                                !taskCompleted,
+
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .height(50.dp),
+
+                    shape =
+                        RoundedCornerShape(12.dp),
+
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor =
+                                TaskDetailGreen,
+
+                            disabledContainerColor =
+                                if (taskCompleted) {
+                                    Color(0xFFE1F5E7)
+                                } else {
+                                    Color(0xFFE0E0E0)
+                                },
+
+                            disabledContentColor =
+                                if (taskCompleted) {
+                                    TaskDetailGreen
+                                } else {
+                                    Color.Gray
+                                }
+                        )
+                ) {
+
+                    if (isCompleting) {
+
+                        CircularProgressIndicator(
+                            modifier =
+                                Modifier.size(19.dp),
+
+                            strokeWidth =
+                                2.dp,
+
+                            color =
+                                Color.White
+                        )
+
+                        Spacer(
+                            modifier =
+                                Modifier.width(8.dp)
+                        )
+
+                        Text(
+                            text =
+                                "Completing Task...",
+
+                            fontWeight =
+                                FontWeight.Bold
+                        )
+
+                    } else {
+
+                        Icon(
+                            imageVector =
+                                Icons.Outlined.CheckCircle,
+
+                            contentDescription =
+                                null
+                        )
+
+                        Spacer(
+                            modifier =
+                                Modifier.width(8.dp)
+                        )
+
+                        Text(
+                            text =
+                                when {
+                                    taskCompleted ->
+                                        "Task Completed"
+
+                                    !reportUploaded ->
+                                        "Upload Report Before Completing"
+
+                                    else ->
+                                        "Mark Task as Done"
+                                },
+
+                            fontWeight =
+                                FontWeight.Bold
+                        )
+                    }
                 }
             }
         }

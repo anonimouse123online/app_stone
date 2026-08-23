@@ -16,6 +16,12 @@ import com.example.capstonesample.data.model.CreateConversationResponse
 import com.example.capstonesample.data.model.MessagesResponse
 import com.example.capstonesample.data.model.SendMessageRequest
 import com.example.capstonesample.data.model.SendMessageResponse
+import com.example.capstonesample.data.model.CompleteTaskRequest
+import com.example.capstonesample.data.model.CompleteTaskResponse
+import com.example.capstonesample.data.model.UploadTaskReportRequest
+import com.example.capstonesample.data.model.UploadTaskReportResponse
+import com.example.capstonesample.data.model.CreateIssueRequest
+import com.example.capstonesample.data.model.CreateIssueResponse
 
 
 
@@ -30,6 +36,7 @@ import retrofit2.http.Header
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.PATCH
 
 
 interface ApiService {
@@ -54,6 +61,31 @@ interface ApiService {
     suspend fun getProjectDocuments(
         @Path("code") code: String
     ): Response<ProjectDocumentsResponse>
+
+    @POST("timelogs")
+    suspend fun createTimeLog(
+        @Header("Authorization") token: String,
+        @Body request: TimeLogCreateRequest
+    ): Response<TimeLogCreateResponse>
+
+    @POST("tasks/{taskId}/reports")
+    suspend fun uploadTaskReport(
+        @Path("taskId") taskId: String,
+        @Body request: UploadTaskReportRequest
+    ): Response<UploadTaskReportResponse>
+
+
+    @PATCH("tasks/{taskId}/complete")
+    suspend fun completeTask(
+        @Path("taskId") taskId: String,
+        @Body request: CompleteTaskRequest = CompleteTaskRequest()
+    ): Response<CompleteTaskResponse>
+
+    @POST("projects/{projectCode}/issues")
+    suspend fun createProjectIssue(
+        @Path("projectCode") projectCode: String,
+        @Body request: CreateIssueRequest
+    ): Response<CreateIssueResponse>
 
 
 
@@ -177,6 +209,10 @@ interface ApiService {
     suspend fun getDashboard(
         @Header("Authorization") token: String
     ): Response<DashboardResponse>
+    @GET("notifications")
+    suspend fun getNotifications(
+        @Header("Authorization") token: String
+    ): Response<NotificationResponse>
 }
 
 
@@ -253,7 +289,6 @@ data class TaskResponse(
     // PostgreSQL UUID
     val id: String,
 
-
     // Backend may return:
     // task_name OR title
     @SerializedName(
@@ -262,20 +297,18 @@ data class TaskResponse(
     )
     val title: String,
 
-
     val description: String? = null,
 
-
     val status: String? = null,
-
 
     @SerializedName("project_id")
     val projectId: String? = null,
 
+    @SerializedName("project_code")
+    val projectCode: String? = null,
 
     @SerializedName("assignee_id")
     val assigneeId: String? = null,
-
 
     @SerializedName(
         value = "project_name",
@@ -283,13 +316,11 @@ data class TaskResponse(
     )
     val projectName: String? = null,
 
-
     @SerializedName(
         value = "assignee_name",
         alternate = ["assignee"]
     )
     val assigneeName: String? = null,
-
 
     @SerializedName(
         value = "due_date",
@@ -297,12 +328,9 @@ data class TaskResponse(
     )
     val dueDate: String? = null,
 
-
     val phase: String? = null,
 
-
     val priority: String? = null,
-
 
     @SerializedName(
         value = "progress_pct",

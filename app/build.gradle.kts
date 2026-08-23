@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    id("com.google.gms.google-services")
 
     id("com.google.devtools.ksp") version "2.3.10"
 }
@@ -92,6 +93,10 @@ android {
 
 
 dependencies {
+
+    implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
+    implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
+    implementation("com.google.firebase:firebase-messaging")
 
 
     // ============================================================

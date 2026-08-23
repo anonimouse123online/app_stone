@@ -41,8 +41,6 @@ data class SingleProjectResponse(
 
 data class ProjectResponse(
 
-    // IMPORTANT:
-    // PostgreSQL UUID
     val id: String? = null,
 
     val code: String? = null,
@@ -61,7 +59,7 @@ data class ProjectResponse(
 
     val status: String? = null,
 
-    val progress: Int? = null,
+    val progress: Double? = 0.0,
 
     @SerializedName("start_date")
     val startDate: String? = null,

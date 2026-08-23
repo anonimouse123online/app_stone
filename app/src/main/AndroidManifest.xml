@@ -11,6 +11,21 @@
 
 
     <!-- ================================================== -->
+    <!-- NOTIFICATIONS -->
+    <!-- ================================================== -->
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+
+    <!-- ================================================== -->
+    <!-- LOCATION -->
+    <!-- ================================================== -->
+
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+
+    <!-- ================================================== -->
     <!-- CAMERA -->
     <!-- ================================================== -->
 
@@ -31,6 +46,34 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.CapstoneSample"
         android:usesCleartextTraffic="true">
+
+
+        <!-- ================================================== -->
+        <!-- FIREBASE DEFAULT NOTIFICATION SETTINGS -->
+        <!-- ================================================== -->
+
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="sitepulse_notifications" />
+
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/logo" />
+
+
+        <!-- ================================================== -->
+        <!-- FIREBASE CLOUD MESSAGING SERVICE -->
+        <!-- ================================================== -->
+
+        <service
+            android:name=".notifications.MyFirebaseMessagingService"
+            android:exported="false">
+
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+
+        </service>
 
 
         <!-- ================================================== -->

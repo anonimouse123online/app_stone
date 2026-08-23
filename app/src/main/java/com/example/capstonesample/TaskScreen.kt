@@ -38,33 +38,20 @@ import org.json.JSONObject
 // ============================================================
 
 data class SiteTask(
-
     val id: String,
-
     val title: String,
-
     val projectId: String?,
-
+    val projectCode: String?,
     val project: String,
-
     val status: String,
-
     val schedule: String,
-
     val assignee: String,
-
     val phase: String,
-
     val priority: String,
-
     val progress: Int,
-
     val assigneeInitials: String,
-
     val assigneeColor: Color,
-
     val indicatorColor: Color,
-
     val overdue: Boolean = false
 )
 
@@ -466,6 +453,10 @@ fun TasksScreen(
                             )
 
                             println(
+                                "TASK PROJECT CODE = ${task.projectCode}"
+                            )
+
+                            println(
                                 "TASK PROJECT = ${task.projectName}"
                             )
 
@@ -719,6 +710,9 @@ fun TasksScreen(
                 projectId =
                     task.projectId,
 
+                projectCode =
+                    task.projectCode,
+
                 project =
                     task.projectName
                         ?: "Assigned Project",
@@ -742,11 +736,28 @@ fun TasksScreen(
                         ?: "Normal",
 
                 progress =
-                    (task.progress ?: 0)
-                        .coerceIn(
-                            0,
-                            100
-                        ),
+                    if (
+                        taskStatus.equals(
+                            "Completed",
+                            ignoreCase = true
+                        ) ||
+                        taskStatus.equals(
+                            "Done",
+                            ignoreCase = true
+                        ) ||
+                        taskStatus.equals(
+                            "Approved",
+                            ignoreCase = true
+                        )
+                    ) {
+                        100
+                    } else {
+                        (task.progress ?: 0)
+                            .coerceIn(
+                                0,
+                                100
+                            )
+                    },
 
                 assigneeInitials =
                     initials,
@@ -894,6 +905,9 @@ fun TasksScreen(
 
                 selectedTask =
                     null
+
+                // Fetch the latest task status/progress from backend
+                refreshTasks()
             },
 
 
