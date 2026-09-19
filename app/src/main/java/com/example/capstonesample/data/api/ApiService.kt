@@ -22,6 +22,12 @@ import com.example.capstonesample.data.model.UploadTaskReportRequest
 import com.example.capstonesample.data.model.UploadTaskReportResponse
 import com.example.capstonesample.data.model.CreateIssueRequest
 import com.example.capstonesample.data.model.CreateIssueResponse
+import com.example.capstonesample.data.model.ForgotPasswordRequest
+import com.example.capstonesample.data.model.ForgotPasswordResponse
+import com.example.capstonesample.data.model.VerifyResetCodeRequest
+import com.example.capstonesample.data.model.VerifyResetCodeResponse
+import com.example.capstonesample.data.model.ResetPasswordRequest
+import com.example.capstonesample.data.model.ResetPasswordResponse
 
 
 
@@ -56,6 +62,32 @@ interface ApiService {
     suspend fun signup(
         @Body request: SignupRequest
     ): Response<SignupResponse>
+    // ============================================================
+    // FORGOT PASSWORD
+    // ============================================================
+
+    @POST("auth/forgot-password")
+    suspend fun forgotPassword(
+        @Body request: ForgotPasswordRequest
+    ): Response<ForgotPasswordResponse>
+    // ============================================================
+// VERIFY PASSWORD RESET OTP
+// ============================================================
+
+    @POST("auth/verify-reset-code")
+    suspend fun verifyResetCode(
+        @Body request: VerifyResetCodeRequest
+    ): Response<VerifyResetCodeResponse>
+
+
+// ============================================================
+// RESET PASSWORD
+// ============================================================
+
+    @POST("auth/reset-password")
+    suspend fun resetPassword(
+        @Body request: ResetPasswordRequest
+    ): Response<ResetPasswordResponse>
 
     @GET("projects/{code}/documents")
     suspend fun getProjectDocuments(

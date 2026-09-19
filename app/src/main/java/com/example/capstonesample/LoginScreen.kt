@@ -26,8 +26,11 @@ import androidx.compose.ui.unit.sp
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.local.AppDatabase
 import com.example.capstonesample.data.model.LoginRequest
+import com.example.capstonesample.data.model.ForgotPasswordRequest
 import com.example.capstonesample.security.PasswordUtils
 import com.example.capstonesample.security.TokenManager
+import com.example.capstonesample.data.model.VerifyResetCodeRequest
+import com.example.capstonesample.data.model.ResetPasswordRequest
 
 import kotlinx.coroutines.launch
 import java.net.ConnectException
@@ -81,6 +84,11 @@ fun LoginScreen(
         mutableStateOf(false)
     }
 
+    // Forgot password dialog
+    var showForgotPassword by remember {
+        mutableStateOf(false)
+    }
+
 
     // ============================================================
     // CONTEXT / COROUTINE
@@ -114,7 +122,6 @@ fun LoginScreen(
 
     // ============================================================
     // COLORS
-    // KEEPING YOUR ORIGINAL COLOR LOGIC
     // ============================================================
 
     val orange =
@@ -265,7 +272,9 @@ fun LoginScreen(
             Card(
                 modifier = Modifier
                     .fillMaxWidth(),
-                shape = RoundedCornerShape(22.dp),
+
+                shape =
+                    RoundedCornerShape(22.dp),
 
                 colors =
                     CardDefaults.cardColors(
@@ -324,7 +333,7 @@ fun LoginScreen(
 
 
                     // ============================================
-                    // EMAIL LABEL
+                    // EMAIL
                     // ============================================
 
                     Text(
@@ -340,14 +349,9 @@ fun LoginScreen(
                     )
 
 
-                    // ============================================
-                    // EMAIL FIELD
-                    // ============================================
-
                     OutlinedTextField(
 
-                        value =
-                            username,
+                        value = username,
 
                         onValueChange = {
 
@@ -419,7 +423,7 @@ fun LoginScreen(
 
 
                     // ============================================
-                    // PASSWORD LABEL
+                    // PASSWORD
                     // ============================================
 
                     Text(
@@ -435,14 +439,9 @@ fun LoginScreen(
                     )
 
 
-                    // ============================================
-                    // PASSWORD FIELD
-                    // ============================================
-
                     OutlinedTextField(
 
-                        value =
-                            password,
+                        value = password,
 
                         onValueChange = {
 
@@ -645,8 +644,11 @@ fun LoginScreen(
                         )
 
 
-                        Text(
+                        // ========================================
+                        // FIXED FORGOT PASSWORD BUTTON
+                        // ========================================
 
+                        Text(
                             text =
                                 "Forgot Password?",
 
@@ -660,14 +662,22 @@ fun LoginScreen(
                                 FontWeight.SemiBold,
 
                             modifier =
-                                Modifier.clickable {
+                                Modifier
+                                    .clickable(
+                                        enabled =
+                                            !isLoading
+                                    ) {
 
-                                    if (!isLoading) {
-
-                                        message =
-                                            "Password recovery is not available yet."
+                                        showForgotPassword =
+                                            true
                                     }
-                                }
+                                    .padding(
+                                        horizontal =
+                                            4.dp,
+
+                                        vertical =
+                                            6.dp
+                                    )
                         )
                     }
 
@@ -1509,4 +1519,1200 @@ fun LoginScreen(
             )
         }
     }
+
+
+    // ============================================================
+    // FORGOT PASSWORD DIALOG
+    // ============================================================
+
+    if (
+        showForgotPassword
+    ) {
+
+        ForgotPasswordDialog(
+
+            onDismiss = {
+
+                showForgotPassword =
+                    false
+            },
+
+            onPasswordReset = {
+
+                showForgotPassword =
+                    false
+
+                message =
+                    "Password changed successfully. You can now sign in."
+            }
+        )
+    }
+}
+
+
+// ============================================================
+// FORGOT PASSWORD DIALOG
+// ============================================================
+
+@Composable
+fun ForgotPasswordDialog(
+    onDismiss: () -> Unit,
+    onPasswordReset: () -> Unit
+) {
+
+    // ============================================================
+    // STEPS
+    // 1 = EMAIL
+    // 2 = OTP
+    // 3 = NEW PASSWORD
+    // ============================================================
+
+    var step by remember {
+        mutableStateOf(1)
+    }
+
+    var email by remember {
+        mutableStateOf("")
+    }
+
+    var otp by remember {
+        mutableStateOf("")
+    }
+
+    var newPassword by remember {
+        mutableStateOf("")
+    }
+
+    var confirmPassword by remember {
+        mutableStateOf("")
+    }
+
+    var newPasswordVisible by remember {
+        mutableStateOf(false)
+    }
+
+    var confirmPasswordVisible by remember {
+        mutableStateOf(false)
+    }
+
+    var message by remember {
+        mutableStateOf("")
+    }
+
+    var isError by remember {
+        mutableStateOf(false)
+    }
+
+    var isLoading by remember {
+        mutableStateOf(false)
+    }
+
+
+    val scope =
+        rememberCoroutineScope()
+
+
+    val orange =
+        Color(0xFFF15A24)
+
+    val fieldBackground =
+        Color(0xFFFAFAFA)
+
+    val fieldBorder =
+        Color(0xFFE8DFDA)
+
+
+    AlertDialog(
+
+        onDismissRequest = {
+
+            if (!isLoading) {
+                onDismiss()
+            }
+        },
+
+        containerColor =
+            Color.White,
+
+        shape =
+            RoundedCornerShape(22.dp),
+
+
+        // ========================================================
+        // TITLE
+        // ========================================================
+
+        title = {
+
+            Column {
+
+                Text(
+                    text =
+                        when (step) {
+
+                            1 ->
+                                "Forgot Password?"
+
+                            2 ->
+                                "Verify Code"
+
+                            else ->
+                                "Create New Password"
+                        },
+
+                    fontSize =
+                        23.sp,
+
+                    fontWeight =
+                        FontWeight.Bold,
+
+                    color =
+                        Color(0xFF1B1B1B)
+                )
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(8.dp)
+                )
+
+
+                Text(
+                    text =
+                        when (step) {
+
+                            1 ->
+                                "Enter the email address registered with your SitePulse account."
+
+                            2 ->
+                                "Enter the 6-digit verification code sent to $email."
+
+                            else ->
+                                "Enter a new password for your SitePulse account."
+                        },
+
+                    fontSize =
+                        13.sp,
+
+                    lineHeight =
+                        19.sp,
+
+                    color =
+                        Color(0xFF777777),
+
+                    fontWeight =
+                        FontWeight.Normal
+                )
+            }
+        },
+
+
+        // ========================================================
+        // CONTENT
+        // ========================================================
+
+        text = {
+
+            Column(
+                modifier =
+                    Modifier.fillMaxWidth()
+            ) {
+
+
+                // ====================================================
+                // STEP 1 - EMAIL
+                // ====================================================
+
+                if (
+                    step == 1
+                ) {
+
+                    Text(
+                        text =
+                            "Email Address",
+
+                        fontSize =
+                            13.sp,
+
+                        fontWeight =
+                            FontWeight.SemiBold,
+
+                        color =
+                            Color(0xFF292929)
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(8.dp)
+                    )
+
+
+                    OutlinedTextField(
+
+                        value =
+                            email,
+
+                        onValueChange = {
+
+                            email = it
+
+                            message = ""
+                        },
+
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        placeholder = {
+
+                            Text(
+                                text =
+                                    "Enter your email address"
+                            )
+                        },
+
+                        enabled =
+                            !isLoading,
+
+                        singleLine =
+                            true,
+
+                        shape =
+                            RoundedCornerShape(14.dp),
+
+                        colors =
+                            OutlinedTextFieldDefaults.colors(
+
+                                focusedContainerColor =
+                                    fieldBackground,
+
+                                unfocusedContainerColor =
+                                    fieldBackground,
+
+                                focusedBorderColor =
+                                    orange,
+
+                                unfocusedBorderColor =
+                                    fieldBorder,
+
+                                cursorColor =
+                                    orange
+                            )
+                    )
+                }
+
+
+                // ====================================================
+                // STEP 2 - OTP
+                // ====================================================
+
+                if (
+                    step == 2
+                ) {
+
+                    Text(
+                        text =
+                            "Verification Code",
+
+                        fontSize =
+                            13.sp,
+
+                        fontWeight =
+                            FontWeight.SemiBold,
+
+                        color =
+                            Color(0xFF292929)
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(8.dp)
+                    )
+
+
+                    OutlinedTextField(
+
+                        value =
+                            otp,
+
+                        onValueChange = {
+
+                            // Only allow numbers
+                            if (
+                                it.length <= 6 &&
+                                it.all { char ->
+                                    char.isDigit()
+                                }
+                            ) {
+
+                                otp = it
+                            }
+
+                            message = ""
+                        },
+
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        placeholder = {
+
+                            Text(
+                                text =
+                                    "Enter 6-digit code"
+                            )
+                        },
+
+                        enabled =
+                            !isLoading,
+
+                        singleLine =
+                            true,
+
+                        shape =
+                            RoundedCornerShape(14.dp),
+
+                        colors =
+                            OutlinedTextFieldDefaults.colors(
+
+                                focusedContainerColor =
+                                    fieldBackground,
+
+                                unfocusedContainerColor =
+                                    fieldBackground,
+
+                                focusedBorderColor =
+                                    orange,
+
+                                unfocusedBorderColor =
+                                    fieldBorder,
+
+                                cursorColor =
+                                    orange
+                            )
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(12.dp)
+                    )
+
+
+                    Text(
+                        text =
+                            "The verification code expires after 10 minutes.",
+
+                        fontSize =
+                            11.sp,
+
+                        color =
+                            Color(0xFF777777)
+                    )
+                }
+
+
+                // ====================================================
+                // STEP 3 - NEW PASSWORD
+                // ====================================================
+
+                if (
+                    step == 3
+                ) {
+
+                    Text(
+                        text =
+                            "New Password",
+
+                        fontSize =
+                            13.sp,
+
+                        fontWeight =
+                            FontWeight.SemiBold
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(8.dp)
+                    )
+
+
+                    OutlinedTextField(
+
+                        value =
+                            newPassword,
+
+                        onValueChange = {
+
+                            newPassword = it
+
+                            message = ""
+                        },
+
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        placeholder = {
+
+                            Text(
+                                text =
+                                    "Enter new password"
+                            )
+                        },
+
+                        enabled =
+                            !isLoading,
+
+                        singleLine =
+                            true,
+
+                        visualTransformation =
+
+                            if (
+                                newPasswordVisible
+                            ) {
+
+                                VisualTransformation.None
+
+                            } else {
+
+                                PasswordVisualTransformation()
+                            },
+
+                        trailingIcon = {
+
+                            IconButton(
+
+                                onClick = {
+
+                                    newPasswordVisible =
+                                        !newPasswordVisible
+                                }
+
+                            ) {
+
+                                Icon(
+
+                                    imageVector =
+
+                                        if (
+                                            newPasswordVisible
+                                        ) {
+
+                                            Icons.Default.VisibilityOff
+
+                                        } else {
+
+                                            Icons.Default.Visibility
+                                        },
+
+                                    contentDescription =
+                                        "Show password"
+                                )
+                            }
+                        },
+
+                        shape =
+                            RoundedCornerShape(14.dp),
+
+                        colors =
+                            OutlinedTextFieldDefaults.colors(
+
+                                focusedBorderColor =
+                                    orange,
+
+                                unfocusedBorderColor =
+                                    fieldBorder,
+
+                                cursorColor =
+                                    orange
+                            )
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(16.dp)
+                    )
+
+
+                    Text(
+                        text =
+                            "Confirm New Password",
+
+                        fontSize =
+                            13.sp,
+
+                        fontWeight =
+                            FontWeight.SemiBold
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(8.dp)
+                    )
+
+
+                    OutlinedTextField(
+
+                        value =
+                            confirmPassword,
+
+                        onValueChange = {
+
+                            confirmPassword = it
+
+                            message = ""
+                        },
+
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        placeholder = {
+
+                            Text(
+                                text =
+                                    "Confirm new password"
+                            )
+                        },
+
+                        enabled =
+                            !isLoading,
+
+                        singleLine =
+                            true,
+
+                        visualTransformation =
+
+                            if (
+                                confirmPasswordVisible
+                            ) {
+
+                                VisualTransformation.None
+
+                            } else {
+
+                                PasswordVisualTransformation()
+                            },
+
+                        trailingIcon = {
+
+                            IconButton(
+
+                                onClick = {
+
+                                    confirmPasswordVisible =
+                                        !confirmPasswordVisible
+                                }
+
+                            ) {
+
+                                Icon(
+
+                                    imageVector =
+
+                                        if (
+                                            confirmPasswordVisible
+                                        ) {
+
+                                            Icons.Default.VisibilityOff
+
+                                        } else {
+
+                                            Icons.Default.Visibility
+                                        },
+
+                                    contentDescription =
+                                        "Show password"
+                                )
+                            }
+                        },
+
+                        shape =
+                            RoundedCornerShape(14.dp),
+
+                        colors =
+                            OutlinedTextFieldDefaults.colors(
+
+                                focusedBorderColor =
+                                    orange,
+
+                                unfocusedBorderColor =
+                                    fieldBorder,
+
+                                cursorColor =
+                                    orange
+                            )
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(10.dp)
+                    )
+
+
+                    Text(
+                        text =
+                            "Password must contain at least 8 characters.",
+
+                        fontSize =
+                            11.sp,
+
+                        color =
+                            Color(0xFF777777)
+                    )
+                }
+
+
+                // ====================================================
+                // STATUS MESSAGE
+                // ====================================================
+
+                if (
+                    message.isNotBlank()
+                ) {
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(14.dp)
+                    )
+
+
+                    Surface(
+
+                        modifier =
+                            Modifier.fillMaxWidth(),
+
+                        color =
+
+                            if (
+                                isError
+                            ) {
+
+                                Color(0xFFFFF1F0)
+
+                            } else {
+
+                                Color(0xFFF1F8F3)
+                            },
+
+                        shape =
+                            RoundedCornerShape(10.dp)
+
+                    ) {
+
+                        Text(
+
+                            text =
+                                message,
+
+                            modifier =
+                                Modifier.padding(10.dp),
+
+                            color =
+
+                                if (
+                                    isError
+                                ) {
+
+                                    Color(0xFFD32F2F)
+
+                                } else {
+
+                                    Color(0xFF2E7D32)
+                                },
+
+                            fontSize =
+                                12.sp
+                        )
+                    }
+                }
+            }
+        },
+
+
+        // ========================================================
+        // MAIN BUTTON
+        // ========================================================
+
+        confirmButton = {
+
+            Button(
+
+                enabled =
+                    !isLoading,
+
+                shape =
+                    RoundedCornerShape(12.dp),
+
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor =
+                            orange
+                    ),
+
+                onClick = {
+
+
+                    // =================================================
+                    // STEP 1 - SEND OTP
+                    // =================================================
+
+                    if (
+                        step == 1
+                    ) {
+
+                        val cleanEmail =
+                            email
+                                .trim()
+                                .lowercase()
+
+
+                        if (
+                            cleanEmail.isBlank()
+                        ) {
+
+                            isError =
+                                true
+
+                            message =
+                                "Please enter your email address."
+
+                            return@Button
+                        }
+
+
+                        if (
+                            !android.util.Patterns.EMAIL_ADDRESS
+                                .matcher(
+                                    cleanEmail
+                                )
+                                .matches()
+                        ) {
+
+                            isError =
+                                true
+
+                            message =
+                                "Please enter a valid email address."
+
+                            return@Button
+                        }
+
+
+                        scope.launch {
+
+                            isLoading =
+                                true
+
+                            message =
+                                ""
+
+
+                            try {
+
+                                val response =
+                                    RetrofitClient.api
+                                        .forgotPassword(
+
+                                            ForgotPasswordRequest(
+                                                email =
+                                                    cleanEmail
+                                            )
+                                        )
+
+
+                                if (
+                                    response.isSuccessful
+                                ) {
+
+                                    email =
+                                        cleanEmail
+
+                                    step =
+                                        2
+
+                                    isError =
+                                        false
+
+                                    message =
+                                        "Verification code sent successfully."
+
+
+                                } else {
+
+                                    isError =
+                                        true
+
+                                    message =
+
+                                        when (
+                                            response.code()
+                                        ) {
+
+                                            404 ->
+                                                "Account not found."
+
+                                            429 ->
+                                                "Too many requests. Please try again later."
+
+                                            else ->
+                                                "Unable to send verification code."
+                                        }
+                                }
+
+
+                            } catch (
+                                e: Exception
+                            ) {
+
+                                e.printStackTrace()
+
+                                isError =
+                                    true
+
+                                message =
+                                    "Unable to connect to the server."
+
+                            } finally {
+
+                                isLoading =
+                                    false
+                            }
+                        }
+                    }
+
+
+                    // =================================================
+                    // STEP 2 - VERIFY OTP
+                    // =================================================
+
+                    else if (
+                        step == 2
+                    ) {
+
+                        if (
+                            otp.length != 6
+                        ) {
+
+                            isError =
+                                true
+
+                            message =
+                                "Please enter the 6-digit verification code."
+
+                            return@Button
+                        }
+
+
+                        scope.launch {
+
+                            isLoading =
+                                true
+
+                            message =
+                                ""
+
+
+                            try {
+
+                                val response =
+                                    RetrofitClient.api
+                                        .verifyResetCode(
+
+                                            VerifyResetCodeRequest(
+
+                                                email =
+                                                    email,
+
+                                                code =
+                                                    otp
+                                            )
+                                        )
+
+
+                                if (
+                                    response.isSuccessful
+                                ) {
+
+                                    step =
+                                        3
+
+                                    isError =
+                                        false
+
+                                    message =
+                                        "Code verified successfully."
+
+
+                                } else {
+
+                                    isError =
+                                        true
+
+                                    message =
+
+                                        response
+                                            .errorBody()
+                                            ?.string()
+                                            ?.takeIf {
+                                                it.isNotBlank()
+                                            }
+                                            ?: "Incorrect or expired verification code."
+                                }
+
+
+                            } catch (
+                                e: Exception
+                            ) {
+
+                                e.printStackTrace()
+
+                                isError =
+                                    true
+
+                                message =
+                                    "Unable to verify the code."
+
+                            } finally {
+
+                                isLoading =
+                                    false
+                            }
+                        }
+                    }
+
+
+                    // =================================================
+                    // STEP 3 - RESET PASSWORD
+                    // =================================================
+
+                    else {
+
+                        if (
+                            newPassword.length < 8
+                        ) {
+
+                            isError =
+                                true
+
+                            message =
+                                "Password must contain at least 8 characters."
+
+                            return@Button
+                        }
+
+
+                        if (
+                            newPassword !=
+                            confirmPassword
+                        ) {
+
+                            isError =
+                                true
+
+                            message =
+                                "Passwords do not match."
+
+                            return@Button
+                        }
+
+
+                        scope.launch {
+
+                            isLoading =
+                                true
+
+                            message =
+                                ""
+
+
+                            try {
+
+                                val response =
+                                    RetrofitClient.api
+                                        .resetPassword(
+
+                                            ResetPasswordRequest(
+
+                                                email =
+                                                    email,
+
+                                                code =
+                                                    otp,
+
+                                                newPassword =
+                                                    newPassword
+                                            )
+                                        )
+
+
+                                if (
+                                    response.isSuccessful
+                                ) {
+
+                                    isError =
+                                        false
+
+                                    message =
+                                        "Password successfully changed."
+
+
+                                    kotlinx.coroutines.delay(
+                                        1000
+                                    )
+
+
+                                    onPasswordReset()
+
+
+                                } else {
+
+                                    isError =
+                                        true
+
+                                    message =
+                                        "Unable to reset your password."
+                                }
+
+
+                            } catch (
+                                e: Exception
+                            ) {
+
+                                e.printStackTrace()
+
+                                isError =
+                                    true
+
+                                message =
+                                    "Unable to connect to the server."
+
+                            } finally {
+
+                                isLoading =
+                                    false
+                            }
+                        }
+                    }
+                }
+
+            ) {
+
+
+                if (
+                    isLoading
+                ) {
+
+                    CircularProgressIndicator(
+
+                        modifier =
+                            Modifier.size(18.dp),
+
+                        strokeWidth =
+                            2.dp,
+
+                        color =
+                            Color.White
+                    )
+
+
+                    Spacer(
+                        modifier =
+                            Modifier.width(8.dp)
+                    )
+                }
+
+
+                Text(
+
+                    text =
+
+                        if (
+                            isLoading
+                        ) {
+
+                            "Please wait..."
+
+                        } else {
+
+                            when (
+                                step
+                            ) {
+
+                                1 ->
+                                    "Send Code"
+
+                                2 ->
+                                    "Verify Code"
+
+                                else ->
+                                    "Reset Password"
+                            }
+                        },
+
+                    color =
+                        Color.White,
+
+                    fontWeight =
+                        FontWeight.Bold
+                )
+            }
+        },
+
+
+        // ========================================================
+        // CANCEL / BACK
+        // ========================================================
+
+        dismissButton = {
+
+            TextButton(
+
+                enabled =
+                    !isLoading,
+
+                onClick = {
+
+                    if (
+                        step == 1
+                    ) {
+
+                        onDismiss()
+
+                    } else {
+
+                        step =
+                            step - 1
+
+                        message =
+                            ""
+                    }
+                }
+
+            ) {
+
+                Text(
+                    text =
+
+                        if (
+                            step == 1
+                        ) {
+
+                            "Cancel"
+
+                        } else {
+
+                            "Back"
+                        },
+
+                    color =
+                        Color(0xFF666666)
+                )
+            }
+        }
+    )
 }
