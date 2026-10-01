@@ -56,23 +56,30 @@ fun LoginScreen(
 
 ) {
 
-    // ============================================================
-    // FORM STATE
-    // ============================================================
+    val context =
+        LocalContext.current
 
-    var username by remember {
-        mutableStateOf("")
-    }
-
-    var password by remember {
-        mutableStateOf("")
-    }
-
-    var passwordVisible by remember {
-        mutableStateOf(false)
+    val initialRememberMe = remember {
+        TokenManager.isRememberMe(context)
     }
 
     var rememberMe by remember {
+        mutableStateOf(initialRememberMe)
+    }
+
+    var username by remember {
+        mutableStateOf(
+            if (initialRememberMe) TokenManager.getSavedEmail(context) else ""
+        )
+    }
+
+    var password by remember {
+        mutableStateOf(
+            if (initialRememberMe) TokenManager.getSavedPassword(context) else ""
+        )
+    }
+
+    var passwordVisible by remember {
         mutableStateOf(false)
     }
 
@@ -96,9 +103,6 @@ fun LoginScreen(
 
     val scope =
         rememberCoroutineScope()
-
-    val context =
-        LocalContext.current
 
 
     // ============================================================
@@ -843,6 +847,17 @@ fun LoginScreen(
                                                 token = jwt
                                             )
 
+                                            // ====================
+                                            // SAVE REMEMBER ME
+                                            // ====================
+
+                                            TokenManager.saveRememberMe(
+                                                context = context,
+                                                rememberMe = rememberMe,
+                                                email = if (rememberMe) cleanEmail else "",
+                                                password = if (rememberMe) password else ""
+                                            )
+
 
                                             println(
                                                 "🔐 JWT TOKEN SAVED"
@@ -1101,6 +1116,17 @@ fun LoginScreen(
                                             "✅ OFFLINE LOGIN SUCCESS"
                                         )
 
+
+                                        // ====================
+                                        // SAVE REMEMBER ME
+                                        // ====================
+
+                                        TokenManager.saveRememberMe(
+                                            context = context,
+                                            rememberMe = rememberMe,
+                                            email = if (rememberMe) cleanEmail else "",
+                                            password = if (rememberMe) password else ""
+                                        )
 
                                         onLoginClick(
 

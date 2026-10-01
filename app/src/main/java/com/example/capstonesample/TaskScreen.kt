@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.api.TaskResponse
+import com.example.capstonesample.data.api.SubtaskItem
 
 import kotlinx.coroutines.launch
 
@@ -52,7 +53,8 @@ data class SiteTask(
     val assigneeInitials: String,
     val assigneeColor: Color,
     val indicatorColor: Color,
-    val overdue: Boolean = false
+    val overdue: Boolean = false,
+    val subtasks: List<SubtaskItem> = emptyList()
 )
 
 
@@ -774,7 +776,10 @@ fun TasksScreen(
                     taskStatus.equals(
                         "overdue",
                         ignoreCase = true
-                    )
+                    ),
+
+                subtasks =
+                    task.subtasks ?: emptyList()
             )
         }
 
@@ -2057,6 +2062,14 @@ private fun TaskListCard(
                 value =
                     task.assignee
             )
+
+            if (task.subtasks.isNotEmpty()) {
+                val doneCount = task.subtasks.count { it.completed }
+                TaskDetailRow(
+                    label = "Subtasks",
+                    value = "$doneCount / ${task.subtasks.size} done"
+                )
+            }
 
 
             Spacer(

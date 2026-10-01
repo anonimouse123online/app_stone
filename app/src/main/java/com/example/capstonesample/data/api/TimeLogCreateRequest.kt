@@ -69,7 +69,7 @@ data class TimeLogCreateResponse(
 
 data class TimeLogCreatedData(
 
-    val id: Int? = null,
+    val id: String? = null,
 
     @SerializedName("project_name")
     val projectName: String? = null,

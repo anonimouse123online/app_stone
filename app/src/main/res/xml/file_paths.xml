@@ -2,6 +2,19 @@
 
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Root paths for complete FileProvider coverage -->
+    <external-files-path
+        name="all_external_files"
+        path="." />
+
+    <external-cache-path
+        name="all_external_cache"
+        path="." />
+
+    <files-path
+        name="all_files"
+        path="." />
+
     <!-- Existing image files -->
     <files-path
         name="images"
