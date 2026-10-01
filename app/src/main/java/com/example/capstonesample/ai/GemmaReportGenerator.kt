@@ -43,7 +43,6 @@ class GemmaReportGenerator(
         Dispatchers.Default
     ) {
 
-        // Already initialized
         if (engine != null) {
 
             Log.d(
@@ -54,10 +53,6 @@ class GemmaReportGenerator(
             return@withContext
         }
 
-
-        // ========================================================
-        // CHECK MODEL FILE
-        // ========================================================
 
         val modelFile =
             File(
@@ -128,16 +123,6 @@ class GemmaReportGenerator(
         )
 
 
-        // ========================================================
-        // ENGINE CONFIGURATION
-        // ========================================================
-        //
-        // Start with CPU while testing.
-        //
-        // GPU can be enabled later once inference works reliably.
-        //
-        // ========================================================
-
         val config =
             EngineConfig(
 
@@ -152,10 +137,6 @@ class GemmaReportGenerator(
             )
 
 
-        // ========================================================
-        // CREATE ENGINE
-        // ========================================================
-
         val newEngine =
             Engine(
                 config
@@ -164,14 +145,7 @@ class GemmaReportGenerator(
 
         try {
 
-            /*
-             * initialize() can take several seconds.
-             *
-             * That's why this function runs on
-             * Dispatchers.Default rather than the UI thread.
-             */
             newEngine.initialize()
-
 
             engine =
                 newEngine
@@ -210,7 +184,12 @@ class GemmaReportGenerator(
     // ============================================================
 
     suspend fun generateReport(
-        imageDescription: String
+
+        imageDescription: String,
+
+        engineerAnnotations: String =
+            "No engineer annotations were added to the image."
+
     ): String = withContext(
         Dispatchers.Default
     ) {
@@ -222,23 +201,29 @@ class GemmaReportGenerator(
                 )
 
 
-        if (imageDescription.isBlank()) {
+        if (engineerAnnotations.isBlank()) {
 
             throw IllegalArgumentException(
-                "Image description is empty."
+                "Engineer annotation input is empty."
             )
         }
 
 
         Log.d(
             TAG,
-            "Generating SitePulse AI report..."
+            "Generating SitePulse engineer-guided AI report..."
         )
 
 
         Log.d(
             TAG,
-            "YOLO input:\n$imageDescription"
+            "Supporting visual input:\n$imageDescription"
+        )
+
+
+        Log.d(
+            TAG,
+            "Primary engineer annotation input:\n$engineerAnnotations"
         )
 
 
@@ -248,106 +233,69 @@ class GemmaReportGenerator(
 
         val prompt =
             """
-You are SitePulse AI, an automated construction field inspection reporting system.
+You are SitePulse AI, a professional construction field reporting assistant.
 
-Your ONLY task is to produce a concise professional construction field inspection report from the supplied YOLO detection results.
+Generate a FINAL construction field assessment using the engineer-provided
+field information below.
 
-YOLO DETECTION RESULTS:
+PRIMARY ENGINEER FIELD DATA:
+$engineerAnnotations
+
+SECONDARY VISUAL OBSERVATIONS:
 $imageDescription
 
-STRICT OUTPUT RULES:
+IMPORTANT RULES:
 
-1. Output ONLY the inspection report.
-2. Do NOT greet the user.
-3. Do NOT say "Okay", "Sure", "Here is", "Initial draft", or similar phrases.
-4. Do NOT ask questions at the end.
-5. Do NOT offer to refine, expand, or modify the report.
-6. Do NOT use Markdown symbols such as **, *, #, ---, or backticks.
-7. Do NOT repeat these instructions.
-8. Do NOT invent objects, activities, hazards, defects, progress, or PPE.
-9. YOLO confidence represents detection confidence ONLY.
-10. NEVER interpret detection confidence as:
-    - safety compliance percentage
-    - PPE effectiveness
-    - quality
-    - work completion
-    - installation completion
-11. Do NOT say PPE is adequate, properly worn, correctly fitted, maintained, or compliant unless that information is explicitly provided.
-12. Do NOT infer missing PPE unless a class such as without_helmet or without_vest was actually detected.
-13. Do NOT infer construction progress from helmet or vest detections.
-14. Do NOT estimate a work completion percentage unless one is explicitly supplied.
-15. Keep the report concise and factual.
-16. Use plain text only.
-17. Do not repeat identical detections individually.
+1. Engineer-provided information is the authoritative source.
+2. Use the exact WORK_TYPE provided by the engineer.
+3. Use the exact STAGE provided by the engineer.
+4. If PROGRESS_PERCENT contains a number, use that exact percentage.
+5. NEVER state that no percentage was provided when a progress percentage exists.
+6. Never calculate progress from YOLO confidence.
+7. Automated object detections are secondary evidence only.
+8. Do not focus on helmets, persons, PPE, tools, or unrelated objects unless directly relevant.
+9. Do not invent construction work, defects, hazards, or progress.
+10. Use professional construction terminology.
+11. Do not say "Okay", "Sure", "Let's proceed", or ask for more information.
+12. Do not greet the user.
+13. Do not use Markdown symbols such as ** or #.
+14. Every section MUST be separated by a blank line.
+15. Generate the final report immediately.
 
-DETECTION CONSOLIDATION:
+OUTPUT EXACTLY THIS STRUCTURE:
 
-If the same class appears multiple times, consolidate it.
+SITEPULSE FIELD INSPECTION REPORT
 
-Example input:
-helmet: 91%
-helmet: 88%
-helmet: 86%
-vest: 86%
-vest: 67%
+WORK ACTIVITY:
+[Exact engineer-provided work type]
 
-Write:
-Helmet - 4 detections, highest confidence 91%
-Safety Vest - 2 detections, highest confidence 86%
+CURRENT STATUS:
+[Exact engineer-provided stage]
 
-Do not list every duplicate detection unless they represent different classes.
-
-PPE INTERPRETATION:
-
-helmet:
-State only that safety helmet(s) were detected.
-
-vest:
-State only that safety vest(s) were detected.
-
-without_helmet:
-State that potential missing helmet PPE was detected and requires verification by site personnel.
-
-without_vest:
-State that potential missing safety vest PPE was detected and requires verification by site personnel.
-
-If only PPE is detected, DO NOT attempt to determine construction work progress.
-
-Use EXACTLY this structure:
-
-SITEPULSE AI FIELD INSPECTION REPORT
-
-DETECTED OBJECTS AND PPE:
-[Consolidated detection results.]
-
-SITE ACTIVITY ASSESSMENT:
-[State only activities directly supported by detected construction objects.]
-[If only PPE was detected, write exactly:
-"The specific construction activity cannot be reliably determined from the available visual evidence."]
-
-SAFETY AND PPE OBSERVATION:
-[Describe only detected PPE or explicitly detected missing-PPE classes.]
-[Do not determine overall PPE compliance from helmet/vest detection alone.]
-
-WORK PROGRESS OBSERVATION:
-[Describe visible work-related evidence only.]
-[If detections contain only PPE, write exactly:
-"Work progress cannot be reliably determined from the detected PPE alone."]
+ENGINEER-RECORDED PROGRESS:
+[Exact engineer-provided progress percentage]
 
 FIELD ASSESSMENT:
-[Provide a maximum of 2 concise sentences based strictly on the detections.]
+[Write 2-3 professional sentences describing the current construction activity.]
 
-RECOMMENDED ACTION:
-[Provide 1 or 2 relevant verification actions only.]
+PROGRESS OBSERVATION:
+[Write 1-2 sentences explaining the current progress without changing the engineer percentage.]
+
+FIELD VERIFICATION:
+[State that the engineer-recorded progress should be verified through normal site inspection and project documentation procedures.]
+
+RECOMMENDED ACTIONS:
+1. [Relevant construction action]
+2. [Relevant inspection or verification action]
 
 OVERALL SUMMARY:
-[Provide a maximum of 2 concise sentences.]
+[Maximum 2 professional sentences summarizing work activity, stage, and progress.]
 
-AI DISCLAIMER:
-"This AI-generated assessment is based solely on computer-vision detections from the submitted image. Final verification of site conditions, safety compliance, and work progress must be performed by authorized site personnel."
+AI NOTE:
+This report was generated using engineer-provided field annotations. Automated image detections are used only as supporting information and do not determine construction progress.
+
+Generate the report now.
     """.trimIndent()
-
-
         // ========================================================
         // RESULT BUILDER
         // ========================================================
@@ -384,20 +332,15 @@ AI DISCLAIMER:
 
                     .collect { message ->
 
-                        /*
-                         * LiteRT-LM Flow returns Message objects.
-                         *
-                         * Convert the streamed Message into text.
-                         */
                         val chunk =
                             message.toString()
 
+                        if (chunk.isNotEmpty()) {
 
-                        if (chunk.isNotBlank()) {
-
-                            result.append(
-                                chunk
-                            )
+                            // IMPORTANT:
+                            // Do NOT manually add spaces between chunks.
+                            // Gemma may stream fragments of the same word.
+                            result.append(chunk)
                         }
                     }
             }
@@ -407,10 +350,95 @@ AI DISCLAIMER:
         // FINAL RESULT
         // ========================================================
 
-        val finalReport =
+        var finalReport =
             result
                 .toString()
                 .trim()
+
+        finalReport =
+            finalReport
+                .replace(
+                    "SITEPULSE FIELD INSPECTION REPORT",
+                    "SITEPULSE FIELD INSPECTION REPORT\n\n"
+                )
+                .replace(
+                    "WORK ACTIVITY:",
+                    "\n\nWORK ACTIVITY:\n"
+                )
+                .replace(
+                    "CURRENT STATUS:",
+                    "\n\nCURRENT STATUS:\n"
+                )
+                .replace(
+                    "ENGINEER-RECORDED PROGRESS:",
+                    "\n\nENGINEER-RECORDED PROGRESS:\n"
+                )
+                .replace(
+                    "FIELD ASSESSMENT:",
+                    "\n\nFIELD ASSESSMENT:\n"
+                )
+                .replace(
+                    "PROGRESS OBSERVATION:",
+                    "\n\nPROGRESS OBSERVATION:\n"
+                )
+                .replace(
+                    "FIELD VERIFICATION:",
+                    "\n\nFIELD VERIFICATION:\n"
+                )
+                .replace(
+                    "RECOMMENDED ACTIONS:",
+                    "\n\nRECOMMENDED ACTIONS:\n"
+                )
+                .replace(
+                    "OVERALL SUMMARY:",
+                    "\n\nOVERALL SUMMARY:\n"
+                )
+                .replace(
+                    "AI NOTE:",
+                    "\n\nAI NOTE:\n"
+                )
+                .replace(
+                    Regex("\n{3,}"),
+                    "\n\n"
+                )
+                .trim()
+
+
+
+        val badResponse =
+            finalReport.startsWith(
+                "Okay",
+                ignoreCase = true
+            ) ||
+                    finalReport.startsWith(
+                        "Sure",
+                        ignoreCase = true
+                    ) ||
+                    finalReport.contains(
+                        "please provide",
+                        ignoreCase = true
+                    ) ||
+                    finalReport.contains(
+                        "please send",
+                        ignoreCase = true
+                    ) ||
+                    finalReport.contains(
+                        "let's proceed",
+                        ignoreCase = true
+                    )
+
+
+        if (badResponse) {
+
+            Log.e(
+                TAG,
+                "Gemma returned conversational output instead of report: $finalReport"
+            )
+
+            throw IllegalStateException(
+                "AI did not generate the field report correctly. Please generate again."
+            )
+        }
 
 
         if (finalReport.isBlank()) {
@@ -426,15 +454,18 @@ AI DISCLAIMER:
             "========================================"
         )
 
+
         Log.d(
             TAG,
-            "GEMMA REPORT GENERATED"
+            "GEMMA ENGINEER-GUIDED REPORT GENERATED"
         )
+
 
         Log.d(
             TAG,
             finalReport
         )
+
 
         Log.d(
             TAG,

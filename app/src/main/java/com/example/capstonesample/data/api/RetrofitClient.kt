@@ -26,7 +26,7 @@ object RetrofitClient {
     // ============================================================
 
     // PHYSICAL PHONE
-    private const val BASE_URL = "http://192.168.1.11:5001/"
+    const val BASE_URL = "http://192.168.254.108:5001/"
 
     // ANDROID EMULATOR
     /// private const val BASE_URL =

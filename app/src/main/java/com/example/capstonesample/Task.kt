@@ -16,14 +16,17 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import com.example.capstonesample.data.model.CreateIssueRequest
+import com.example.capstonesample.data.model.FieldAnnotation
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -35,8 +38,15 @@ import androidx.compose.runtime.*
 
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -56,6 +66,9 @@ import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.model.UploadTaskReportRequest
 
 import java.io.File
+import kotlin.math.abs
+import kotlin.math.max
+import kotlin.math.min
 
 
 // ============================================================
@@ -184,6 +197,14 @@ fun TaskDetailScreen(
         mutableStateOf<String?>(null)
     }
 
+    // ============================================================
+    // ENGINEER IMAGE ANNOTATIONS
+    // ============================================================
+
+    var fieldAnnotations by remember {
+        mutableStateOf<List<FieldAnnotation>>(emptyList())
+    }
+
 
     // ============================================================
     // PREPARE BUNDLED GEMMA MODEL
@@ -264,7 +285,8 @@ fun TaskDetailScreen(
                 capturedPhotoUri =
                     pendingPhotoUri
 
-                // New photo = clear old AI result.
+                // New photo = clear old AI result and old annotations.
+                fieldAnnotations = emptyList()
                 detectedObjects = ""
                 aiReport = null
                 aiError = null
@@ -495,6 +517,14 @@ fun TaskDetailScreen(
                 capturedPhotoUri =
                     capturedPhotoUri,
 
+                annotations =
+                    fieldAnnotations,
+
+                onAnnotationsChange = { updatedAnnotations ->
+                    fieldAnnotations =
+                        updatedAnnotations
+                },
+
                 onCameraClick = {
                     openCamera()
                 }
@@ -622,7 +652,11 @@ fun TaskDetailScreen(
 
                                         val result =
                                             pipeline.analyzeImage(
-                                                imageUri
+                                                imageUri =
+                                                    imageUri,
+
+                                                annotations =
+                                                    fieldAnnotations
                                             )
 
                                         detectedObjects =
@@ -1465,13 +1499,18 @@ private fun TaskProgressCard(
 
 
 // ============================================================
-// FIELD EVIDENCE / CAMERA
+// FIELD EVIDENCE / CAMERA + ENGINEER ANNOTATION
 // ============================================================
 
 @Composable
 private fun FieldEvidenceCard(
 
     capturedPhotoUri: Uri?,
+
+    annotations: List<FieldAnnotation>,
+
+    onAnnotationsChange:
+        (List<FieldAnnotation>) -> Unit,
 
     onCameraClick: () -> Unit
 
@@ -1480,6 +1519,52 @@ private fun FieldEvidenceCard(
     val context =
         LocalContext.current
 
+    val latestAnnotations =
+        rememberUpdatedState(annotations)
+
+
+    // ============================================================
+    // ANNOTATION STATE
+    // ============================================================
+
+    var annotationMode by remember {
+        mutableStateOf(false)
+    }
+
+    var imageAreaSize by remember {
+        mutableStateOf(
+            androidx.compose.ui.unit.IntSize.Zero
+        )
+    }
+
+    var dragStart by remember {
+        mutableStateOf<Offset?>(null)
+    }
+
+    var dragEnd by remember {
+        mutableStateOf<Offset?>(null)
+    }
+
+    var pendingBox by remember {
+        mutableStateOf<PendingAnnotationBox?>(null)
+    }
+
+    var showAnnotationDialog by remember {
+        mutableStateOf(false)
+    }
+
+    var selectedAnnotationId by remember {
+        mutableStateOf<Long?>(null)
+    }
+
+    var movingAnnotationId by remember {
+        mutableStateOf<Long?>(null)
+    }
+
+
+    // ============================================================
+    // CARD
+    // ============================================================
 
     Card(
 
@@ -1510,10 +1595,11 @@ private fun FieldEvidenceCard(
             // ====================================================
 
             Row(
+
                 verticalAlignment =
                     Alignment.CenterVertically
-            ) {
 
+            ) {
 
                 Icon(
 
@@ -1552,7 +1638,7 @@ private fun FieldEvidenceCard(
                     Text(
 
                         text =
-                            "Capture photo evidence for this task.",
+                            "Capture a photo, then manually draw and label work areas.",
 
                         fontSize =
                             10.sp,
@@ -1595,7 +1681,6 @@ private fun FieldEvidenceCard(
 
             ) {
 
-
                 Icon(
 
                     imageVector =
@@ -1631,7 +1716,7 @@ private fun FieldEvidenceCard(
 
 
             // ====================================================
-            // SHOW CAPTURED PHOTO
+            // CAPTURED PHOTO
             // ====================================================
 
             if (capturedPhotoUri != null) {
@@ -1643,17 +1728,127 @@ private fun FieldEvidenceCard(
                 )
 
 
-                Text(
+                // =================================================
+                // PHOTO HEADER
+                // =================================================
 
-                    text =
-                        "Captured Photo",
+                Row(
 
-                    fontSize =
-                        13.sp,
+                    modifier =
+                        Modifier.fillMaxWidth(),
 
-                    fontWeight =
-                        FontWeight.Bold
-                )
+                    verticalAlignment =
+                        Alignment.CenterVertically
+
+                ) {
+
+                    Column(
+
+                        modifier =
+                            Modifier.weight(1f)
+
+                    ) {
+
+                        Text(
+
+                            text =
+                                "Captured Photo",
+
+                            fontSize =
+                                13.sp,
+
+                            fontWeight =
+                                FontWeight.Bold
+                        )
+
+
+                        Text(
+
+                            text =
+                                if (annotationMode) {
+
+                                    "Touch and drag over the photo to create a work area."
+
+                                } else {
+
+                                    "Draw a new work area or drag an existing box to reposition it."
+                                },
+
+                            fontSize =
+                                9.sp,
+
+                            color =
+                                TaskDetailGray
+                        )
+                    }
+
+
+                    // =============================================
+                    // DRAW WORK AREA BUTTON
+                    // =============================================
+
+                    TextButton(
+
+                        onClick = {
+
+                            annotationMode =
+                                !annotationMode
+
+                            dragStart =
+                                null
+
+                            dragEnd =
+                                null
+
+                            movingAnnotationId =
+                                null
+
+                            selectedAnnotationId =
+                                null
+                        }
+
+                    ) {
+
+                        Icon(
+
+                            imageVector =
+                                if (annotationMode) {
+
+                                    Icons.Outlined.Close
+
+                                } else {
+
+                                    Icons.Outlined.AddBox
+                                },
+
+                            contentDescription =
+                                null,
+
+                            modifier =
+                                Modifier.size(17.dp)
+                        )
+
+
+                        Spacer(
+                            modifier =
+                                Modifier.width(4.dp)
+                        )
+
+
+                        Text(
+
+                            text =
+                                if (annotationMode) {
+
+                                    "Cancel Drawing"
+
+                                } else {
+
+                                    "Draw Work Area"
+                                }
+                        )
+                    }
+                }
 
 
                 Spacer(
@@ -1662,9 +1857,9 @@ private fun FieldEvidenceCard(
                 )
 
 
-                // ------------------------------------------------
-                // LOAD LOCAL PHOTO
-                // ------------------------------------------------
+                // =================================================
+                // LOAD BITMAP
+                // =================================================
 
                 val bitmap =
                     remember(capturedPhotoUri) {
@@ -1693,11 +1888,23 @@ private fun FieldEvidenceCard(
                     }
 
 
-                // ------------------------------------------------
-                // DISPLAY PHOTO
-                // ------------------------------------------------
+                // =================================================
+                // DISPLAY + ANNOTATE IMAGE
+                // =================================================
 
                 if (bitmap != null) {
+
+                    val imageAspectRatio =
+                        if (bitmap.height > 0) {
+
+                            bitmap.width.toFloat() /
+                                    bitmap.height.toFloat()
+
+                        } else {
+
+                            1f
+                        }
+
 
                     Card(
 
@@ -1715,25 +1922,1389 @@ private fun FieldEvidenceCard(
 
                     ) {
 
-                        Image(
-
-                            bitmap =
-                                bitmap.asImageBitmap(),
-
-                            contentDescription =
-                                "Captured field evidence",
+                        Box(
 
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
-                                    .height(240.dp),
+                                    .aspectRatio(
+                                        imageAspectRatio
+                                    )
+                                    .onSizeChanged {
 
-                            contentScale =
-                                ContentScale.Crop
-                        )
+                                        imageAreaSize =
+                                            it
+                                    }
+
+                        ) {
+
+
+                            // ============================================
+                            // ORIGINAL IMAGE
+                            // ============================================
+
+                            Image(
+
+                                bitmap =
+                                    bitmap.asImageBitmap(),
+
+                                contentDescription =
+                                    "Captured field evidence",
+
+                                modifier =
+                                    Modifier.fillMaxSize(),
+
+                                contentScale =
+                                    ContentScale.Fit
+                            )
+
+
+                            // ============================================
+                            // SAVED ANNOTATIONS
+                            // ============================================
+
+                            Canvas(
+
+                                modifier =
+                                    Modifier.fillMaxSize()
+
+                            ) {
+
+
+                                annotations
+                                    .forEach { annotation ->
+
+
+                                        val left =
+                                            annotation.left *
+                                                    size.width
+
+
+                                        val top =
+                                            annotation.top *
+                                                    size.height
+
+
+                                        val right =
+                                            annotation.right *
+                                                    size.width
+
+
+                                        val bottom =
+                                            annotation.bottom *
+                                                    size.height
+
+
+                                        val boxWidth =
+                                            (
+                                                    right -
+                                                            left
+                                                    )
+                                                .coerceAtLeast(
+                                                    1f
+                                                )
+
+
+                                        val boxHeight =
+                                            (
+                                                    bottom -
+                                                            top
+                                                    )
+                                                .coerceAtLeast(
+                                                    1f
+                                                )
+
+
+                                        val isSelected =
+                                            annotation.id ==
+                                                    selectedAnnotationId
+
+
+                                        val currentBoxColor =
+                                            if (isSelected) {
+
+                                                TaskDetailGreen
+
+                                            } else {
+
+                                                TaskDetailOrange
+                                            }
+
+
+                                        // =================================
+                                        // DRAW RECTANGLE
+                                        // =================================
+
+                                        drawRect(
+
+                                            color =
+                                                currentBoxColor,
+
+                                            topLeft =
+                                                Offset(
+                                                    left,
+                                                    top
+                                                ),
+
+                                            size =
+                                                Size(
+                                                    boxWidth,
+                                                    boxHeight
+                                                ),
+
+                                            style =
+                                                Stroke(
+
+                                                    width =
+                                                        if (isSelected) {
+
+                                                            8f
+
+                                                        } else {
+
+                                                            5f
+                                                        }
+                                                )
+                                        )
+
+
+                                        // =================================
+                                        // LABEL TEXT
+                                        // =================================
+
+                                        val labelText =
+                                            buildString {
+
+                                                append(
+                                                    annotation.label
+                                                )
+
+                                                annotation.progress
+                                                    ?.let {
+
+                                                        append(
+                                                            " • $it%"
+                                                        )
+                                                    }
+                                            }
+
+
+                                        val textPaint =
+                                            android.graphics.Paint()
+                                                .apply {
+
+                                                    color =
+                                                        android.graphics.Color.WHITE
+
+                                                    textSize =
+                                                        30f
+
+                                                    isAntiAlias =
+                                                        true
+
+                                                    typeface =
+                                                        android.graphics.Typeface
+                                                            .DEFAULT_BOLD
+                                                }
+
+
+                                        val backgroundPaint =
+                                            android.graphics.Paint()
+                                                .apply {
+
+                                                    color =
+                                                        currentBoxColor
+                                                            .toArgb()
+
+                                                    style =
+                                                        android.graphics.Paint.Style.FILL
+                                                }
+
+
+                                        val textWidth =
+                                            textPaint
+                                                .measureText(
+                                                    labelText
+                                                )
+
+
+                                        val labelLeft =
+                                            left
+
+
+                                        val labelTop =
+                                            (
+                                                    top -
+                                                            38f
+                                                    )
+                                                .coerceAtLeast(
+                                                    0f
+                                                )
+
+
+                                        drawContext
+                                            .canvas
+                                            .nativeCanvas
+                                            .drawRect(
+
+                                                labelLeft,
+
+                                                labelTop,
+
+                                                (
+                                                        labelLeft +
+                                                                textWidth +
+                                                                20f
+                                                        )
+                                                    .coerceAtMost(
+                                                        size.width
+                                                    ),
+
+                                                labelTop +
+                                                        38f,
+
+                                                backgroundPaint
+                                            )
+
+
+                                        drawContext
+                                            .canvas
+                                            .nativeCanvas
+                                            .drawText(
+
+                                                labelText,
+
+                                                labelLeft +
+                                                        10f,
+
+                                                labelTop +
+                                                        29f,
+
+                                                textPaint
+                                            )
+
+
+                                        // =================================
+                                        // SELECTED BOX HANDLES
+                                        // =================================
+
+                                        if (isSelected) {
+
+
+                                            drawCircle(
+
+                                                color =
+                                                    TaskDetailGreen,
+
+                                                radius =
+                                                    10f,
+
+                                                center =
+                                                    Offset(
+                                                        left,
+                                                        top
+                                                    )
+                                            )
+
+
+                                            drawCircle(
+
+                                                color =
+                                                    TaskDetailGreen,
+
+                                                radius =
+                                                    10f,
+
+                                                center =
+                                                    Offset(
+                                                        right,
+                                                        top
+                                                    )
+                                            )
+
+
+                                            drawCircle(
+
+                                                color =
+                                                    TaskDetailGreen,
+
+                                                radius =
+                                                    10f,
+
+                                                center =
+                                                    Offset(
+                                                        left,
+                                                        bottom
+                                                    )
+                                            )
+
+
+                                            drawCircle(
+
+                                                color =
+                                                    TaskDetailGreen,
+
+                                                radius =
+                                                    10f,
+
+                                                center =
+                                                    Offset(
+                                                        right,
+                                                        bottom
+                                                    )
+                                            )
+                                        }
+                                    }
+
+
+                                // ========================================
+                                // CURRENT RECTANGLE BEING DRAWN
+                                // ========================================
+
+                                val startPoint =
+                                    dragStart
+
+
+                                val endPoint =
+                                    dragEnd
+
+
+                                if (
+                                    annotationMode &&
+                                    startPoint != null &&
+                                    endPoint != null
+                                ) {
+
+
+                                    val left =
+                                        min(
+                                            startPoint.x,
+                                            endPoint.x
+                                        )
+
+
+                                    val top =
+                                        min(
+                                            startPoint.y,
+                                            endPoint.y
+                                        )
+
+
+                                    val right =
+                                        max(
+                                            startPoint.x,
+                                            endPoint.x
+                                        )
+
+
+                                    val bottom =
+                                        max(
+                                            startPoint.y,
+                                            endPoint.y
+                                        )
+
+
+                                    drawRect(
+
+                                        color =
+                                            TaskDetailGreen,
+
+                                        topLeft =
+                                            Offset(
+                                                left,
+                                                top
+                                            ),
+
+                                        size =
+                                            Size(
+
+                                                (
+                                                        right -
+                                                                left
+                                                        )
+                                                    .coerceAtLeast(
+                                                        1f
+                                                    ),
+
+                                                (
+                                                        bottom -
+                                                                top
+                                                        )
+                                                    .coerceAtLeast(
+                                                        1f
+                                                    )
+                                            ),
+
+                                        style =
+                                            Stroke(
+                                                width =
+                                                    6f
+                                            )
+                                    )
+                                }
+                            }
+
+
+                            // ============================================
+                            // TOUCH LAYER
+                            // ============================================
+
+                            Box(
+
+                                modifier =
+                                    Modifier
+                                        .fillMaxSize()
+                                        .pointerInput(
+                                            annotationMode,
+                                            imageAreaSize
+                                        ) {
+
+
+                                            detectDragGestures(
+
+
+                                                // =================================
+                                                // DRAG START
+                                                // =================================
+
+                                                onDragStart = { offset ->
+
+
+                                                    // =============================
+                                                    // CREATE NEW BOX
+                                                    // =============================
+
+                                                    if (annotationMode) {
+
+
+                                                        selectedAnnotationId =
+                                                            null
+
+
+                                                        movingAnnotationId =
+                                                            null
+
+
+                                                        dragStart =
+                                                            offset
+
+
+                                                        dragEnd =
+                                                            offset
+
+
+                                                    } else {
+
+
+                                                        // =========================
+                                                        // FIND EXISTING BOX
+                                                        // =========================
+
+                                                        val currentAnnotations =
+                                                            latestAnnotations.value
+
+
+                                                        val touchedAnnotation =
+                                                            currentAnnotations
+                                                                .lastOrNull {
+                                                                        annotation ->
+
+
+                                                                    val left =
+                                                                        annotation.left *
+                                                                                imageAreaSize.width
+                                                                                    .toFloat()
+
+
+                                                                    val top =
+                                                                        annotation.top *
+                                                                                imageAreaSize.height
+                                                                                    .toFloat()
+
+
+                                                                    val right =
+                                                                        annotation.right *
+                                                                                imageAreaSize.width
+                                                                                    .toFloat()
+
+
+                                                                    val bottom =
+                                                                        annotation.bottom *
+                                                                                imageAreaSize.height
+                                                                                    .toFloat()
+
+
+                                                                    offset.x >=
+                                                                            left &&
+                                                                            offset.x <=
+                                                                            right &&
+                                                                            offset.y >=
+                                                                            top &&
+                                                                            offset.y <=
+                                                                            bottom
+                                                                }
+
+
+                                                        if (
+                                                            touchedAnnotation !=
+                                                            null
+                                                        ) {
+
+
+                                                            selectedAnnotationId =
+                                                                touchedAnnotation.id
+
+
+                                                            movingAnnotationId =
+                                                                touchedAnnotation.id
+
+
+                                                        } else {
+
+
+                                                            selectedAnnotationId =
+                                                                null
+
+
+                                                            movingAnnotationId =
+                                                                null
+                                                        }
+                                                    }
+                                                },
+
+
+                                                // =================================
+                                                // DRAGGING
+                                                // =================================
+
+                                                onDrag = {
+                                                        change,
+                                                        dragAmount ->
+
+
+                                                    change.consume()
+
+
+                                                    // =============================
+                                                    // DRAW NEW BOX
+                                                    // =============================
+
+                                                    if (annotationMode) {
+
+
+                                                        val previous =
+                                                            dragEnd
+                                                                ?: dragStart
+                                                                ?: Offset.Zero
+
+
+                                                        val next =
+                                                            previous +
+                                                                    dragAmount
+
+
+                                                        dragEnd =
+                                                            Offset(
+
+                                                                x =
+                                                                    next.x
+                                                                        .coerceIn(
+
+                                                                            0f,
+
+                                                                            imageAreaSize.width
+                                                                                .toFloat()
+                                                                        ),
+
+                                                                y =
+                                                                    next.y
+                                                                        .coerceIn(
+
+                                                                            0f,
+
+                                                                            imageAreaSize.height
+                                                                                .toFloat()
+                                                                        )
+                                                            )
+
+
+                                                    } else {
+
+
+                                                        // =========================
+                                                        // MOVE EXISTING BOX
+                                                        // =========================
+
+                                                        val movingId =
+                                                            movingAnnotationId
+
+
+                                                        if (
+                                                            movingId != null &&
+                                                            imageAreaSize.width > 0 &&
+                                                            imageAreaSize.height > 0
+                                                        ) {
+
+
+                                                            val currentAnnotations =
+                                                                latestAnnotations.value
+
+
+                                                            val normalizedDx =
+                                                                dragAmount.x /
+                                                                        imageAreaSize.width
+                                                                            .toFloat()
+
+
+                                                            val normalizedDy =
+                                                                dragAmount.y /
+                                                                        imageAreaSize.height
+                                                                            .toFloat()
+
+
+                                                            val updatedAnnotations =
+                                                                currentAnnotations
+                                                                    .map {
+                                                                            annotation ->
+
+
+                                                                        if (
+                                                                            annotation.id !=
+                                                                            movingId
+                                                                        ) {
+
+
+                                                                            annotation
+
+
+                                                                        } else {
+
+
+                                                                            val boxWidth =
+                                                                                (
+                                                                                        annotation.right -
+                                                                                                annotation.left
+                                                                                        )
+                                                                                    .coerceAtLeast(
+                                                                                        0f
+                                                                                    )
+
+
+                                                                            val boxHeight =
+                                                                                (
+                                                                                        annotation.bottom -
+                                                                                                annotation.top
+                                                                                        )
+                                                                                    .coerceAtLeast(
+                                                                                        0f
+                                                                                    )
+
+
+                                                                            val maximumLeft =
+                                                                                (
+                                                                                        1f -
+                                                                                                boxWidth
+                                                                                        )
+                                                                                    .coerceAtLeast(
+                                                                                        0f
+                                                                                    )
+
+
+                                                                            val maximumTop =
+                                                                                (
+                                                                                        1f -
+                                                                                                boxHeight
+                                                                                        )
+                                                                                    .coerceAtLeast(
+                                                                                        0f
+                                                                                    )
+
+
+                                                                            val newLeft =
+                                                                                (
+                                                                                        annotation.left +
+                                                                                                normalizedDx
+                                                                                        )
+                                                                                    .coerceIn(
+                                                                                        0f,
+                                                                                        maximumLeft
+                                                                                    )
+
+
+                                                                            val newTop =
+                                                                                (
+                                                                                        annotation.top +
+                                                                                                normalizedDy
+                                                                                        )
+                                                                                    .coerceIn(
+                                                                                        0f,
+                                                                                        maximumTop
+                                                                                    )
+
+
+                                                                            annotation.copy(
+
+                                                                                left =
+                                                                                    newLeft,
+
+                                                                                top =
+                                                                                    newTop,
+
+                                                                                right =
+                                                                                    newLeft +
+                                                                                            boxWidth,
+
+                                                                                bottom =
+                                                                                    newTop +
+                                                                                            boxHeight
+                                                                            )
+                                                                        }
+                                                                    }
+
+
+                                                            onAnnotationsChange(
+                                                                updatedAnnotations
+                                                            )
+                                                        }
+                                                    }
+                                                },
+
+
+                                                // =================================
+                                                // CANCEL DRAG
+                                                // =================================
+
+                                                onDragCancel = {
+
+
+                                                    dragStart =
+                                                        null
+
+
+                                                    dragEnd =
+                                                        null
+
+
+                                                    movingAnnotationId =
+                                                        null
+                                                },
+
+
+                                                // =================================
+                                                // DRAG END
+                                                // =================================
+
+                                                onDragEnd = {
+
+
+                                                    // =============================
+                                                    // NEW RECTANGLE FINISHED
+                                                    // =============================
+
+                                                    if (annotationMode) {
+
+
+                                                        val start =
+                                                            dragStart
+
+
+                                                        val end =
+                                                            dragEnd
+
+
+                                                        if (
+                                                            start != null &&
+                                                            end != null &&
+                                                            imageAreaSize.width > 0 &&
+                                                            imageAreaSize.height > 0
+                                                        ) {
+
+
+                                                            val left =
+                                                                min(
+                                                                    start.x,
+                                                                    end.x
+                                                                )
+
+
+                                                            val top =
+                                                                min(
+                                                                    start.y,
+                                                                    end.y
+                                                                )
+
+
+                                                            val right =
+                                                                max(
+                                                                    start.x,
+                                                                    end.x
+                                                                )
+
+
+                                                            val bottom =
+                                                                max(
+                                                                    start.y,
+                                                                    end.y
+                                                                )
+
+
+                                                            val boxWidth =
+                                                                abs(
+                                                                    right -
+                                                                            left
+                                                                )
+
+
+                                                            val boxHeight =
+                                                                abs(
+                                                                    bottom -
+                                                                            top
+                                                                )
+
+
+                                                            // Ignore tiny accidental taps.
+                                                            if (
+                                                                boxWidth >=
+                                                                30f &&
+                                                                boxHeight >=
+                                                                30f
+                                                            ) {
+
+
+                                                                pendingBox =
+                                                                    PendingAnnotationBox(
+
+                                                                        left =
+                                                                            (
+                                                                                    left /
+                                                                                            imageAreaSize.width
+                                                                                                .toFloat()
+                                                                                    )
+                                                                                .coerceIn(
+                                                                                    0f,
+                                                                                    1f
+                                                                                ),
+
+                                                                        top =
+                                                                            (
+                                                                                    top /
+                                                                                            imageAreaSize.height
+                                                                                                .toFloat()
+                                                                                    )
+                                                                                .coerceIn(
+                                                                                    0f,
+                                                                                    1f
+                                                                                ),
+
+                                                                        right =
+                                                                            (
+                                                                                    right /
+                                                                                            imageAreaSize.width
+                                                                                                .toFloat()
+                                                                                    )
+                                                                                .coerceIn(
+                                                                                    0f,
+                                                                                    1f
+                                                                                ),
+
+                                                                        bottom =
+                                                                            (
+                                                                                    bottom /
+                                                                                            imageAreaSize.height
+                                                                                                .toFloat()
+                                                                                    )
+                                                                                .coerceIn(
+                                                                                    0f,
+                                                                                    1f
+                                                                                )
+                                                                    )
+
+
+                                                                showAnnotationDialog =
+                                                                    true
+                                                            }
+                                                        }
+
+
+                                                        dragStart =
+                                                            null
+
+
+                                                        dragEnd =
+                                                            null
+
+
+                                                    } else {
+
+
+                                                        // =========================
+                                                        // MOVING BOX FINISHED
+                                                        // =========================
+
+                                                        movingAnnotationId =
+                                                            null
+                                                    }
+                                                }
+                                            )
+                                        }
+                            )
+                        }
                     }
 
+
+                    // =================================================
+                    // DRAW MODE MESSAGE
+                    // =================================================
+
+                    if (annotationMode) {
+
+
+                        Spacer(
+                            modifier =
+                                Modifier.height(8.dp)
+                        )
+
+
+                        Row(
+
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(
+
+                                        Color(
+                                            0xFFFFF1EB
+                                        ),
+
+                                        RoundedCornerShape(
+                                            10.dp
+                                        )
+                                    )
+                                    .padding(
+                                        10.dp
+                                    ),
+
+                            verticalAlignment =
+                                Alignment.CenterVertically
+
+                        ) {
+
+
+                            Icon(
+
+                                imageVector =
+                                    Icons.Outlined.TouchApp,
+
+                                contentDescription =
+                                    null,
+
+                                tint =
+                                    TaskDetailOrange,
+
+                                modifier =
+                                    Modifier.size(
+                                        18.dp
+                                    )
+                            )
+
+
+                            Spacer(
+                                modifier =
+                                    Modifier.width(
+                                        7.dp
+                                    )
+                            )
+
+
+                            Text(
+
+                                text =
+                                    "Touch one corner of the work area and drag to the opposite corner. Release your finger to add the label.",
+
+                                modifier =
+                                    Modifier.weight(
+                                        1f
+                                    ),
+
+                                fontSize =
+                                    10.sp,
+
+                                color =
+                                    TaskDetailGray
+                            )
+                        }
+                    }
+
+
+                    // =================================================
+                    // SELECTED BOX MESSAGE
+                    // =================================================
+
+                    if (
+                        selectedAnnotationId != null &&
+                        !annotationMode
+                    ) {
+
+
+                        Spacer(
+                            modifier =
+                                Modifier.height(
+                                    8.dp
+                                )
+                        )
+
+
+                        Row(
+
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(
+
+                                        Color(
+                                            0xFFE8F5E9
+                                        ),
+
+                                        RoundedCornerShape(
+                                            10.dp
+                                        )
+                                    )
+                                    .padding(
+                                        10.dp
+                                    ),
+
+                            verticalAlignment =
+                                Alignment.CenterVertically
+
+                        ) {
+
+
+                            Icon(
+
+                                imageVector =
+                                    Icons.Outlined.OpenWith,
+
+                                contentDescription =
+                                    null,
+
+                                tint =
+                                    TaskDetailGreen,
+
+                                modifier =
+                                    Modifier.size(
+                                        18.dp
+                                    )
+                            )
+
+
+                            Spacer(
+                                modifier =
+                                    Modifier.width(
+                                        7.dp
+                                    )
+                            )
+
+
+                            Text(
+
+                                text =
+                                    "Work area selected. Drag inside the green box to move it.",
+
+                                modifier =
+                                    Modifier.weight(
+                                        1f
+                                    ),
+
+                                fontSize =
+                                    10.sp,
+
+                                color =
+                                    TaskDetailGray
+                            )
+                        }
+                    }
+
+
+                    // =================================================
+                    // ENGINEER LABEL LIST
+                    // =================================================
+
+                    if (
+                        annotations.isNotEmpty()
+                    ) {
+
+
+                        Spacer(
+                            modifier =
+                                Modifier.height(
+                                    14.dp
+                                )
+                        )
+
+
+                        Text(
+
+                            text =
+                                "Engineer Labels",
+
+                            fontSize =
+                                13.sp,
+
+                            fontWeight =
+                                FontWeight.Bold
+                        )
+
+
+                        Spacer(
+                            modifier =
+                                Modifier.height(
+                                    8.dp
+                                )
+                        )
+
+
+                        annotations
+                            .forEachIndexed {
+                                    index,
+                                    annotation ->
+
+
+                                val isSelected =
+                                    annotation.id ==
+                                            selectedAnnotationId
+
+
+                                Card(
+
+                                    modifier =
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(
+
+                                                bottom =
+                                                    8.dp
+                                            ),
+
+                                    shape =
+                                        RoundedCornerShape(
+                                            12.dp
+                                        ),
+
+                                    colors =
+                                        CardDefaults
+                                            .cardColors(
+
+                                                containerColor =
+                                                    if (
+                                                        isSelected
+                                                    ) {
+
+                                                        Color(
+                                                            0xFFE8F5E9
+                                                        )
+
+                                                    } else {
+
+                                                        Color(
+                                                            0xFFF8F8F8
+                                                        )
+                                                    }
+                                            )
+
+                                ) {
+
+
+                                    Row(
+
+                                        modifier =
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .padding(
+                                                    12.dp
+                                                ),
+
+                                        verticalAlignment =
+                                            Alignment.CenterVertically
+
+                                    ) {
+
+
+                                        Column(
+
+                                            modifier =
+                                                Modifier.weight(
+                                                    1f
+                                                )
+
+                                        ) {
+
+
+                                            Text(
+
+                                                text =
+                                                    "${index + 1}. ${annotation.label}",
+
+                                                fontSize =
+                                                    11.sp,
+
+                                                fontWeight =
+                                                    FontWeight.Bold
+                                            )
+
+
+                                            Spacer(
+                                                modifier =
+                                                    Modifier.height(
+                                                        3.dp
+                                                    )
+                                            )
+
+
+                                            Text(
+
+                                                text =
+                                                    buildString {
+
+
+                                                        append(
+                                                            annotation.stage
+                                                        )
+
+
+                                                        annotation.progress
+                                                            ?.let {
+
+
+                                                                append(
+                                                                    " • $it%"
+                                                                )
+                                                            }
+                                                    },
+
+                                                fontSize =
+                                                    10.sp,
+
+                                                color =
+                                                    TaskDetailGray
+                                            )
+                                        }
+
+
+                                        // =================================
+                                        // SELECT BUTTON
+                                        // =================================
+
+                                        IconButton(
+
+                                            onClick = {
+
+
+                                                selectedAnnotationId =
+                                                    if (
+                                                        selectedAnnotationId ==
+                                                        annotation.id
+                                                    ) {
+
+                                                        null
+
+                                                    } else {
+
+                                                        annotation.id
+                                                    }
+                                            }
+
+                                        ) {
+
+
+                                            Icon(
+
+                                                imageVector =
+                                                    Icons.Outlined.OpenWith,
+
+                                                contentDescription =
+                                                    "Select work area",
+
+                                                tint =
+                                                    if (
+                                                        isSelected
+                                                    ) {
+
+                                                        TaskDetailGreen
+
+                                                    } else {
+
+                                                        TaskDetailGray
+                                                    }
+                                            )
+                                        }
+
+
+                                        // =================================
+                                        // DELETE
+                                        // =================================
+
+                                        IconButton(
+
+                                            onClick = {
+
+
+                                                onAnnotationsChange(
+
+                                                    annotations
+                                                        .filterNot {
+
+
+                                                            it.id ==
+                                                                    annotation.id
+                                                        }
+                                                )
+
+
+                                                if (
+                                                    selectedAnnotationId ==
+                                                    annotation.id
+                                                ) {
+
+
+                                                    selectedAnnotationId =
+                                                        null
+                                                }
+
+
+                                                if (
+                                                    movingAnnotationId ==
+                                                    annotation.id
+                                                ) {
+
+
+                                                    movingAnnotationId =
+                                                        null
+                                                }
+                                            }
+
+                                        ) {
+
+
+                                            Icon(
+
+                                                imageVector =
+                                                    Icons.Outlined.DeleteOutline,
+
+                                                contentDescription =
+                                                    "Delete annotation",
+
+                                                tint =
+                                                    TaskDetailRed
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                    }
+
+
                 } else {
+
 
                     Text(
 
@@ -1751,12 +3322,14 @@ private fun FieldEvidenceCard(
 
                 Spacer(
                     modifier =
-                        Modifier.height(10.dp)
+                        Modifier.height(
+                            10.dp
+                        )
                 )
 
 
                 // =================================================
-                // SAVED LOCALLY INDICATOR
+                // LOCAL SAVE MESSAGE
                 // =================================================
 
                 Row(
@@ -1779,20 +3352,24 @@ private fun FieldEvidenceCard(
                             TaskDetailGreen,
 
                         modifier =
-                            Modifier.size(17.dp)
+                            Modifier.size(
+                                17.dp
+                            )
                     )
 
 
                     Spacer(
                         modifier =
-                            Modifier.width(6.dp)
+                            Modifier.width(
+                                6.dp
+                            )
                     )
 
 
                     Text(
 
                         text =
-                            "Photo saved locally on this device.",
+                            "Photo and engineer labels are kept locally on this device.",
 
                         fontSize =
                             10.sp,
@@ -1809,14 +3386,16 @@ private fun FieldEvidenceCard(
 
             Spacer(
                 modifier =
-                    Modifier.height(10.dp)
+                    Modifier.height(
+                        10.dp
+                    )
             )
 
 
             Text(
 
                 text =
-                    "Photos stay on this phone and are not uploaded to the backend.",
+                    "YOLO still analyzes the original photo. Engineer labels are an additional manual evidence layer.",
 
                 fontSize =
                     9.sp,
@@ -1826,6 +3405,562 @@ private fun FieldEvidenceCard(
             )
         }
     }
+
+
+    // ============================================================
+    // ADD LABEL DIALOG
+    // ============================================================
+
+    if (
+        showAnnotationDialog &&
+        pendingBox != null
+    ) {
+
+
+        AddFieldAnnotationDialog(
+
+
+            // ====================================================
+            // CANCEL
+            // ====================================================
+
+            onDismiss = {
+
+
+                showAnnotationDialog =
+                    false
+
+
+                pendingBox =
+                    null
+
+
+                dragStart =
+                    null
+
+
+                dragEnd =
+                    null
+            },
+
+
+            // ====================================================
+            // SAVE
+            // ====================================================
+
+            onSave = {
+                    label,
+                    stage,
+                    progress ->
+
+
+                val box =
+                    pendingBox
+
+
+                if (
+                    box != null
+                ) {
+
+
+                    val newAnnotation =
+                        FieldAnnotation(
+
+                            label =
+                                label,
+
+                            stage =
+                                stage,
+
+                            progress =
+                                progress,
+
+                            left =
+                                box.left,
+
+                            top =
+                                box.top,
+
+                            right =
+                                box.right,
+
+                            bottom =
+                                box.bottom
+                        )
+
+
+                    onAnnotationsChange(
+
+                        annotations +
+                                newAnnotation
+                    )
+
+
+                    selectedAnnotationId =
+                        newAnnotation.id
+                }
+
+
+                showAnnotationDialog =
+                    false
+
+
+                pendingBox =
+                    null
+
+
+                dragStart =
+                    null
+
+
+                dragEnd =
+                    null
+
+
+                // User can move the newly created box now.
+                annotationMode =
+                    false
+            }
+        )
+    }
+}
+
+// ============================================================
+// TEMPORARY BOX BEFORE ENGINEER SAVES THE LABEL
+// ============================================================
+
+private data class PendingAnnotationBox(
+
+    val left: Float,
+
+    val top: Float,
+
+    val right: Float,
+
+    val bottom: Float
+)
+
+
+// ============================================================
+// ADD FIELD ANNOTATION DIALOG
+// ============================================================
+
+@Composable
+private fun AddFieldAnnotationDialog(
+
+    onDismiss: () -> Unit,
+
+    onSave:
+        (
+        label: String,
+        stage: String,
+        progress: Int?
+    ) -> Unit
+
+) {
+
+    val workLabels =
+        listOf(
+            "Rebar Installation",
+            "Formwork Installation",
+            "Concrete Placement",
+            "Masonry Work",
+            "Wall Construction",
+            "Plastering",
+            "Painting",
+            "Excavation",
+            "Backfilling",
+            "Scaffolding",
+            "Electrical Installation",
+            "Plumbing Installation",
+            "Other"
+        )
+
+
+    val workStages =
+        listOf(
+            "Not Started",
+            "Started",
+            "In Progress",
+            "Nearly Complete",
+            "Completed"
+        )
+
+
+    var selectedLabel by remember {
+        mutableStateOf(
+            workLabels.first()
+        )
+    }
+
+    var selectedStage by remember {
+        mutableStateOf(
+            "In Progress"
+        )
+    }
+
+    var progressValue by remember {
+        mutableStateOf(50f)
+    }
+
+    var includeProgress by remember {
+        mutableStateOf(true)
+    }
+
+    var labelMenuExpanded by remember {
+        mutableStateOf(false)
+    }
+
+    var stageMenuExpanded by remember {
+        mutableStateOf(false)
+    }
+
+
+    AlertDialog(
+
+        onDismissRequest =
+            onDismiss,
+
+        title = {
+
+            Text(
+                text =
+                    "Add Work Label"
+            )
+        },
+
+        text = {
+
+            Column {
+
+                Text(
+
+                    text =
+                        "Work Type",
+
+                    fontSize =
+                        11.sp,
+
+                    fontWeight =
+                        FontWeight.SemiBold
+                )
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(6.dp)
+                )
+
+
+                Box {
+
+                    OutlinedButton(
+
+                        onClick = {
+                            labelMenuExpanded =
+                                true
+                        },
+
+                        modifier =
+                            Modifier.fillMaxWidth()
+
+                    ) {
+
+                        Text(
+                            text =
+                                selectedLabel,
+
+                            modifier =
+                                Modifier.weight(1f)
+                        )
+
+
+                        Icon(
+
+                            imageVector =
+                                Icons.Outlined.ArrowDropDown,
+
+                            contentDescription =
+                                null
+                        )
+                    }
+
+
+                    DropdownMenu(
+
+                        expanded =
+                            labelMenuExpanded,
+
+                        onDismissRequest = {
+                            labelMenuExpanded =
+                                false
+                        }
+
+                    ) {
+
+                        workLabels
+                            .forEach { label ->
+
+                                DropdownMenuItem(
+
+                                    text = {
+                                        Text(
+                                            text =
+                                                label
+                                        )
+                                    },
+
+                                    onClick = {
+
+                                        selectedLabel =
+                                            label
+
+                                        labelMenuExpanded =
+                                            false
+                                    }
+                                )
+                            }
+                    }
+                }
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(14.dp)
+                )
+
+
+                Text(
+
+                    text =
+                        "Stage",
+
+                    fontSize =
+                        11.sp,
+
+                    fontWeight =
+                        FontWeight.SemiBold
+                )
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(6.dp)
+                )
+
+
+                Box {
+
+                    OutlinedButton(
+
+                        onClick = {
+                            stageMenuExpanded =
+                                true
+                        },
+
+                        modifier =
+                            Modifier.fillMaxWidth()
+
+                    ) {
+
+                        Text(
+
+                            text =
+                                selectedStage,
+
+                            modifier =
+                                Modifier.weight(1f)
+                        )
+
+
+                        Icon(
+
+                            imageVector =
+                                Icons.Outlined.ArrowDropDown,
+
+                            contentDescription =
+                                null
+                        )
+                    }
+
+
+                    DropdownMenu(
+
+                        expanded =
+                            stageMenuExpanded,
+
+                        onDismissRequest = {
+                            stageMenuExpanded =
+                                false
+                        }
+
+                    ) {
+
+                        workStages
+                            .forEach { stage ->
+
+                                DropdownMenuItem(
+
+                                    text = {
+                                        Text(
+                                            text =
+                                                stage
+                                        )
+                                    },
+
+                                    onClick = {
+
+                                        selectedStage =
+                                            stage
+
+                                        stageMenuExpanded =
+                                            false
+                                    }
+                                )
+                            }
+                    }
+                }
+
+
+                Spacer(
+                    modifier =
+                        Modifier.height(14.dp)
+                )
+
+
+                Row(
+
+                    modifier =
+                        Modifier.fillMaxWidth(),
+
+                    verticalAlignment =
+                        Alignment.CenterVertically
+
+                ) {
+
+                    Checkbox(
+
+                        checked =
+                            includeProgress,
+
+                        onCheckedChange = {
+                            includeProgress =
+                                it
+                        }
+                    )
+
+
+                    Text(
+
+                        text =
+                            "Add engineer progress",
+
+                        fontSize =
+                            11.sp,
+
+                        fontWeight =
+                            FontWeight.Medium
+                    )
+                }
+
+
+                if (includeProgress) {
+
+                    Text(
+
+                        text =
+                            "Progress: ${progressValue.toInt()}%",
+
+                        fontSize =
+                            11.sp,
+
+                        fontWeight =
+                            FontWeight.Bold,
+
+                        color =
+                            TaskDetailOrange
+                    )
+
+
+                    Slider(
+
+                        value =
+                            progressValue,
+
+                        onValueChange = {
+
+                            progressValue =
+                                it
+                        },
+
+                        valueRange =
+                            0f..100f,
+
+                        steps =
+                            19
+                    )
+                }
+            }
+        },
+
+        confirmButton = {
+
+            Button(
+
+                onClick = {
+
+                    onSave(
+
+                        selectedLabel,
+
+                        selectedStage,
+
+                        if (includeProgress) {
+
+                            progressValue
+                                .toInt()
+                                .coerceIn(
+                                    0,
+                                    100
+                                )
+
+                        } else {
+
+                            null
+                        }
+                    )
+                },
+
+                colors =
+                    ButtonDefaults
+                        .buttonColors(
+                            containerColor =
+                                TaskDetailOrange
+                        )
+
+            ) {
+
+                Text(
+                    text =
+                        "Save Label"
+                )
+            }
+        },
+
+        dismissButton = {
+
+            TextButton(
+                onClick =
+                    onDismiss
+            ) {
+
+                Text(
+                    text =
+                        "Cancel"
+                )
+            }
+        }
+    )
 }
 
 

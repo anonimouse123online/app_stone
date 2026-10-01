@@ -2725,23 +2725,9 @@ private fun QuickActions(
             onClick = onLogTimeClick
         )
 
-        QuickActionButton(
-            title = "Capture",
-            icon = Icons.Outlined.CameraAlt,
-            modifier = Modifier.weight(1f),
-            onClick = {
-                // TODO: Connect camera action.
-            }
-        )
 
-        QuickActionButton(
-            title = "Report",
-            icon = Icons.Outlined.PriorityHigh,
-            modifier = Modifier.weight(1f),
-            onClick = {
-                // TODO: Connect report action.
-            }
-        )
+
+
     }
 }
 
