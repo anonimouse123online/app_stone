@@ -113,6 +113,12 @@ interface ApiService {
         @Body request: CompleteTaskRequest = CompleteTaskRequest()
     ): Response<CompleteTaskResponse>
 
+    @PATCH("tasks/{taskId}/subtasks")
+    suspend fun updateSubtasks(
+        @Path("taskId") taskId: String,
+        @Body request: UpdateSubtasksRequest
+    ): Response<Any>
+
     @POST("projects/{projectCode}/issues")
     suspend fun createProjectIssue(
         @Path("projectCode") projectCode: String,
@@ -368,5 +374,22 @@ data class TaskResponse(
         value = "progress_pct",
         alternate = ["progress"]
     )
-    val progress: Int? = null
+    val progress: Int? = null,
+
+    @SerializedName("subtasks")
+    val subtasks: List<SubtaskItem>? = null
+)
+
+// ============================================================
+// SUBTASKS MODELS
+// ============================================================
+
+data class SubtaskItem(
+    val id: String = "",
+    val title: String = "",
+    val completed: Boolean = false
+)
+
+data class UpdateSubtasksRequest(
+    val subtasks: List<SubtaskItem>
 )

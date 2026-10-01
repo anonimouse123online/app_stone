@@ -26,7 +26,7 @@ object RetrofitClient {
     // ============================================================
 
     // PHYSICAL PHONE
-    const val BASE_URL = "http://192.168.254.108:5001/"
+    const val BASE_URL = "http://192.168.101.15:5001/"
 
     // ANDROID EMULATOR
     /// private const val BASE_URL =
@@ -70,7 +70,7 @@ object RetrofitClient {
 
             if (!token.isNullOrBlank()) {
 
-                requestBuilder.addHeader(
+                requestBuilder.header(
                     "Authorization",
                     "Bearer $token"
                 )

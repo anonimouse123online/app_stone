@@ -179,12 +179,20 @@ class MainActivity : ComponentActivity() {
                     LocalContext.current
 
 
+                val savedSession = remember {
+                    if (TokenManager.isRememberMe(context)) {
+                        TokenManager.getUserSession(context)
+                    } else {
+                        null
+                    }
+                }
+
                 // ====================================================
                 // NAVIGATION STATE
                 // ====================================================
 
                 var currentScreen by remember {
-                    mutableStateOf("login")
+                    mutableStateOf(if (savedSession != null) "dashboard" else "login")
                 }
 
 
@@ -193,22 +201,22 @@ class MainActivity : ComponentActivity() {
                 // ====================================================
 
                 var authToken by remember {
-                    mutableStateOf("")
+                    mutableStateOf(savedSession?.token ?: "")
                 }
 
 
                 var loggedInFullName by remember {
-                    mutableStateOf("")
+                    mutableStateOf(savedSession?.fullName ?: "")
                 }
 
 
                 var loggedInEmail by remember {
-                    mutableStateOf("")
+                    mutableStateOf(savedSession?.email ?: "")
                 }
 
 
                 var loggedInRole by remember {
-                    mutableStateOf("")
+                    mutableStateOf(savedSession?.role ?: "")
                 }
 
 
@@ -257,6 +265,18 @@ class MainActivity : ComponentActivity() {
 
                                 loggedInRole =
                                     role
+
+                                // =====================================
+                                // SAVE USER SESSION
+                                // =====================================
+
+                                TokenManager.saveSession(
+                                    context = context,
+                                    token = token,
+                                    fullName = fullName,
+                                    email = email,
+                                    role = role
+                                )
 
 
                                 // =====================================
@@ -347,6 +367,11 @@ class MainActivity : ComponentActivity() {
                             token =
                                 authToken,
 
+                            userName =
+                                loggedInFullName,
+
+                            userRole =
+                                loggedInRole,
 
                             selectedScreen =
                                 "dashboard",
@@ -714,10 +739,10 @@ class MainActivity : ComponentActivity() {
 
 
                                 // =====================================
-                                // DELETE STORED JWT
+                                // DELETE STORED JWT AND ACTIVE SESSION
                                 // =====================================
 
-                                TokenManager.clearToken(
+                                TokenManager.clearSession(
                                     context
                                 )
 

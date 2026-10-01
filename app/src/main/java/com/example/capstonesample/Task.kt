@@ -1,10 +1,16 @@
 package com.example.capstonesample
 
+import android.Manifest
+import com.example.capstonesample.ai.ModelDownloadManager
+import com.example.capstonesample.ai.DownloadProgress
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Environment
 import android.util.Log
+import androidx.core.content.ContextCompat
+import androidx.compose.foundation.BorderStroke
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -17,6 +23,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -25,8 +32,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.style.TextDecoration
+import android.widget.Toast
+import com.example.capstonesample.data.api.SubtaskItem
+import com.example.capstonesample.data.api.UpdateSubtasksRequest
 import com.example.capstonesample.data.model.CreateIssueRequest
 import com.example.capstonesample.data.model.FieldAnnotation
+
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -205,56 +217,144 @@ fun TaskDetailScreen(
         mutableStateOf<List<FieldAnnotation>>(emptyList())
     }
 
+    var currentSubtasks by remember(task.id) {
+        mutableStateOf(task.subtasks)
+    }
 
-    // ============================================================
-    // PREPARE BUNDLED GEMMA MODEL
-    // ============================================================
+    var currentProgress by remember(task.id) {
+        mutableStateOf(task.progress)
+    }
 
-    LaunchedEffect(Unit) {
+    var currentStatus by remember(task.id) {
+        mutableStateOf(task.status)
+    }
 
-        if (aiModelInstalled) {
+    var isUpdatingSubtasks by remember {
+        mutableStateOf(false)
+    }
 
-            isPreparingAi =
-                false
+    // Download state for Gemma model
+    var isDownloadingModel by remember { mutableStateOf(false) }
+    var downloadProgressPct by remember { mutableStateOf(0) }
+    var downloadProgressText by remember { mutableStateOf("") }
+    var downloadError by remember { mutableStateOf<String?>(null) }
 
-            return@LaunchedEffect
+    fun toggleSubtask(subtaskId: String) {
+        val updated = currentSubtasks.map { item ->
+            if (item.id == subtaskId) item.copy(completed = !item.completed) else item
+        }
+        val doneCount = updated.count { it.completed }
+        val newPct = if (updated.isNotEmpty()) Math.round((doneCount.toFloat() / updated.size.toFloat()) * 100) else 0
+        val newStatus = when {
+            newPct >= 100 -> "Completed"
+            newPct > 0 -> "In Progress"
+            else -> "Pending"
         }
 
+        currentSubtasks = updated
+        currentProgress = newPct
+        currentStatus = newStatus
+        if (newPct >= 100) {
+            taskCompleted = true
+        }
 
-        isPreparingAi =
-            true
-
-        aiError =
-            null
-
-
-        val ready =
-            withContext(
-                Dispatchers.IO
-            ) {
-
-                modelStatusChecker
-                    .ensureGemmaInstalled()
+        aiScope.launch {
+            try {
+                isUpdatingSubtasks = true
+                val response = RetrofitClient.api.updateSubtasks(
+                    taskId = task.id,
+                    request = UpdateSubtasksRequest(subtasks = updated)
+                )
+                if (!response.isSuccessful) {
+                    Toast.makeText(context, "Failed to sync subtask: ${response.code()}", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("SUBTASKS", "Failed to update subtasks", e)
+                Toast.makeText(context, "Network error updating subtask", Toast.LENGTH_SHORT).show()
+            } finally {
+                isUpdatingSubtasks = false
             }
-
-
-        aiModelInstalled =
-            ready
-
-        isPreparingAi =
-            false
-
-
-        if (!ready) {
-
-            aiError =
-                "Unable to prepare the bundled Gemma AI model."
         }
     }
 
 
     // ============================================================
-    // CAMERA STATE
+    // PREPARE / AUTO-DOWNLOAD GEMMA MODEL
+    // ============================================================
+
+    LaunchedEffect(Unit) {
+
+        // Already on disk → done
+        if (aiModelInstalled) {
+            isPreparingAi = false
+            return@LaunchedEffect
+        }
+
+        isPreparingAi = true
+        aiError = null
+
+        // 1. Quick check: maybe it was downloaded earlier
+        val alreadyReady = withContext(Dispatchers.IO) {
+            modelStatusChecker.ensureGemmaInstalled()
+        }
+
+        if (alreadyReady) {
+            aiModelInstalled = true
+            isPreparingAi = false
+            return@LaunchedEffect
+        }
+
+        // 2. Not on disk and not bundled → auto-download
+        isDownloadingModel = true
+        downloadError = null
+        downloadProgressPct = 0
+        downloadProgressText = "Starting download..."
+
+        val downloadManager = ModelDownloadManager(context)
+
+        try {
+            downloadManager.downloadGemma().collect { progress ->
+                when (progress) {
+                    is DownloadProgress.Progress -> {
+                        val pct = if (progress.total > 0) {
+                            (progress.downloaded * 100 / progress.total).toInt().coerceIn(0, 100)
+                        } else 0
+                        downloadProgressPct = pct
+                        downloadProgressText = "${progress.downloadedMB}MB / ${progress.totalMB}MB"
+                    }
+                    is DownloadProgress.FileDone -> {
+                        downloadProgressPct = 100
+                        downloadProgressText = "Download complete!"
+                    }
+                    is DownloadProgress.Error -> {
+                        downloadError = progress.message
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            downloadError = e.message ?: "Download failed."
+        }
+
+        isDownloadingModel = false
+
+        // 3. Re-check after download
+        val nowReady = withContext(Dispatchers.IO) {
+            modelStatusChecker.isGemmaReady()
+        }
+
+        aiModelInstalled = nowReady
+        isPreparingAi = false
+
+        if (!nowReady && downloadError == null) {
+            aiError = "Download finished but model verification failed."
+        } else if (downloadError != null) {
+            aiError = "Model download failed: $downloadError"
+        }
+    }
+
+
+    // ============================================================
+    // CAMERA & GALLERY STATE
     // ============================================================
 
     // URI of the photo that has successfully been captured.
@@ -262,15 +362,13 @@ fun TaskDetailScreen(
         mutableStateOf<Uri?>(null)
     }
 
-
     // URI where the next photo will be saved.
     var pendingPhotoUri by remember {
         mutableStateOf<Uri?>(null)
     }
 
-
     // ============================================================
-    // CAMERA RESULT
+    // CAMERA & GALLERY LAUNCHERS
     // ============================================================
 
     val cameraLauncher =
@@ -299,19 +397,21 @@ fun TaskDetailScreen(
             }
         }
 
+    val galleryLauncher =
+        rememberLauncherForActivityResult(
+            contract =
+                ActivityResultContracts.GetContent()
+        ) { uri: Uri? ->
+            if (uri != null) {
+                capturedPhotoUri = uri
+                detectedObjects = ""
+                aiReport = null
+                aiError = null
+            }
+        }
 
-    // ============================================================
-    // OPEN CAMERA FUNCTION
-    // ============================================================
-
-    fun openCamera() {
-
+    fun launchCameraIntent() {
         try {
-
-            // ----------------------------------------------------
-            // CREATE LOCAL SITEPULSE PICTURES FOLDER
-            // ----------------------------------------------------
-
             val picturesDirectory =
                 File(
                     context.getExternalFilesDir(
@@ -320,27 +420,15 @@ fun TaskDetailScreen(
                     "SitePulse"
                 )
 
-
             if (!picturesDirectory.exists()) {
-
                 picturesDirectory.mkdirs()
             }
-
-
-            // ----------------------------------------------------
-            // CREATE IMAGE FILE
-            // ----------------------------------------------------
 
             val imageFile =
                 File(
                     picturesDirectory,
                     "evidence_${System.currentTimeMillis()}.jpg"
                 )
-
-
-            // ----------------------------------------------------
-            // CREATE SECURE CONTENT URI
-            // ----------------------------------------------------
 
             val photoUri =
                 FileProvider.getUriForFile(
@@ -349,27 +437,54 @@ fun TaskDetailScreen(
                     imageFile
                 )
 
-
             pendingPhotoUri =
                 photoUri
-
-
-            // ----------------------------------------------------
-            // OPEN PHONE CAMERA
-            // ----------------------------------------------------
 
             cameraLauncher.launch(
                 photoUri
             )
 
-
-            // Optional callback from your existing code.
             onCameraClick()
 
-
         } catch (e: Exception) {
+            Log.e("CAMERA", "Failed to launch camera", e)
+            Toast.makeText(
+                context,
+                "Unable to open camera: ${e.message}",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
 
-            e.printStackTrace()
+    val cameraPermissionLauncher =
+        rememberLauncherForActivityResult(
+            contract =
+                ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            if (isGranted) {
+                launchCameraIntent()
+            } else {
+                Toast.makeText(
+                    context,
+                    "Camera permission is required to capture field evidence.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+    fun openCamera() {
+        val hasPermission =
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+
+        if (hasPermission) {
+            launchCameraIntent()
+        } else {
+            cameraPermissionLauncher.launch(
+                Manifest.permission.CAMERA
+            )
         }
     }
 
@@ -466,7 +581,9 @@ fun TaskDetailScreen(
 
             TaskHeaderCard(
                 task =
-                    task
+                    task,
+                status =
+                    currentStatus
             )
 
 
@@ -493,12 +610,37 @@ fun TaskDetailScreen(
 
 
             // ====================================================
+            // SUBTASKS & EXECUTION STEPS
+            // ====================================================
+
+            TaskSubtasksCard(
+                subtasks =
+                    currentSubtasks,
+                isUpdating =
+                    isUpdatingSubtasks,
+                onToggleSubtask = { subtaskId ->
+                    toggleSubtask(subtaskId)
+                }
+            )
+
+
+            Spacer(
+                modifier =
+                    Modifier.height(14.dp)
+            )
+
+
+            // ====================================================
             // PROGRESS
             // ====================================================
 
             TaskProgressCard(
                 task =
-                    task
+                    task,
+                progress =
+                    currentProgress,
+                status =
+                    currentStatus
             )
 
 
@@ -527,6 +669,10 @@ fun TaskDetailScreen(
 
                 onCameraClick = {
                     openCamera()
+                },
+
+                onGalleryClick = {
+                    galleryLauncher.launch("image/*")
                 }
             )
 
@@ -567,6 +713,15 @@ fun TaskDetailScreen(
 
                 isPreparing =
                     isPreparingAi,
+
+                isDownloading =
+                    isDownloadingModel,
+
+                downloadPct =
+                    downloadProgressPct,
+
+                downloadText =
+                    downloadProgressText,
 
                 isGenerating =
                     isGeneratingAiReport,
@@ -885,6 +1040,10 @@ fun TaskDetailScreen(
                                     taskCompleted =
                                         true
 
+                                    currentProgress = 100
+                                    currentStatus = "Completed"
+                                    currentSubtasks = currentSubtasks.map { it.copy(completed = true) }
+
                                     actionMessage =
                                         "Task marked as completed."
 
@@ -997,7 +1156,8 @@ fun TaskDetailScreen(
 
 @Composable
 private fun TaskHeaderCard(
-    task: SiteTask
+    task: SiteTask,
+    status: String = task.status
 ) {
 
     Card(
@@ -1071,7 +1231,7 @@ private fun TaskHeaderCard(
 
                 TaskDetailStatusBadge(
                     status =
-                        task.status
+                        status
                 )
             }
 
@@ -1331,32 +1491,165 @@ private fun InformationRow(
 
 
 // ============================================================
+// TASK SUBTASKS CARD
+// ============================================================
+
+@Composable
+private fun TaskSubtasksCard(
+    subtasks: List<SubtaskItem>,
+    isUpdating: Boolean,
+    onToggleSubtask: (String) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp)
+        ) {
+            val completedCount = subtasks.count { it.completed }
+            val totalCount = subtasks.size
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Checklist,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                    tint = TaskDetailOrange
+                )
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Text(
+                    text = "Subtasks & Steps",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1E293B)
+                )
+
+                Spacer(modifier = Modifier.weight(1f))
+
+                if (totalCount > 0) {
+                    Box(
+                        modifier = Modifier
+                            .background(
+                                color = if (completedCount == totalCount) Color(0xFFE1F5E7) else Color(0xFFFFE5D8),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = "$completedCount of $totalCount done",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (completedCount == totalCount) TaskDetailGreen else TaskDetailOrange
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (subtasks.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFF8FAFC), RoundedCornerShape(10.dp))
+                        .padding(14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No subtasks recorded for this task.",
+                        fontSize = 12.sp,
+                        color = TaskDetailGray
+                    )
+                }
+            } else {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    subtasks.forEach { item ->
+                        val isDone = item.completed
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(
+                                    color = if (isDone) Color(0xFFF8FAFC) else Color(0xFFFAFAFA),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .clickable {
+                                    onToggleSubtask(item.id)
+                                }
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = isDone,
+                                onCheckedChange = {
+                                    onToggleSubtask(item.id)
+                                },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = TaskDetailOrange,
+                                    uncheckedColor = Color(0xFF94A3B8),
+                                    checkmarkColor = Color.White
+                                ),
+                                modifier = Modifier.size(24.dp)
+                            )
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Text(
+                                text = item.title.ifBlank { "Untitled Step" },
+                                fontSize = 13.sp,
+                                fontWeight = if (isDone) FontWeight.Normal else FontWeight.Medium,
+                                color = if (isDone) TaskDetailGray else Color(0xFF1E293B),
+                                textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+// ============================================================
 // PROGRESS CARD
 // ============================================================
 
 @Composable
 private fun TaskProgressCard(
-    task: SiteTask
+    task: SiteTask,
+    progress: Int = task.progress,
+    status: String = task.status
 ) {
 
     val safeProgress =
         if (
-            task.status.equals(
+            status.equals(
                 "Completed",
                 ignoreCase = true
             ) ||
-            task.status.equals(
+            status.equals(
                 "Done",
                 ignoreCase = true
             ) ||
-            task.status.equals(
+            status.equals(
                 "Approved",
                 ignoreCase = true
             )
         ) {
             100
         } else {
-            task.progress
+            progress
                 .coerceIn(
                     0,
                     100
@@ -1512,7 +1805,9 @@ private fun FieldEvidenceCard(
     onAnnotationsChange:
         (List<FieldAnnotation>) -> Unit,
 
-    onCameraClick: () -> Unit
+    onCameraClick: () -> Unit,
+
+    onGalleryClick: () -> Unit = {}
 
 ) {
 
@@ -1657,61 +1952,101 @@ private fun FieldEvidenceCard(
 
 
             // ====================================================
-            // CAMERA BUTTON
+            // CAMERA & GALLERY BUTTONS
             // ====================================================
 
-            Button(
-
-                onClick =
-                    onCameraClick,
-
+            Row(
                 modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(50.dp),
-
-                shape =
-                    RoundedCornerShape(12.dp),
-
-                colors =
-                    ButtonDefaults.buttonColors(
-                        containerColor =
-                            TaskDetailOrange
+                    Modifier.fillMaxWidth(),
+                horizontalArrangement =
+                    Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick =
+                        onCameraClick,
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                    shape =
+                        RoundedCornerShape(12.dp),
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor =
+                                TaskDetailOrange
+                        )
+                ) {
+                    Icon(
+                        imageVector =
+                            Icons.Outlined.CameraAlt,
+                        contentDescription =
+                            null,
+                        modifier =
+                            Modifier.size(18.dp)
                     )
 
-            ) {
+                    Spacer(
+                        modifier =
+                            Modifier.width(6.dp)
+                    )
 
-                Icon(
+                    Text(
+                        text =
+                            if (capturedPhotoUri == null) {
+                                "Camera"
+                            } else {
+                                "Retake"
+                            },
+                        fontSize =
+                            13.sp,
+                        fontWeight =
+                            FontWeight.Bold
+                    )
+                }
 
-                    imageVector =
-                        Icons.Outlined.CameraAlt,
-
-                    contentDescription =
-                        null
-                )
-
-
-                Spacer(
+                OutlinedButton(
+                    onClick =
+                        onGalleryClick,
                     modifier =
-                        Modifier.width(8.dp)
-                )
+                        Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                    shape =
+                        RoundedCornerShape(12.dp),
+                    border =
+                        BorderStroke(
+                            1.dp,
+                            TaskDetailOrange
+                        ),
+                    colors =
+                        ButtonDefaults.outlinedButtonColors(
+                            contentColor =
+                                TaskDetailOrange
+                        )
+                ) {
+                    Icon(
+                        imageVector =
+                            Icons.Outlined.PhotoLibrary,
+                        contentDescription =
+                            null,
+                        modifier =
+                            Modifier.size(18.dp)
+                    )
 
+                    Spacer(
+                        modifier =
+                            Modifier.width(6.dp)
+                    )
 
-                Text(
-
-                    text =
-                        if (capturedPhotoUri == null) {
-
-                            "Open Camera"
-
-                        } else {
-
-                            "Take Another Photo"
-                        },
-
-                    fontWeight =
-                        FontWeight.Bold
-                )
+                    Text(
+                        text =
+                            "Gallery",
+                        fontSize =
+                            13.sp,
+                        fontWeight =
+                            FontWeight.Bold
+                    )
+                }
             }
 
 
@@ -4788,6 +5123,12 @@ private fun AiFieldAnalysisCard(
 
     isPreparing: Boolean,
 
+    isDownloading: Boolean = false,
+
+    downloadPct: Int = 0,
+
+    downloadText: String = "",
+
     isGenerating: Boolean,
 
     detectedObjects: String,
@@ -4943,8 +5284,11 @@ private fun AiFieldAnalysisCard(
                 text =
                     when {
 
+                        isDownloading ->
+                            "Downloading Gemma AI model..."
+
                         isPreparing ->
-                            "Preparing bundled Gemma AI model..."
+                            "Preparing Gemma AI model..."
 
                         aiModelInstalled ->
                             "Gemma AI model ready"
@@ -4962,10 +5306,60 @@ private fun AiFieldAnalysisCard(
 
 
             // ====================================================
-            // PREPARING GEMMA
+            // DOWNLOADING GEMMA — INLINE PROGRESS
             // ====================================================
 
-            if (isPreparing) {
+            if (isDownloading) {
+
+                Column {
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = TaskDetailOrange
+                        )
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Text(
+                            text = "Downloading AI model ($downloadText)",
+                            fontSize = 11.sp,
+                            color = TaskDetailGray
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    LinearProgressIndicator(
+                        progress = { downloadPct / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp),
+                        color = TaskDetailOrange,
+                        trackColor = Color(0xFFE0C8BB)
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "$downloadPct%",
+                        fontSize = 10.sp,
+                        color = TaskDetailGray,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+
+            // ====================================================
+            // PREPARING GEMMA (after download)
+            // ====================================================
+
+            } else if (isPreparing) {
 
                 Row(
 
