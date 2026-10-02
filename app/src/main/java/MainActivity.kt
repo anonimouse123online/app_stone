@@ -1,6 +1,7 @@
 package com.example.capstonesample
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
@@ -27,46 +28,21 @@ import com.example.capstonesample.ui.theme.CapstoneSampleTheme
 
 class MainActivity : ComponentActivity() {
 
+    private val navigateToState = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
 
         super.onCreate(savedInstanceState)
 
         // ============================================================
-// CREATE SITEPULSE NOTIFICATION CHANNEL
-// ============================================================
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-
-            val channel = NotificationChannel(
-                "sitepulse_notifications",
-                "SitePulse Notifications",
-                NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-
-                description =
-                    "Notifications from SitePulse"
-
-                enableVibration(true)
-            }
-
-
-            val notificationManager =
-                getSystemService(
-                    NotificationManager::class.java
-                )
-
-
-            notificationManager.createNotificationChannel(
-                channel
-            )
-        }
-
+        // CREATE SITEPULSE NOTIFICATION CHANNEL
+        // ============================================================
+        com.example.capstonesample.notifications.NotificationHelper.createNotificationChannel(this)
 
         // ============================================================
         // NOTIFICATION PERMISSION
         // Android 13+ requires runtime permission.
         // ============================================================
-
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
@@ -74,7 +50,6 @@ class MainActivity : ComponentActivity() {
                 Manifest.permission.POST_NOTIFICATIONS
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-
             ActivityCompat.requestPermissions(
                 this,
                 arrayOf(Manifest.permission.POST_NOTIFICATIONS),
@@ -82,57 +57,46 @@ class MainActivity : ComponentActivity() {
             )
         }
 
-
         // ============================================================
         // FIREBASE CLOUD MESSAGING
-        // Subscribe this device to notifications sent to ALL USERS.
+        // Subscribe this device to notifications sent to ALL USERS and ENGINEERS.
         // ============================================================
-
         FirebaseMessaging.getInstance()
             .subscribeToTopic("all_users")
             .addOnCompleteListener { task ->
-
                 if (task.isSuccessful) {
-
-                    Log.d(
-                        "FCM_TOPIC",
-                        "Subscribed to all_users"
-                    )
-
+                    Log.d("FCM_TOPIC", "Subscribed to all_users")
                 } else {
-
-                    Log.e(
-                        "FCM_TOPIC",
-                        "Failed to subscribe to all_users",
-                        task.exception
-                    )
+                    Log.e("FCM_TOPIC", "Failed to subscribe to all_users", task.exception)
                 }
             }
 
+        FirebaseMessaging.getInstance()
+            .subscribeToTopic("engineers")
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    Log.d("FCM_TOPIC", "Subscribed to engineers")
+                } else {
+                    Log.e("FCM_TOPIC", "Failed to subscribe to engineers", task.exception)
+                }
+            }
 
         // ============================================================
-        // GET FCM TOKEN FOR TESTING / FUTURE DIRECT MESSAGES
+        // GET FCM TOKEN FOR DIRECT MESSAGING
         // ============================================================
-
         FirebaseMessaging.getInstance()
             .token
             .addOnCompleteListener { task ->
-
-                if (!task.isSuccessful) {
-
-                    Log.e(
-                        "FCM_TOKEN",
-                        "Fetching FCM token failed",
-                        task.exception
-                    )
-
-                    return@addOnCompleteListener
+                if (task.isSuccessful && task.result != null) {
+                    val token = task.result
+                    Log.d("FCM_TOKEN", "Token: $token")
+                    getSharedPreferences("sitepulse_fcm", MODE_PRIVATE)
+                        .edit()
+                        .putString("fcm_token", token)
+                        .apply()
+                } else {
+                    Log.e("FCM_TOKEN", "Fetching FCM token failed", task.exception)
                 }
-
-                Log.d(
-                    "FCM_TOKEN",
-                    "Token: ${task.result}"
-                )
             }
 
 
@@ -191,8 +155,23 @@ class MainActivity : ComponentActivity() {
                 // NAVIGATION STATE
                 // ====================================================
 
+                val startScreen = when {
+                    savedSession == null -> "login"
+                    intent?.getStringExtra("navigate_to") == "chat" -> "chat"
+                    else -> "dashboard"
+                }
+
                 var currentScreen by remember {
-                    mutableStateOf(if (savedSession != null) "dashboard" else "login")
+                    mutableStateOf(startScreen)
+                }
+
+                LaunchedEffect(navigateToState.value) {
+                    navigateToState.value?.let { screen ->
+                        if (savedSession != null) {
+                            currentScreen = screen
+                        }
+                        navigateToState.value = null
+                    }
                 }
 
 
@@ -484,7 +463,10 @@ class MainActivity : ComponentActivity() {
 
 
                             token =
-                                authToken
+                                authToken,
+
+                            userName =
+                                loggedInFullName
                         )
                     }
 
@@ -567,7 +549,10 @@ class MainActivity : ComponentActivity() {
 
                                 currentScreen =
                                     "profile"
-                            }
+                            },
+
+                            userName =
+                                loggedInFullName
                         )
                     }
 
@@ -755,6 +740,20 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // When app is closed or put in the background, trigger an immediate notification check
+        com.example.capstonesample.sync.SyncManager.checkNotificationsImmediately(applicationContext)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra("navigate_to")?.let { target ->
+            navigateToState.value = target
         }
     }
 }

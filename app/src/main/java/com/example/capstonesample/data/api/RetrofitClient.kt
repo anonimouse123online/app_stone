@@ -25,8 +25,9 @@ object RetrofitClient {
     // BACKEND BASE URL
     // ============================================================
 
-    // PHYSICAL PHONE
-    const val BASE_URL = "http://192.168.101.15:5001/"
+    // PHYSICAL PHONE 
+    const val BASE_URL = "http://10.47.177.138:5001/"
+    //const val BASE_URL = "http://192.168.1.4:5001/"
 
     // ANDROID EMULATOR
     /// private const val BASE_URL =
@@ -86,6 +87,8 @@ object RetrofitClient {
     // ============================================================
     // OKHTTP CLIENT
     // ============================================================
+
+    val okHttpClient: OkHttpClient get() = client
 
     private val client: OkHttpClient by lazy {
 

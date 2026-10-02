@@ -16,6 +16,18 @@ data class NotificationData(
 
     val audience: String? = null,
 
+    @SerializedName("project_id")
+    val projectId: String? = null,
+
+    @SerializedName("project_name")
+    val projectName: String? = null,
+
+    @SerializedName("target_user_id")
+    val targetUserId: String? = null,
+
+    @SerializedName("target_user_name")
+    val targetUserName: String? = null,
+
     @SerializedName("created_by")
     val createdBy: String? = null,
 

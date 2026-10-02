@@ -1,5 +1,6 @@
 package com.example.capstonesample
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -9,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.outlined.BusinessCenter
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -21,6 +23,10 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.Refresh
+import java.util.Locale
+import android.util.Base64
+import org.json.JSONObject
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.capstonesample.ui.theme.*
 
 import com.example.capstonesample.data.api.RetrofitClient
 
@@ -42,16 +49,16 @@ import kotlinx.coroutines.launch
 // ============================================================
 
 private val ProfileBackground =
-    Color(0xFFF0E1D8)
+    Color(0xFFF6F8FA)
 
 private val ProfileOrange =
     Color(0xFFF15A24)
 
 private val ProfileGray =
-    Color(0xFF777777)
+    Color(0xFF64748B)
 
 private val ProfileDividerColor =
-    Color(0xFFF0E8E4)
+    Color(0xFFE2E8F0)
 
 
 // ============================================================
@@ -76,6 +83,7 @@ data class ProfileUiModel(
 // PROFILE SCREEN
 // ============================================================
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
 
@@ -97,6 +105,10 @@ fun ProfileScreen(
     onLogoutClick: () -> Unit = {}
 
 ) {
+
+    BackHandler {
+        onHomeClick()
+    }
 
     val scope =
         rememberCoroutineScope()
@@ -318,14 +330,125 @@ fun ProfileScreen(
 
 
     // ============================================================
-    // LOAD PROJECTS WHEN PROFILE OPENS
+    // USER STATS: COMPLETED TASKS & LOGGED HOURS
+    // ============================================================
+
+    var completedCount by remember {
+        mutableIntStateOf(profile.completedCount)
+    }
+
+    var loggedHoursText by remember {
+        mutableStateOf(profile.loggedHours)
+    }
+
+    var isLoadingStats by remember {
+        mutableStateOf(false)
+    }
+
+    fun extractUserIdFromToken(rawToken: String): String? {
+        try {
+            val parts = rawToken.removePrefix("Bearer ").trim().split(".")
+            if (parts.size >= 2) {
+                val decoded = String(
+                    Base64.decode(parts[1], Base64.URL_SAFE or Base64.NO_PADDING),
+                    Charsets.UTF_8
+                )
+                val json = JSONObject(decoded)
+                val id = json.optString("id").ifBlank { json.optString("userId") }
+                return id.ifBlank { null }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
+    fun loadUserStats() {
+        if (token.isBlank() || token.startsWith("LOCAL_")) {
+            return
+        }
+
+        val authHeader = if (token.startsWith("Bearer ")) token else "Bearer $token"
+        val currentUserId = extractUserIdFromToken(token)
+
+        scope.launch {
+            isLoadingStats = true
+            try {
+                // 1. Fetch timelogs to calculate total logged hours
+                val timelogResponse = RetrofitClient.api.getTimelogs(
+                    token = authHeader,
+                    engineer = displayName
+                )
+
+                var logs = timelogResponse.body()?.data.orEmpty()
+                if (logs.isEmpty()) {
+                    // Fallback: query all logs and match by engineer name
+                    val allLogsResponse = RetrofitClient.api.getTimelogs(token = authHeader)
+                    val allLogs = allLogsResponse.body()?.data.orEmpty()
+                    val matchingLogs = allLogs.filter { log ->
+                        log.engineerName.orEmpty().trim().equals(displayName.trim(), ignoreCase = true)
+                    }
+                    logs = if (matchingLogs.isNotEmpty()) matchingLogs else allLogs
+                } else {
+                    val matchingLogs = logs.filter { log ->
+                        log.engineerName.orEmpty().trim().equals(displayName.trim(), ignoreCase = true)
+                    }
+                    if (matchingLogs.isNotEmpty()) {
+                        logs = matchingLogs
+                    }
+                }
+
+                val totalHours = logs.sumOf { log ->
+                    val raw = log.totalWorkHours ?: ""
+                    val cleaned = raw.replace(Regex("[^0-9.]"), "")
+                    cleaned.toDoubleOrNull() ?: 0.0
+                }
+
+                loggedHoursText = if (totalHours <= 0.0) {
+                    "0h"
+                } else if (totalHours % 1.0 == 0.0) {
+                    "${totalHours.toInt()}h"
+                } else {
+                    "${String.format(Locale.US, "%.1f", totalHours)}h"
+                }
+
+                // 2. Fetch tasks to calculate completed tasks count
+                val tasksResponse = RetrofitClient.api.getTasks(token = authHeader)
+                val taskList = tasksResponse.body()?.data.orEmpty()
+
+                val completedTasksAssigned = taskList.count { task ->
+                    val status = task.status.orEmpty().trim().lowercase(Locale.ROOT)
+                    val isDone = status == "completed" || status == "done" || status == "approved"
+                    val isAssignedToUser = (!currentUserId.isNullOrBlank() && task.assigneeId.equals(currentUserId, ignoreCase = true)) ||
+                            (!displayName.isBlank() && task.assigneeName.orEmpty().trim().equals(displayName.trim(), ignoreCase = true))
+                    isDone && isAssignedToUser
+                }
+
+                completedCount = if (completedTasksAssigned > 0) {
+                    completedTasksAssigned
+                } else {
+                    taskList.count { task ->
+                        val status = task.status.orEmpty().trim().lowercase(Locale.ROOT)
+                        status == "completed" || status == "done" || status == "approved"
+                    }
+                }
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                isLoadingStats = false
+            }
+        }
+    }
+
+
+    // ============================================================
+    // LOAD PROJECTS & STATS WHEN PROFILE OPENS
     // ============================================================
 
     LaunchedEffect(
         token
     ) {
-
         loadUserProjects()
+        loadUserStats()
     }
 
 
@@ -337,6 +460,54 @@ fun ProfileScreen(
 
         containerColor =
             ProfileBackground,
+
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Profile",
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onHomeClick) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color.Black
+                        )
+                    }
+                },
+                actions = {
+                    IconButton(
+                        onClick = {
+                            loadUserProjects()
+                            loadUserStats()
+                        },
+                        enabled = !isLoadingStats && !isLoadingProjects
+                    ) {
+                        if (isLoadingStats || isLoadingProjects) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                                color = ProfileOrange
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Outlined.Refresh,
+                                contentDescription = "Refresh Profile",
+                                tint = Color.Black
+                            )
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = ProfileBackground
+                )
+            )
+        },
 
         bottomBar = {
 
@@ -386,7 +557,7 @@ fun ProfileScreen(
             Spacer(
                 modifier =
                     Modifier.height(
-                        18.dp
+                        8.dp
                     )
             )
 
@@ -407,10 +578,13 @@ fun ProfileScreen(
 
                 colors =
                     CardDefaults.cardColors(
-
                         containerColor =
                             Color.White
-                    )
+                    ),
+
+                border = BorderStroke(1.dp, CardBorderStroke),
+
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
 
             ) {
 
@@ -611,32 +785,24 @@ fun ProfileScreen(
 
 
                         ProfileStat(
-
                             modifier =
                                 Modifier.weight(
                                     1f
                                 ),
-
                             value =
-                                profile
-                                    .completedCount
-                                    .toString(),
-
+                                completedCount.toString(),
                             label =
                                 "Completed"
                         )
 
 
                         ProfileStat(
-
                             modifier =
                                 Modifier.weight(
                                     1f
                                 ),
-
                             value =
-                                profile.loggedHours,
-
+                                loggedHoursText,
                             label =
                                 "Logged"
                         )
@@ -674,7 +840,11 @@ fun ProfileScreen(
                     CardDefaults.cardColors(
                         containerColor =
                             Color.White
-                    )
+                    ),
+
+                border = BorderStroke(1.dp, CardBorderStroke),
+
+                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
 
             ) {
 

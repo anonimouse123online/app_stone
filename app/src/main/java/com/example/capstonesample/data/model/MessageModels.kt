@@ -17,6 +17,12 @@ data class ConversationDto(
     @SerializedName("conversation_id")
     val conversationId: Int,
 
+    @SerializedName("is_group")
+    val isGroup: Boolean? = false,
+
+    @SerializedName("group_name")
+    val groupName: String? = null,
+
     @SerializedName("user_id")
     val userId: String?,
 
@@ -35,7 +41,10 @@ data class ConversationDto(
     val lastMessageTime: String?,
 
     @SerializedName("unread_count")
-    val unreadCount: Int = 0
+    val unreadCount: Int = 0,
+
+    @SerializedName("member_count")
+    val memberCount: Int? = null
 )
 
 
@@ -57,7 +66,10 @@ data class UserSearchDto(
 
     val email: String?,
 
-    val role: String? = null
+    val role: String? = null,
+
+    @SerializedName("shared_projects")
+    val sharedProjects: List<String>? = null
 )
 
 
@@ -67,7 +79,17 @@ data class UserSearchDto(
 
 data class CreateConversationRequest(
 
-    val receiverId: String
+    @SerializedName("receiverId")
+    val receiverId: String? = null,
+
+    @SerializedName("isGroup")
+    val isGroup: Boolean = false,
+
+    @SerializedName("name")
+    val name: String? = null,
+
+    @SerializedName("receiverIds")
+    val receiverIds: List<String>? = null
 )
 
 data class CreateConversationResponse(

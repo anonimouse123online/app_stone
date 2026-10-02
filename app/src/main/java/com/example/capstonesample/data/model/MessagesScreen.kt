@@ -16,6 +16,10 @@ data class ChatUser(
 
     val unreadCount: Int = 0,
 
+    val isGroup: Boolean = false,
+
+    val memberCount: Int? = null,
+
     val avatarColor: Color =
         Color(0xFFDDEBFF),
 

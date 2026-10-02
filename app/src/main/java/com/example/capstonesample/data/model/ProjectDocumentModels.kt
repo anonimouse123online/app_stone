@@ -22,5 +22,8 @@ data class ProjectDocumentResponse(
     val category: String? = null,
 
     @SerializedName("uploaded_at")
-    val uploadedAt: String? = null
+    val uploadedAt: String? = null,
+
+    @SerializedName("file_path")
+    val filePath: String? = null
 )

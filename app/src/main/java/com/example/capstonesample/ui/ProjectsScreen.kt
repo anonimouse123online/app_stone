@@ -2,6 +2,7 @@ package com.example.capstonesample
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -24,12 +25,25 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.model.JoinProjectRequest
+import com.example.capstonesample.security.TokenManager
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Business
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.ui.text.style.TextOverflow
+import com.example.capstonesample.ui.theme.*
+import java.text.NumberFormat
+import java.util.Locale
 
 import kotlinx.coroutines.launch
 
@@ -68,20 +82,45 @@ data class SiteProject(
 )
 
 // ============================================================
-// COLORS
+// COLORS & FORMATTERS
 // ============================================================
 
 private val ProjectBackground =
-    Color(0xFFF0E1D8)
+    Color(0xFFF6F8FA)
 
 private val ProjectOrange =
     Color(0xFFF15A24)
 
 private val SearchBackground =
-    Color(0xFFEADCD5)
+    Color.White
 
 private val GrayText =
-    Color(0xFF777777)
+    Color(0xFF64748B)
+
+private fun formatProjectBudget(rawBudget: String): String {
+    val clean = rawBudget.replace("₱", "").replace(",", "").trim()
+    val num = clean.toDoubleOrNull() ?: return if (rawBudget.isNotBlank()) rawBudget else "—"
+    val formatter = NumberFormat.getNumberInstance(Locale.US)
+    formatter.minimumFractionDigits = 2
+    formatter.maximumFractionDigits = 2
+    return "₱${formatter.format(num)}"
+}
+
+private fun formatDisplayDate(raw: String): String {
+    if (raw.isBlank()) return "—"
+    val trimmed = if (raw.contains("T")) raw.substringBefore("T") else raw
+    val parts = trimmed.split("-")
+    if (parts.size == 3) {
+        val y = parts[0]
+        val m = parts[1].toIntOrNull() ?: return trimmed
+        val d = parts[2].toIntOrNull() ?: return trimmed
+        val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+        if (m in 1..12) {
+            return "${months[m - 1]} $d, $y"
+        }
+    }
+    return trimmed
+}
 
 
 // ============================================================
@@ -101,9 +140,21 @@ fun ProjectsScreen(
 
     onProjectClick: (SiteProject) -> Unit = {},
 
-    token: String = ""
+    token: String = "",
+
+    userName: String = ""
 
 ) {
+
+    val context = LocalContext.current
+    val userSession = remember { TokenManager.getUserSession(context) }
+    val resolvedUserName = remember(userName, userSession) {
+        if (userName.isNotBlank()) userName
+        else userSession?.fullName?.takeIf { it.isNotBlank() } ?: "User"
+    }
+    val initials = remember(resolvedUserName) {
+        generateProjectInitials(resolvedUserName)
+    }
 
     var searchQuery by remember {
         mutableStateOf("")
@@ -804,7 +855,10 @@ fun ProjectsScreen(
 
         topBar = {
 
-            ProjectsTopBar()
+            ProjectsTopBar(
+                initials = initials,
+                onProfileClick = onProfileClick
+            )
         },
 
 
@@ -833,41 +887,29 @@ fun ProjectsScreen(
 
 
         floatingActionButton = {
-
-            FloatingActionButton(
-
+            ExtendedFloatingActionButton(
                 onClick = {
-
-                    joinError =
-                        null
-
-                    joinSuccess =
-                        null
-
-                    showJoinDialog =
-                        true
+                    joinError = null
+                    joinSuccess = null
+                    showJoinDialog = true
                 },
-
-                containerColor =
-                    ProjectOrange,
-
-                contentColor =
-                    Color.White,
-
-                shape =
-                    CircleShape
-
-            ) {
-
-                Icon(
-
-                    imageVector =
-                        Icons.Default.Add,
-
-                    contentDescription =
-                        "Join Project"
-                )
-            }
+                containerColor = ProjectOrange,
+                contentColor = Color.White,
+                shape = RoundedCornerShape(16.dp),
+                icon = {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = null
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Join Project",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+            )
         }
 
     ) { padding ->
@@ -916,7 +958,10 @@ fun ProjectsScreen(
                         24.sp,
 
                     fontWeight =
-                        FontWeight.Bold
+                        FontWeight.Bold,
+
+                    color =
+                        TextSlate900
                 )
 
 
@@ -954,7 +999,8 @@ fun ProjectsScreen(
                         placeholder = {
 
                             Text(
-                                "Search projects..."
+                                "Search projects...",
+                                color = TextSlate400
                             )
                         },
 
@@ -966,7 +1012,10 @@ fun ProjectsScreen(
                                     Icons.Default.Search,
 
                                 contentDescription =
-                                    "Search"
+                                    "Search",
+
+                                tint =
+                                    TextSlate400
                             )
                         },
 
@@ -983,23 +1032,23 @@ fun ProjectsScreen(
                                 .colors(
 
                                     focusedContainerColor =
-                                        SearchBackground,
+                                        Color.White,
 
                                     unfocusedContainerColor =
-                                        SearchBackground,
+                                        Color.White,
 
                                     focusedBorderColor =
-                                        Color.Transparent,
+                                        ProjectOrange,
 
                                     unfocusedBorderColor =
-                                        Color.Transparent
+                                        CardBorderStroke
                                 )
                     )
 
 
                     Spacer(
                         Modifier.width(
-                            8.dp
+                            10.dp
                         )
                     )
 
@@ -1009,12 +1058,17 @@ fun ProjectsScreen(
                         modifier =
                             Modifier
                                 .size(
-                                    46.dp
+                                    54.dp
                                 )
                                 .background(
-
-                                    SearchBackground,
-
+                                    Color.White,
+                                    RoundedCornerShape(
+                                        12.dp
+                                    )
+                                )
+                                .border(
+                                    1.dp,
+                                    CardBorderStroke,
                                     RoundedCornerShape(
                                         12.dp
                                     )
@@ -1031,7 +1085,10 @@ fun ProjectsScreen(
                                 Icons.Outlined.Tune,
 
                             contentDescription =
-                                "Filter"
+                                "Filter",
+
+                            tint =
+                                TextSlate700
                         )
                     }
                 }
@@ -1505,11 +1562,21 @@ private fun JoinProjectDialog(
 // TOP BAR
 // ============================================================
 
+private fun generateProjectInitials(name: String): String {
+    val words = name.trim().split(" ").filter { it.isNotBlank() }
+    if (words.isEmpty()) return "SP"
+    if (words.size == 1) return words[0].take(2).uppercase()
+    return "${words.first().first().uppercaseChar()}${words.last().first().uppercaseChar()}"
+}
+
 @OptIn(
     ExperimentalMaterial3Api::class
 )
 @Composable
-private fun ProjectsTopBar() {
+private fun ProjectsTopBar(
+    initials: String = "SP",
+    onProfileClick: () -> Unit = {}
+) {
 
     TopAppBar(
 
@@ -1556,6 +1623,7 @@ private fun ProjectsTopBar() {
                         .size(
                             36.dp
                         )
+                        .clip(CircleShape)
                         .background(
 
                             Color(
@@ -1563,7 +1631,8 @@ private fun ProjectsTopBar() {
                             ),
 
                             CircleShape
-                        ),
+                        )
+                        .clickable { onProfileClick() },
 
                 contentAlignment =
                     Alignment.Center
@@ -1573,7 +1642,7 @@ private fun ProjectsTopBar() {
                 Text(
 
                     text =
-                        "SA",
+                        initials,
 
                     color =
                         Color.White,
@@ -1605,319 +1674,217 @@ private fun ProjectsTopBar() {
 
 @Composable
 private fun ProjectListCard(
-
     project: SiteProject,
-
     onClick: () -> Unit
-
 ) {
-
-    val isGoodStatus =
-        project.status.equals(
-            "On track",
-            ignoreCase = true
-        ) ||
-                project.status.equals(
-                    "Active",
-                    ignoreCase = true
-                ) ||
-                project.status.equals(
-                    "Ongoing",
-                    ignoreCase = true
-                ) ||
-                project.status.equals(
-                    "Planning",
-                    ignoreCase = true
-                )
-
+    val statusLower = project.status.trim().lowercase()
+    val (statusBg, statusTextColor) = when {
+        statusLower.contains("track") || statusLower.contains("active") || statusLower.contains("ongoing") || statusLower.contains("completed") ->
+            Pair(EmeraldGreenBg, EmeraldGreenText)
+        statusLower.contains("delayed") || statusLower.contains("risk") || statusLower.contains("halt") || statusLower.contains("behind") ->
+            Pair(RoseRedBg, RoseRedText)
+        else ->
+            Pair(AmberWarningBg, AmberWarningText)
+    }
 
     Card(
-
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clickable {
-                    onClick()
-                },
-
-        shape =
-            RoundedCornerShape(
-                16.dp
-            ),
-
-        colors =
-            CardDefaults.cardColors(
-                containerColor =
-                    Color.White
-            )
-
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, CardBorderStroke),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-
         Column(
-
-            modifier =
-                Modifier.padding(
-                    16.dp
-                )
-
+            modifier = Modifier.padding(16.dp)
         ) {
-
-            // ====================================================
-            // TITLE + STATUS
-            // ====================================================
-
+            // Header: Phase badge & Status badge
             Row(
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                verticalAlignment =
-                    Alignment.CenterVertically
-
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-
-                Column(
-
-                    modifier =
-                        Modifier.weight(
-                            1f
+                if (project.phase.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .background(IndigoBlueBg, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = project.phase.uppercase(),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = IndigoBlueText,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-
-                ) {
-
-                    Text(
-
-                        text =
-                            project.phase,
-
-                        fontSize =
-                            10.sp,
-
-                        color =
-                            GrayText
-                    )
-
-
-                    Text(
-
-                        text =
-                            project.name,
-
-                        fontSize =
-                            18.sp,
-
-                        fontWeight =
-                            FontWeight.Bold,
-
-                        color =
-                            Color.Black
-                    )
-
-
-                    Text(
-
-                        text =
-                            project.code,
-
-                        fontSize =
-                            10.sp,
-
-                        color =
-                            GrayText
-                    )
+                    }
                 }
 
+                Spacer(Modifier.weight(1f))
 
                 Box(
-
-                    modifier =
-                        Modifier
-                            .background(
-
-                                if (
-                                    isGoodStatus
-                                )
-                                    Color(
-                                        0xFFDDF4E1
-                                    )
-                                else
-                                    Color(
-                                        0xFFFFDEDE
-                                    ),
-
-                                RoundedCornerShape(
-                                    8.dp
-                                )
-                            )
-                            .padding(
-                                horizontal = 9.dp,
-                                vertical = 5.dp
-                            )
-
+                    modifier = Modifier
+                        .background(statusBg, RoundedCornerShape(8.dp))
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
-
                     Text(
-
-                        text =
-                            project.status,
-
-                        fontSize =
-                            9.sp,
-
-                        color =
-                            if (
-                                isGoodStatus
-                            )
-                                Color(
-                                    0xFF199642
-                                )
-                            else
-                                Color.Red
+                        text = project.status.ifBlank { "ACTIVE" }.uppercase(),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = statusTextColor
                     )
                 }
             }
 
+            Spacer(Modifier.height(10.dp))
 
-            Spacer(
-                Modifier.height(
-                    14.dp
-                )
+            // Project Title & Code
+            Text(
+                text = project.name,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold,
+                color = TextSlate900,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
 
-
-            // ====================================================
-            // PROJECT DETAILS
-            // ====================================================
-
-            ProjectDetailRow(
-                label = "Location",
-                value = project.location
+            Text(
+                text = project.code,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                color = TextSlate500
             )
 
+            Spacer(Modifier.height(12.dp))
+            HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
+            Spacer(Modifier.height(12.dp))
 
-            ProjectDetailRow(
-                label = "Client",
-                value = project.client
-            )
+            // Key Project Details in modern visual rows
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (project.location.isNotBlank()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Place,
+                            contentDescription = null,
+                            tint = ProjectOrange,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = project.location,
+                            fontSize = 12.sp,
+                            color = TextSlate700,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
 
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (project.client.isNotBlank()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f, fill = false)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Business,
+                                contentDescription = null,
+                                tint = TextSlate400,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = project.client,
+                                fontSize = 12.sp,
+                                color = TextSlate700,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
 
-            ProjectDetailRow(
-                label = "Manager",
-                value = project.manager
-            )
+                    if (project.budget.isNotBlank()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Payments,
+                                contentDescription = null,
+                                tint = EmeraldGreen,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                text = formatProjectBudget(project.budget),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextSlate900
+                            )
+                        }
+                    }
+                }
 
+                if (project.startDate.isNotBlank() || project.dueDate.isNotBlank()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DateRange,
+                            contentDescription = null,
+                            tint = TextSlate400,
+                            modifier = Modifier.size(15.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = "${formatDisplayDate(project.startDate)} → ${formatDisplayDate(project.dueDate)}",
+                            fontSize = 11.sp,
+                            color = TextSlate500
+                        )
+                    }
+                }
+            }
 
-            ProjectDetailRow(
-                label = "Scope",
-                value = project.scope
-            )
+            Spacer(Modifier.height(14.dp))
 
-
-            ProjectDetailRow(
-                label = "Budget",
-                value = project.budget
-            )
-
-
-            ProjectDetailRow(
-                label = "Start Date",
-                value = project.startDate
-            )
-
-
-            ProjectDetailRow(
-                label = "Due Date",
-                value = project.dueDate
-            )
-
-
-            Spacer(
-                Modifier.height(
-                    14.dp
-                )
-            )
-
-
-            // ====================================================
-            // PROGRESS
-            // ====================================================
-
+            // Progress bar
             Row(
-
-                modifier =
-                    Modifier.fillMaxWidth()
-
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-
                 Text(
-
-                    text =
-                        "Progress",
-
-                    fontSize =
-                        11.sp,
-
-                    color =
-                        GrayText
+                    text = "Progress",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextSlate500
                 )
-
-
-                Spacer(
-                    Modifier.weight(
-                        1f
-                    )
-                )
-
-
+                Spacer(Modifier.weight(1f))
                 Text(
-
-                    text =
-                        "${project.progress}%",
-
-                    fontSize =
-                        11.sp,
-
-                    fontWeight =
-                        FontWeight.Bold,
-
-                    color =
-                        ProjectOrange
+                    text = "${project.progress}%",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = ProjectOrange
                 )
             }
 
-
-            Spacer(
-                Modifier.height(
-                    6.dp
-                )
-            )
-
+            Spacer(Modifier.height(6.dp))
 
             LinearProgressIndicator(
-
-                progress = {
-
-                    project.progress
-                        .coerceIn(
-                            0,
-                            100
-                        ) / 100f
-                },
-
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(
-                            6.dp
-                        ),
-
-                color =
-                    ProjectOrange,
-
-                trackColor =
-                    Color(
-                        0xFFEAE4E1
-                    )
+                progress = { project.progress.coerceIn(0, 100) / 100f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = ProjectOrange,
+                trackColor = Color(0xFFE2E8F0)
             )
         }
     }
@@ -1942,33 +1909,24 @@ private fun ProjectDetailRow(
                 )
 
     ) {
+        val displayValue = when (label.lowercase()) {
+            "budget" -> formatProjectBudget(value)
+            "start date", "due date" -> formatDisplayDate(value)
+            else -> value.ifBlank { "—" }
+        }
 
         Text(
-
-            text =
-                "$label: ",
-
-            fontSize =
-                11.sp,
-
-            color =
-                GrayText
+            text = "$label: ",
+            fontSize = 12.sp,
+            color = TextSlate500,
+            modifier = Modifier.width(110.dp)
         )
 
-
         Text(
-
-            text =
-                value,
-
-            fontSize =
-                11.sp,
-
-            fontWeight =
-                FontWeight.Medium,
-
-            color =
-                Color.Black
+            text = displayValue,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = TextSlate900
         )
     }
 }
@@ -1995,12 +1953,13 @@ private fun ProjectDetailsScreen(
                         Text(
                             text = project.name,
                             fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = TextSlate900
                         )
                         Text(
                             text = project.code,
-                            fontSize = 10.sp,
-                            color = GrayText
+                            fontSize = 11.sp,
+                            color = TextSlate500
                         )
                     }
                 },
@@ -2008,7 +1967,8 @@ private fun ProjectDetailsScreen(
                     IconButton(onClick = onBackClick) {
                         Icon(
                             imageVector = Icons.Default.ArrowBack,
-                            contentDescription = "Back"
+                            contentDescription = "Back",
+                            tint = TextSlate700
                         )
                     }
                 },
@@ -2039,13 +1999,16 @@ private fun ProjectDetailsScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = BorderStroke(1.dp, CardBorderStroke),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Column(modifier = Modifier.padding(18.dp)) {
                         Text(
                             text = "Project Overview",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TextSlate900
                         )
 
                         Spacer(Modifier.height(14.dp))
@@ -2068,7 +2031,9 @@ private fun ProjectDetailsScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = BorderStroke(1.dp, CardBorderStroke),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Column(modifier = Modifier.padding(18.dp)) {
                         Row(
@@ -2078,7 +2043,8 @@ private fun ProjectDetailsScreen(
                             Text(
                                 text = "Project Progress",
                                 fontSize = 16.sp,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                color = TextSlate900
                             )
                             Spacer(Modifier.weight(1f))
                             Text(
@@ -2096,9 +2062,10 @@ private fun ProjectDetailsScreen(
                             },
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(8.dp),
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
                             color = ProjectOrange,
-                            trackColor = Color(0xFFEAE4E1)
+                            trackColor = Color(0xFFE2E8F0)
                         )
                     }
                 }
@@ -2108,21 +2075,24 @@ private fun ProjectDetailsScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    border = BorderStroke(1.dp, CardBorderStroke),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
                     Column(modifier = Modifier.padding(18.dp)) {
                         Text(
                             text = "Project Modules",
                             fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Bold,
+                            color = TextSlate900
                         )
 
                         Spacer(Modifier.height(8.dp))
 
                         Text(
-                            text = "This is now the opened project. You can connect Documents, Tasks, Issues, Reports, and other project-specific screens here using project.code = ${project.code}.",
+                            text = "Connected modules: Tasks, Safety Issues, Reports & Chat are linked to project ${project.code}.",
                             fontSize = 12.sp,
-                            color = GrayText
+                            color = TextSlate500
                         )
                     }
                 }

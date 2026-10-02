@@ -1,15 +1,22 @@
 package com.example.capstonesample
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.BusinessCenter
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.GroupAdd
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
@@ -21,15 +28,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.capstonesample.ui.theme.*
 
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.model.ConversationDto
 import com.example.capstonesample.data.model.CreateConversationRequest
 import com.example.capstonesample.data.model.UserSearchDto
+import com.example.capstonesample.security.TokenManager
 
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -39,10 +49,10 @@ import kotlinx.coroutines.launch
 // COLORS
 // ============================================================
 
-private val MessageBackground = Color(0xFFF0E1D8)
+private val MessageBackground = Color(0xFFF6F8FA)
 private val MessageOrange = Color(0xFFF15A24)
-private val SearchBackground = Color(0xFFEADCD5)
-private val MessageGray = Color(0xFF777777)
+private val SearchBackground = Color.White
+private val MessageGray = Color(0xFF64748B)
 
 
 // ============================================================
@@ -55,9 +65,20 @@ fun ChatScreen(
     onHomeClick: () -> Unit = {},
     onProjectsClick: () -> Unit = {},
     onTasksClick: () -> Unit = {},
-    onProfileClick: () -> Unit = {}
+    onProfileClick: () -> Unit = {},
+    userName: String = ""
 
 ) {
+
+    val context = LocalContext.current
+    val userSession = remember { TokenManager.getUserSession(context) }
+    val resolvedUserName = remember(userName, userSession) {
+        if (userName.isNotBlank()) userName
+        else userSession?.fullName?.takeIf { it.isNotBlank() } ?: "User"
+    }
+    val initials = remember(resolvedUserName) {
+        generateChatInitials(resolvedUserName)
+    }
 
     val scope = rememberCoroutineScope()
 
@@ -87,6 +108,59 @@ fun ChatScreen(
 
     var errorMessage by remember {
         mutableStateOf<String?>(null)
+    }
+
+    var showCreateGroupDialog by remember {
+        mutableStateOf(false)
+    }
+
+    var groupNameInput by remember {
+        mutableStateOf("")
+    }
+
+    var selectedUserIdsForGroup by remember {
+        mutableStateOf<Set<String>>(emptySet())
+    }
+
+    var isCreatingGroup by remember {
+        mutableStateOf(false)
+    }
+
+    var availableGroupMembers by remember {
+        mutableStateOf<List<UserSearchDto>>(emptyList())
+    }
+
+    var isLoadingMembers by remember {
+        mutableStateOf(false)
+    }
+
+    suspend fun refreshConversations() {
+        try {
+            val response = RetrofitClient.api.getConversations()
+            if (response.isSuccessful && response.body()?.success == true) {
+                chatList = response.body()!!.conversations.map { conversation ->
+                    val isGroup = conversation.isGroup == true
+                    val displayName = if (isGroup) {
+                        conversation.groupName?.takeIf { it.isNotBlank() } ?: "Group Chat"
+                    } else {
+                        conversation.fullName ?: conversation.email ?: "Unknown User"
+                    }
+
+                    ChatUser(
+                        conversationId = conversation.conversationId,
+                        userId = conversation.userId ?: "",
+                        name = displayName,
+                        lastMessage = conversation.lastMessage ?: "Start a conversation",
+                        time = formatMessageTime(conversation.lastMessageTime),
+                        unreadCount = conversation.unreadCount,
+                        isGroup = isGroup,
+                        memberCount = conversation.memberCount,
+                        avatarColor = if (isGroup) Color(0xFFFFEAD6) else Color(0xFFDDEBFF),
+                        avatarTextColor = if (isGroup) Color(0xFFF15A24) else Color(0xFF2962CC)
+                    )
+                }
+            }
+        } catch (_: Exception) {}
     }
 
 
@@ -182,37 +256,24 @@ fun ChatScreen(
                         body.conversations.map {
                                 conversation: ConversationDto ->
 
+                            val isGroup = conversation.isGroup == true
+                            val displayName = if (isGroup) {
+                                conversation.groupName?.takeIf { it.isNotBlank() } ?: "Group Chat"
+                            } else {
+                                conversation.fullName ?: conversation.email ?: "Unknown User"
+                            }
+
                             ChatUser(
-
-                                conversationId =
-                                    conversation.conversationId,
-
-                                userId =
-                                    conversation.userId
-                                        ?: "",
-
-                                name =
-                                    conversation.fullName
-                                        ?: conversation.email
-                                        ?: "Unknown User",
-
-                                lastMessage =
-                                    conversation.lastMessage
-                                        ?: "Start a conversation",
-
-                                time =
-                                    formatMessageTime(
-                                        conversation.lastMessageTime
-                                    ),
-
-                                unreadCount =
-                                    conversation.unreadCount,
-
-                                avatarColor =
-                                    Color(0xFFDDEBFF),
-
-                                avatarTextColor =
-                                    Color(0xFF2962CC)
+                                conversationId = conversation.conversationId,
+                                userId = conversation.userId ?: "",
+                                name = displayName,
+                                lastMessage = conversation.lastMessage ?: "Start a conversation",
+                                time = formatMessageTime(conversation.lastMessageTime),
+                                unreadCount = conversation.unreadCount,
+                                isGroup = isGroup,
+                                memberCount = conversation.memberCount,
+                                avatarColor = if (isGroup) Color(0xFFFFEAD6) else Color(0xFFDDEBFF),
+                                avatarTextColor = if (isGroup) Color(0xFFF15A24) else Color(0xFF2962CC)
                             )
                         }
 
@@ -259,6 +320,9 @@ fun ChatScreen(
             userName =
                 selectedChat!!.name,
 
+            isGroup =
+                selectedChat!!.isGroup,
+
             onBackClick = {
 
                 selectedChat =
@@ -300,7 +364,10 @@ fun ChatScreen(
 
         topBar = {
 
-            MessagesTopBar()
+            MessagesTopBar(
+                initials = initials,
+                onProfileClick = onProfileClick
+            )
         },
 
         bottomBar = {
@@ -321,9 +388,108 @@ fun ChatScreen(
                 onProfileClick =
                     onProfileClick
             )
+        },
+
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = {
+                    showCreateGroupDialog = true
+                    scope.launch {
+                        try {
+                            isLoadingMembers = true
+                            val resp = RetrofitClient.api.searchUsers("")
+                            if (resp.isSuccessful) {
+                                availableGroupMembers = resp.body()?.users ?: emptyList()
+                            }
+                        } catch (_: Exception) {
+                        } finally {
+                            isLoadingMembers = false
+                        }
+                    }
+                },
+                icon = {
+                    Icon(
+                        imageVector = Icons.Outlined.GroupAdd,
+                        contentDescription = "New Group"
+                    )
+                },
+                text = {
+                    Text(
+                        text = "New Group",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                containerColor = MessageOrange,
+                contentColor = Color.White
+            )
         }
 
     ) { padding ->
+
+        if (showCreateGroupDialog) {
+            CreateGroupDialog(
+                groupName = groupNameInput,
+                onGroupNameChange = { groupNameInput = it },
+                availableMembers = availableGroupMembers,
+                selectedIds = selectedUserIdsForGroup,
+                onToggleMember = { id ->
+                    selectedUserIdsForGroup = if (selectedUserIdsForGroup.contains(id)) {
+                        selectedUserIdsForGroup - id
+                    } else {
+                        selectedUserIdsForGroup + id
+                    }
+                },
+                isLoading = isLoadingMembers,
+                isCreating = isCreatingGroup,
+                onDismiss = {
+                    showCreateGroupDialog = false
+                    groupNameInput = ""
+                    selectedUserIdsForGroup = emptySet()
+                },
+                onCreate = {
+                    scope.launch {
+                        try {
+                            isCreatingGroup = true
+                            errorMessage = null
+                            val response = RetrofitClient.api.createConversation(
+                                CreateConversationRequest(
+                                    isGroup = true,
+                                    name = groupNameInput.trim(),
+                                    receiverIds = selectedUserIdsForGroup.toList()
+                                )
+                            )
+                            if (response.isSuccessful && response.body()?.success == true) {
+                                val newConvId = response.body()?.conversationId ?: 0
+                                val createdGroupName = groupNameInput.trim()
+                                val count = selectedUserIdsForGroup.size + 1
+                                showCreateGroupDialog = false
+                                groupNameInput = ""
+                                selectedUserIdsForGroup = emptySet()
+                                refreshConversations()
+                                selectedChat = ChatUser(
+                                    conversationId = newConvId,
+                                    userId = "",
+                                    name = createdGroupName,
+                                    lastMessage = "Group created",
+                                    time = "",
+                                    unreadCount = 0,
+                                    isGroup = true,
+                                    memberCount = count,
+                                    avatarColor = Color(0xFFFFEAD6),
+                                    avatarTextColor = Color(0xFFF15A24)
+                                )
+                            } else {
+                                errorMessage = response.body()?.message ?: "Unable to create group."
+                            }
+                        } catch (e: Exception) {
+                            errorMessage = e.message ?: "Failed to create group."
+                        } finally {
+                            isCreatingGroup = false
+                        }
+                    }
+                }
+            )
+        }
 
         Column(
 
@@ -425,10 +591,10 @@ fun ChatScreen(
                                 SearchBackground,
 
                             focusedBorderColor =
-                                Color.Transparent,
+                                MessageOrange,
 
                             unfocusedBorderColor =
-                                Color.Transparent,
+                                CardBorderStroke,
 
                             cursorColor =
                                 MessageOrange,
@@ -1028,11 +1194,21 @@ private fun formatMessageTime(
 // TOP BAR
 // ============================================================
 
+private fun generateChatInitials(name: String): String {
+    val words = name.trim().split(" ").filter { it.isNotBlank() }
+    if (words.isEmpty()) return "SP"
+    if (words.size == 1) return words[0].take(2).uppercase()
+    return "${words.first().first().uppercaseChar()}${words.last().first().uppercaseChar()}"
+}
+
 @OptIn(
     ExperimentalMaterial3Api::class
 )
 @Composable
-private fun MessagesTopBar() {
+private fun MessagesTopBar(
+    initials: String = "SP",
+    onProfileClick: () -> Unit = {}
+) {
 
     TopAppBar(
 
@@ -1075,12 +1251,14 @@ private fun MessagesTopBar() {
                     .size(
                         36.dp
                     )
+                    .clip(CircleShape)
                     .background(
                         Color(
                             0xFF263238
                         ),
                         CircleShape
-                    ),
+                    )
+                    .clickable { onProfileClick() },
 
                 contentAlignment =
                     Alignment.Center
@@ -1089,7 +1267,7 @@ private fun MessagesTopBar() {
 
                 Text(
                     text =
-                        "SA",
+                        initials,
                     color =
                         Color.White,
                     fontSize =
@@ -1156,11 +1334,13 @@ private fun MessageCard(
                         Color.White
                 ),
 
+        border = BorderStroke(1.dp, CardBorderStroke),
+
         elevation =
             CardDefaults
                 .cardElevation(
                     defaultElevation =
-                        0.dp
+                        1.dp
                 )
 
     ) {
@@ -1182,82 +1362,78 @@ private fun MessageCard(
         ) {
 
             Box(
-
                 modifier = Modifier
-                    .size(
-                        42.dp
-                    )
+                    .size(42.dp)
                     .background(
                         chat.avatarColor,
                         CircleShape
                     ),
-
-                contentAlignment =
-                    Alignment.Center
-
+                contentAlignment = Alignment.Center
             ) {
-
-                Text(
-                    text =
-                        initials,
-                    color =
-                        chat.avatarTextColor,
-                    fontSize =
-                        13.sp,
-                    fontWeight =
-                        FontWeight.Bold
-                )
+                if (chat.isGroup) {
+                    Icon(
+                        imageVector = Icons.Outlined.Group,
+                        contentDescription = "Group",
+                        tint = chat.avatarTextColor,
+                        modifier = Modifier.size(22.dp)
+                    )
+                } else {
+                    Text(
+                        text = initials,
+                        color = chat.avatarTextColor,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
-
             Spacer(
-                modifier =
-                    Modifier.width(
-                        12.dp
-                    )
+                modifier = Modifier.width(12.dp)
             )
 
-
             Column(
-
-                modifier =
-                    Modifier.weight(
-                        1f
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = chat.name,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
 
-            ) {
-
-                Text(
-                    text =
-                        chat.name,
-                    fontSize =
-                        14.sp,
-                    fontWeight =
-                        FontWeight.Bold,
-                    color =
-                        Color.Black
-                )
-
+                    if (chat.isGroup) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFFFEAD6)
+                        ) {
+                            Text(
+                                text = if (chat.memberCount != null && chat.memberCount > 0) "GC • ${chat.memberCount}" else "GC",
+                                color = Color(0xFFF15A24),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
 
                 Spacer(
-                    modifier =
-                        Modifier.height(
-                            3.dp
-                        )
+                    modifier = Modifier.height(3.dp)
                 )
 
-
                 Text(
-                    text =
-                        chat.lastMessage,
-                    fontSize =
-                        11.sp,
-                    color =
-                        MessageGray,
-                    maxLines =
-                        1,
-                    overflow =
-                        TextOverflow.Ellipsis
+                    text = if (chat.lastMessage.isBlank()) "No messages yet" else chat.lastMessage,
+                    fontSize = 11.sp,
+                    color = MessageGray,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -1384,6 +1560,15 @@ private fun UserSearchCard(
                 .cardColors(
                     containerColor =
                         Color.White
+                ),
+
+        border = BorderStroke(1.dp, CardBorderStroke),
+
+        elevation =
+            CardDefaults
+                .cardElevation(
+                    defaultElevation =
+                        1.dp
                 )
 
     ) {
@@ -1457,14 +1642,20 @@ private fun UserSearchCard(
                 )
 
 
+                val subInfo = if (!user.sharedProjects.isNullOrEmpty()) {
+                    "Projects: ${user.sharedProjects.joinToString(", ")}"
+                } else if (!user.role.isNullOrBlank()) {
+                    user.role
+                } else {
+                    user.email ?: ""
+                }
+
                 Text(
-                    text =
-                        user.email
-                            ?: "",
-                    fontSize =
-                        11.sp,
-                    color =
-                        MessageGray
+                    text = subInfo,
+                    fontSize = 11.sp,
+                    color = MessageGray,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
@@ -1669,5 +1860,255 @@ private fun RowScope.MessagesNavigationItem(
                     unselectedTextColor =
                         Color.Gray
                 )
+    )
+}
+
+// ============================================================
+// CREATE GROUP DIALOG
+// ============================================================
+
+@Composable
+private fun CreateGroupDialog(
+    groupName: String,
+    onGroupNameChange: (String) -> Unit,
+    availableMembers: List<UserSearchDto>,
+    selectedIds: Set<String>,
+    onToggleMember: (String) -> Unit,
+    isLoading: Boolean,
+    isCreating: Boolean,
+    onDismiss: () -> Unit,
+    onCreate: () -> Unit
+) {
+    var searchFilter by remember { mutableStateOf("") }
+    val filteredMembers = remember(availableMembers, searchFilter) {
+        if (searchFilter.isBlank()) availableMembers
+        else availableMembers.filter {
+            (it.fullName ?: "").contains(searchFilter, ignoreCase = true) ||
+            (it.email ?: "").contains(searchFilter, ignoreCase = true) ||
+            (it.role ?: "").contains(searchFilter, ignoreCase = true) ||
+            (it.sharedProjects ?: emptyList()).any { p -> p.contains(searchFilter, ignoreCase = true) }
+        }
+    }
+
+    val selectedMembersList = remember(availableMembers, selectedIds) {
+        availableMembers.filter { selectedIds.contains(it.id) }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!isCreating) onDismiss() },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Outlined.GroupAdd,
+                    contentDescription = null,
+                    tint = MessageOrange,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(text = "New Group Chat", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 440.dp)
+            ) {
+                // 1. Group Name Field
+                OutlinedTextField(
+                    value = groupName,
+                    onValueChange = onGroupNameChange,
+                    label = { Text("Group Name") },
+                    placeholder = { Text("e.g. Project Site Team") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // 2. Selected Members Preview
+                if (selectedMembersList.isNotEmpty()) {
+                    Text(
+                        text = "Added to group (${selectedMembersList.size})",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        color = MessageOrange
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                    ) {
+                        items(selectedMembersList, key = { it.id }) { member ->
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = Color(0xFFFFEAD6),
+                                border = BorderStroke(1.dp, Color(0xFFF8B595))
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+                                ) {
+                                    Text(
+                                        text = member.fullName ?: member.email ?: "User",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFF9E3710)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    IconButton(
+                                        onClick = { onToggleMember(member.id) },
+                                        modifier = Modifier.size(18.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Close,
+                                            contentDescription = "Remove",
+                                            tint = Color(0xFF9E3710),
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                // 3. Search members in list
+                OutlinedTextField(
+                    value = searchFilter,
+                    onValueChange = { searchFilter = it },
+                    placeholder = { Text("Filter members...", fontSize = 12.sp) },
+                    leadingIcon = {
+                        Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                    },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(10.dp)
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // 4. List of available colleagues
+                Text(
+                    text = "Project Colleagues & Admins",
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(color = MessageOrange, modifier = Modifier.size(24.dp))
+                    }
+                } else if (filteredMembers.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("No members available to add.", fontSize = 12.sp, color = Color.Gray)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .heightIn(max = 220.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(filteredMembers, key = { it.id }) { user ->
+                            val isSelected = selectedIds.contains(user.id)
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = if (isSelected) Color(0xFFFFF4EC) else Color(0xFFF9F9F9),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onToggleMember(user.id) }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .background(
+                                                if (isSelected) Color(0xFFF15A24) else Color(0xFFDDEBFF),
+                                                CircleShape
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = (user.fullName ?: user.email ?: "U").take(1).uppercase(),
+                                            color = if (isSelected) Color.White else Color(0xFF2962CC),
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.width(10.dp))
+
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = user.fullName ?: user.email ?: "User",
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 13.sp
+                                        )
+                                        val sub = if (!user.sharedProjects.isNullOrEmpty()) {
+                                            user.sharedProjects.joinToString(", ")
+                                        } else {
+                                            user.role ?: user.email ?: ""
+                                        }
+                                        Text(
+                                            text = sub,
+                                            fontSize = 10.sp,
+                                            color = Color.Gray,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+
+                                    Checkbox(
+                                        checked = isSelected,
+                                        onCheckedChange = { onToggleMember(user.id) },
+                                        colors = CheckboxDefaults.colors(checkedColor = MessageOrange)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onCreate,
+                enabled = groupName.isNotBlank() && selectedIds.isNotEmpty() && !isCreating,
+                colors = ButtonDefaults.buttonColors(containerColor = MessageOrange)
+            ) {
+                if (isCreating) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    Text("Create (${selectedIds.size})")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !isCreating) {
+                Text("Cancel", color = Color.Gray)
+            }
+        }
     )
 }

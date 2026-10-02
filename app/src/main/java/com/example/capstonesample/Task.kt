@@ -88,19 +88,19 @@ import kotlin.math.min
 // ============================================================
 
 private val TaskDetailBackground =
-    Color(0xFFF0E1D8)
+    Color(0xFFF6F8FA)
 
 private val TaskDetailOrange =
     Color(0xFFF15A24)
 
 private val TaskDetailGray =
-    Color(0xFF777777)
+    Color(0xFF64748B)
 
 private val TaskDetailGreen =
-    Color(0xFF1B9A41)
+    Color(0xFF10B981)
 
 private val TaskDetailRed =
-    Color(0xFFD32F2F)
+    Color(0xFFEF4444)
 
 
 // ============================================================
@@ -1460,30 +1460,24 @@ private fun InformationRow(
 
 
         Column {
+            val displayValue = if (label.equals("Task ID", ignoreCase = true) && value.length > 8) {
+                "#${value.take(8).uppercase()}"
+            } else {
+                value
+            }
 
             Text(
-
-                text =
-                    label,
-
-                fontSize =
-                    9.sp,
-
-                color =
-                    TaskDetailGray
+                text = label,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium,
+                color = TaskDetailGray
             )
 
-
             Text(
-
-                text =
-                    value,
-
-                fontSize =
-                    12.sp,
-
-                fontWeight =
-                    FontWeight.Medium
+                text = displayValue,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFF0F172A)
             )
         }
     }
@@ -3728,15 +3722,10 @@ private fun FieldEvidenceCard(
 
 
             Text(
-
-                text =
-                    "YOLO still analyzes the original photo. Engineer labels are an additional manual evidence layer.",
-
-                fontSize =
-                    9.sp,
-
-                color =
-                    TaskDetailGray
+                text = "AI analysis automatically scans the high-resolution photo. Engineer labels provide verified manual evidence.",
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+                color = TaskDetailGray
             )
         }
     }

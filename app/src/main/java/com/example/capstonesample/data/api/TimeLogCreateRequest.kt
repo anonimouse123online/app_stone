@@ -30,7 +30,7 @@ data class TimeLogCreateRequest(
 
     val weather: String = "Sunny",
 
-    val temperature: Double? = null,
+    val temperature: String? = null,
 
     @SerializedName("work_completed")
     val workCompleted: String = "",
@@ -92,7 +92,7 @@ data class TimeLogCreatedData(
 
     val weather: String? = null,
 
-    val temperature: Double? = null,
+    val temperature: String? = null,
 
     @SerializedName("work_completed")
     val workCompleted: String? = null,
@@ -114,4 +114,15 @@ data class TimeLogCreatedData(
 
     @SerializedName("updated_at")
     val updatedAt: String? = null
+)
+
+
+// ============================================================
+// TIME LOGS LIST RESPONSE
+// ============================================================
+
+data class TimeLogsListResponse(
+    val success: Boolean = false,
+    val count: Int = 0,
+    val data: List<TimeLogCreatedData> = emptyList()
 )

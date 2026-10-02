@@ -29,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -54,6 +55,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.text.font.FontStyle
 import com.example.capstonesample.data.api.WeatherService
 import com.example.capstonesample.data.api.LiveWeatherInfo
+import com.example.capstonesample.ui.theme.*
 
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.api.TaskResponse
@@ -114,12 +116,12 @@ enum class DashboardActivityType {
 // COLORS
 // ============================================================
 
-private val DashboardBackground = Color(0xFFF0E1D8)
+private val DashboardBackground = Color(0xFFF6F8FA)
 private val SitePulseOrange = Color(0xFFF15A24)
-private val OrangeLight = Color(0xFFFFF0DD)
-private val TextGray = Color(0xFF777777)
-private val Green = Color(0xFF1B9A41)
-private val Blue = Color(0xFF2864E8)
+private val OrangeLight = Color(0xFFFFF7ED)
+private val TextGray = Color(0xFF64748B)
+private val Green = Color(0xFF10B981)
+private val Blue = Color(0xFF3B82F6)
 
 
 // ============================================================
@@ -508,7 +510,7 @@ fun DashboardScreen(
                 }
 
                 val parsedHours = hours.trim().ifBlank { "8" }
-                val parsedTemp = temperature.trim().toDoubleOrNull()
+                val tempToSend = temperature.trim().ifBlank { null }
                 val parsedWorkOnSite = workOnSite.trim().toIntOrNull() ?: 1
                 val parsedSupervisors = supervisors.trim().toIntOrNull() ?: 1
                 val parsedSubContractors = subContractors.trim().toIntOrNull() ?: 0
@@ -525,7 +527,7 @@ fun DashboardScreen(
                             subContractors = parsedSubContractors,
                             totalWorkHours = parsedHours,
                             weather = weather.trim().ifBlank { "Sunny" },
-                            temperature = parsedTemp,
+                            temperature = tempToSend,
                             workCompleted = if (workCompleted.isNotBlank()) workCompleted.trim() else "Daily site supervision and engineering tasks.",
                             materialsDelivered = materialsDelivered.trim(),
                             equipmentUsed = equipmentUsed.trim(),
@@ -534,7 +536,8 @@ fun DashboardScreen(
                         )
                     )
 
-                if (response.isSuccessful && response.body()?.success == true) {
+                val isSuccess = response.isSuccessful && (response.body()?.success == true || response.code() in 200..299)
+                if (isSuccess) {
                     val successMsg = "Time logged successfully ($parsedHours hrs for $trimmedProject)!"
                     logTimeMessage = successMsg
                     Toast.makeText(context, "✅ $successMsg", Toast.LENGTH_LONG).show()
@@ -855,14 +858,20 @@ fun DashboardScreen(
 
     val onTrack =
         projects.count { project ->
-
             project.status.equals(
                 "Active",
                 ignoreCase = true
             ) ||
-
                     project.status.equals(
                         "On Track",
+                        ignoreCase = true
+                    ) ||
+                    project.status.equals(
+                        "Ongoing",
+                        ignoreCase = true
+                    ) ||
+                    project.status.equals(
+                        "Planning",
                         ignoreCase = true
                     )
         }
@@ -928,7 +937,8 @@ fun DashboardScreen(
                     showNotifications = true
 
                     loadNotifications()
-                }
+                },
+                onProfileClick = onProfileClick
             )
         },
 
@@ -1078,57 +1088,49 @@ fun DashboardScreen(
             item {
 
                 Column {
-
                     Text(
-                        text = "FIELD COMMAND",
-                        fontSize = 12.sp,
+                        text = "FIELD OPERATIONS COMMAND",
+                        fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TextGray
+                        color = SitePulseOrange,
+                        letterSpacing = 0.8.sp
                     )
 
-
-                    Spacer(
-                        modifier =
-                            Modifier.height(2.dp)
-                    )
-
+                    Spacer(modifier = Modifier.height(2.dp))
 
                     Text(
-
-                        text =
-                            if (isLoading) {
-                                "Loading..."
-                            } else {
-                                userName
-                            },
-
-                        fontSize =
-                            24.sp,
-
-                        fontWeight =
-                            FontWeight.Bold,
-
-                        color =
-                            Color.Black
+                        text = if (isLoading) "Loading..." else userName,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TextSlate900
                     )
 
+                    Spacer(modifier = Modifier.height(4.dp))
 
-                    Text(
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (userRole.isNotBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .background(IndigoBlueBg, RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 7.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = userRole.uppercase(),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = IndigoBlueText
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text(
+                            text = currentDate,
+                            fontSize = 12.sp,
+                            color = TextGray
+                        )
+                    }
 
-                        text =
-                            "$userRole • $currentDate",
-
-                        fontSize =
-                            12.sp,
-
-                        color =
-                            TextGray
-                    )
-
-
-                    Spacer(
-                        modifier = Modifier.height(7.dp)
-                    )
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     DashboardLocationRow(
                         locationText = if (liveWeather != null) "$locationMessage • ${liveWeather?.formattedTemp} ${liveWeather?.weather}" else locationMessage,
@@ -1176,7 +1178,6 @@ fun DashboardScreen(
             item {
 
                 HealthStatusCard(
-
                     health =
                         health,
 
@@ -1193,7 +1194,10 @@ fun DashboardScreen(
                         completedTasks,
 
                     totalTasks =
-                        totalTasks
+                        totalTasks,
+
+                    onClick =
+                        onTasksClick
                 )
             }
 
@@ -1684,7 +1688,8 @@ private fun generateInitials(
 @Composable
 private fun DashboardTopBar(
     initials: String,
-    onNotificationClick: () -> Unit
+    onNotificationClick: () -> Unit,
+    onProfileClick: () -> Unit = {}
 ) {
 
     TopAppBar(
@@ -1721,10 +1726,12 @@ private fun DashboardTopBar(
                     Modifier
                         .padding(end = 12.dp)
                         .size(36.dp)
+                        .clip(CircleShape)
                         .background(
                             Color(0xFF263238),
                             CircleShape
-                        ),
+                        )
+                        .clickable { onProfileClick() },
 
                 contentAlignment =
                     Alignment.Center
@@ -2120,7 +2127,16 @@ private fun NotificationDialog(
                                 ),
 
                             unread =
-                                true
+                                true,
+
+                            audience =
+                                notification.audience,
+
+                            projectName =
+                                notification.projectName ?: notification.projectId,
+
+                            senderName =
+                                notification.senderName
                         )
                     }
                 }
@@ -2217,6 +2233,15 @@ private fun LogTimeDialog(
             fetchWeather(currentLocation.latitude, currentLocation.longitude)
         } else {
             onRequestLocation()
+        }
+    }
+
+    LaunchedEffect(projects) {
+        if (selectedProject.isBlank() && projects.isNotEmpty()) {
+            selectedProject = projects.first()
+            if (isCustomProject && customProject.isBlank()) {
+                isCustomProject = false
+            }
         }
     }
 
@@ -3092,7 +3117,10 @@ private fun NotificationItem(
     title: String,
     message: String,
     time: String,
-    unread: Boolean
+    unread: Boolean,
+    audience: String? = null,
+    projectName: String? = null,
+    senderName: String? = null
 ) {
 
     Card(
@@ -3144,7 +3172,11 @@ private fun NotificationItem(
 
                 Icon(
                     imageVector =
-                        Icons.Outlined.Campaign,
+                        when (audience) {
+                            "individual" -> Icons.Outlined.Person
+                            "project" -> Icons.Outlined.Apartment
+                            else -> Icons.Outlined.Campaign
+                        },
 
                     contentDescription = null,
 
@@ -3198,6 +3230,44 @@ private fun NotificationItem(
                     }
                 }
 
+                // Project & Direct Badges
+                if (!projectName.isNullOrBlank() || audience == "individual") {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (!projectName.isNullOrBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFFEDE9FE)
+                            ) {
+                                Text(
+                                    text = projectName,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFF6D28D9)
+                                )
+                            }
+                        }
+                        if (audience == "individual") {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = Color(0xFFFEF3C7)
+                            ) {
+                                Text(
+                                    text = "Direct",
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFFB45309)
+                                )
+                            }
+                        }
+                    }
+                }
+
 
                 Spacer(
                     modifier =
@@ -3219,12 +3289,27 @@ private fun NotificationItem(
                 )
 
 
-                Text(
-                    text = time,
-                    fontSize = 9.sp,
-                    color = SitePulseOrange,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = time,
+                        fontSize = 9.sp,
+                        color = SitePulseOrange,
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    if (!senderName.isNullOrBlank()) {
+                        Text(
+                            text = "From: $senderName",
+                            fontSize = 9.sp,
+                            color = TextGray,
+                            fontWeight = FontWeight.Normal
+                        )
+                    }
+                }
             }
         }
     }
@@ -3538,70 +3623,48 @@ private fun formatCoordinates(
 
 @Composable
 private fun AdvisoryCard() {
-
     Card(
-
-        modifier =
-            Modifier.fillMaxWidth(),
-
-        shape =
-            RoundedCornerShape(14.dp),
-
-        colors =
-            CardDefaults.cardColors(
-                containerColor =
-                    OrangeLight
-            )
-
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White
+        ),
+        border = BorderStroke(1.dp, Color(0xFFFED7AA)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-
         Row(
-
-            modifier =
-                Modifier.padding(12.dp),
-
-            verticalAlignment =
-                Alignment.CenterVertically
-
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Color(0xFFFFF7ED), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Info,
+                    contentDescription = null,
+                    tint = SitePulseOrange,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
 
-            Icon(
-                imageVector =
-                    Icons.Outlined.Warning,
-                contentDescription =
-                    null,
-                tint =
-                    SitePulseOrange
-            )
-
-
-            Spacer(
-                modifier =
-                    Modifier.width(10.dp)
-            )
-
+            Spacer(modifier = Modifier.width(12.dp))
 
             Column {
-
                 Text(
-                    text =
-                        "Field Advisory",
-                    fontSize =
-                        13.sp,
-                    fontWeight =
-                        FontWeight.Bold
+                    text = "Operations Advisory",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF0F172A)
                 )
 
-
                 Text(
-                    text =
-                        "Monitor assigned tasks, progress and field conditions.",
-                    fontSize =
-                        10.sp,
-                    lineHeight =
-                        13.sp,
-                    color =
-                        TextGray
+                    text = "Track assigned work orders, inspection milestones, and daily safety logs.",
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    color = TextGray
                 )
             }
         }
@@ -3615,24 +3678,16 @@ private fun AdvisoryCard() {
 
 @Composable
 private fun HealthStatusCard(
-
     health: Int,
-
     onTrack: Int,
-
     delayed: Int,
-
     delayedTasks: Int,
-
     completedTasks: Int,
-
-    totalTasks: Int
-
+    totalTasks: Int,
+    onClick: () -> Unit = {}
 ) {
-
     val healthMessage =
         when {
-
             totalTasks == 0 ->
                 "No Task Data Yet"
 
@@ -3649,79 +3704,81 @@ private fun HealthStatusCard(
                 "Critical Attention Required"
         }
 
+    val healthColor = when {
+        health >= 90 -> Green
+        health >= 75 -> Color(0xFFFF8A00)
+        else -> Color(0xFFE53935)
+    }
+
+    val healthBg = when {
+        health >= 90 -> Color(0xFFE1F5E7)
+        health >= 75 -> Color(0xFFFFEED7)
+        else -> Color(0xFFFFEBEE)
+    }
 
     Card(
-
         modifier =
             Modifier
                 .fillMaxWidth()
-                .height(118.dp),
-
+                .wrapContentHeight()
+                .clickable { onClick() },
         shape =
             RoundedCornerShape(20.dp),
-
         colors =
             CardDefaults.cardColors(
                 containerColor =
                     Color.White
-            )
-
+            ),
+        border = BorderStroke(1.dp, CardBorderStroke),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-
         Row(
-
             modifier =
                 Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
                     .padding(16.dp),
-
             verticalAlignment =
                 Alignment.CenterVertically
-
         ) {
-
             Box(
-
                 modifier =
                     Modifier
                         .size(68.dp)
                         .background(
-                            Color(0xFFFFEEE7),
+                            healthBg,
                             CircleShape
                         ),
-
                 contentAlignment =
                     Alignment.Center
-
             ) {
-
                 Column(
                     horizontalAlignment =
                         Alignment.CenterHorizontally
                 ) {
-
                     Text(
                         text = "$health%",
                         fontSize = 18.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        color = healthColor
                     )
 
                     Text(
                         text = "HEALTH",
-                        fontSize = 8.sp
+                        fontSize = 8.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = healthColor
                     )
                 }
             }
-
 
             Spacer(
                 modifier =
                     Modifier.width(16.dp)
             )
 
-
-            Column {
-
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
                 Text(
                     text =
                         "AGGREGATED STATUS",
@@ -3733,28 +3790,27 @@ private fun HealthStatusCard(
                         TextGray
                 )
 
-
                 Text(
-
                     text =
                         healthMessage,
-
                     fontSize =
                         14.sp,
-
                     fontWeight =
-                        FontWeight.Bold
+                        FontWeight.Bold,
+                    color =
+                        Color.Black
                 )
-
 
                 Spacer(
                     modifier =
-                        Modifier.height(7.dp)
+                        Modifier.height(6.dp)
                 )
 
+                val displayDelayed = if (delayed > 0) delayed else delayedTasks
 
-                Row {
-
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     StatusBadge(
                         text =
                             "● $onTrack On Track",
@@ -3764,40 +3820,35 @@ private fun HealthStatusCard(
                             Green
                     )
 
-
                     Spacer(
                         modifier =
                             Modifier.width(8.dp)
                     )
 
-
                     StatusBadge(
                         text =
-                            "● $delayed Delayed",
+                            "● $displayDelayed Delayed",
                         background =
-                            Color(0xFFFFEED7),
+                            if (displayDelayed > 0) Color(0xFFFFEED7) else Color(0xFFF1F3F5),
                         textColor =
-                            Color(0xFFFF8A00)
+                            if (displayDelayed > 0) Color(0xFFFF8A00) else TextGray
                     )
                 }
 
-
                 Spacer(
                     modifier =
-                        Modifier.height(5.dp)
+                        Modifier.height(6.dp)
                 )
 
-
                 Text(
-
                     text =
-                        "$completedTasks completed • " +
-                                "$delayedTasks delayed • " +
-                                "$totalTasks total tasks",
-
+                        if (totalTasks > 0) {
+                            "$completedTasks completed • $delayedTasks delayed • $totalTasks total tasks"
+                        } else {
+                            "No tasks currently scheduled"
+                        },
                     fontSize =
-                        9.sp,
-
+                        11.sp,
                     color =
                         TextGray
                 )
@@ -3998,9 +4049,16 @@ private fun ProjectCard(
             "Active",
             ignoreCase = true
         ) ||
-
                 project.status.equals(
                     "On Track",
+                    ignoreCase = true
+                ) ||
+                project.status.equals(
+                    "Ongoing",
+                    ignoreCase = true
+                ) ||
+                project.status.equals(
+                    "In Progress",
                     ignoreCase = true
                 )
 
@@ -4097,13 +4155,14 @@ private fun ProjectCard(
             LinearProgressIndicator(
 
                 progress = {
-                    project.progress / 100f
+                    project.progress.coerceIn(0, 100) / 100f
                 },
 
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .height(5.dp),
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
 
                 color =
                     if (isActive) {

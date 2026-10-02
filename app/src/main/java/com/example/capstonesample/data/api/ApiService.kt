@@ -37,12 +37,16 @@ import com.google.gson.annotations.SerializedName
 
 import retrofit2.Response
 import retrofit2.http.Body
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.Multipart
+import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
-import retrofit2.http.PATCH
 
 
 interface ApiService {
@@ -99,6 +103,13 @@ interface ApiService {
         @Header("Authorization") token: String,
         @Body request: TimeLogCreateRequest
     ): Response<TimeLogCreateResponse>
+
+    @GET("timelogs")
+    suspend fun getTimelogs(
+        @Header("Authorization") token: String,
+        @Query("engineer") engineer: String? = null
+    ): Response<TimeLogsListResponse>
+
 
     @POST("tasks/{taskId}/reports")
     suspend fun uploadTaskReport(
@@ -189,6 +200,14 @@ interface ApiService {
         @Body request:
         SendMessageRequest
 
+    ): Response<SendMessageResponse>
+
+    @Multipart
+    @POST("messages/upload")
+    suspend fun sendAttachment(
+        @Part("conversationId") conversationId: RequestBody,
+        @Part("message") message: RequestBody?,
+        @Part file: MultipartBody.Part
     ): Response<SendMessageResponse>
 
     @GET("projects/{code}")
@@ -308,7 +327,10 @@ data class ProjectDocumentResponse(
     val category: String? = null,
 
     @SerializedName("uploaded_at")
-    val uploadedAt: String? = null
+    val uploadedAt: String? = null,
+
+    @SerializedName("file_path")
+    val filePath: String? = null
 )
 data class TasksResponse(
 

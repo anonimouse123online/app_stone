@@ -9,6 +9,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
@@ -24,6 +28,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.capstonesample.ui.theme.*
 
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.api.TaskResponse
@@ -63,19 +68,19 @@ data class SiteTask(
 // ============================================================
 
 private val TaskBackground =
-    Color(0xFFF0E1D8)
+    Color(0xFFF6F8FA)
 
 private val TaskOrange =
     Color(0xFFF15A24)
 
 private val TaskGray =
-    Color(0xFF777777)
+    Color(0xFF64748B)
 
 private val TaskGreen =
-    Color(0xFF1B9A41)
+    Color(0xFF10B981)
 
 private val TaskRed =
-    Color(0xFFD32F2F)
+    Color(0xFFEF4444)
 
 
 // ============================================================
@@ -1788,85 +1793,28 @@ private fun TasksTopBar(
 
 @Composable
 private fun TaskFilterButton(
-
     text: String,
-
     selected: Boolean,
-
     onClick: () -> Unit
-
 ) {
-
     Box(
-
-        modifier =
-            Modifier
-                .background(
-
-                    if (
-                        selected
-                    ) {
-
-                        TaskOrange
-
-                    } else {
-
-                        Color(
-                            0xFFE9DED8
-                        )
-                    },
-
-                    RoundedCornerShape(
-                        10.dp
-                    )
-                )
-                .clickable {
-
-                    onClick()
-                }
-                .padding(
-
-                    horizontal =
-                        14.dp,
-
-                    vertical =
-                        8.dp
-                )
-
+        modifier = Modifier
+            .background(
+                if (selected) TaskOrange else Color.White,
+                RoundedCornerShape(20.dp)
+            )
+            .then(
+                if (!selected) Modifier.border(1.dp, CardBorderStroke, RoundedCornerShape(20.dp))
+                else Modifier
+            )
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 8.dp)
     ) {
-
-
         Text(
-
-            text =
-                text,
-
-            fontSize =
-                11.sp,
-
-            fontWeight =
-                if (
-                    selected
-                ) {
-
-                    FontWeight.Bold
-
-                } else {
-
-                    FontWeight.Normal
-                },
-
-            color =
-                if (
-                    selected
-                ) {
-
-                    Color.White
-
-                } else {
-
-                    TaskGray
-                }
+            text = text,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            color = if (selected) Color.White else TextSlate700
         )
     }
 }
@@ -1878,440 +1826,231 @@ private fun TaskFilterButton(
 
 @Composable
 private fun TaskListCard(
-
     task: SiteTask,
-
     onClick: () -> Unit
-
 ) {
+    val priorityUpper = task.priority.trim().uppercase()
+    val (priorityBg, priorityTextColor) = when {
+        priorityUpper.contains("HIGH") || priorityUpper.contains("URGENT") || priorityUpper.contains("CRITICAL") ->
+            Pair(RoseRedBg, RoseRedText)
+        priorityUpper.contains("MED") ->
+            Pair(AmberWarningBg, AmberWarningText)
+        else ->
+            Pair(EmeraldGreenBg, EmeraldGreenText)
+    }
 
     Card(
-
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .clickable {
-
-                    onClick()
-                },
-
-        shape =
-            RoundedCornerShape(
-                16.dp
-            ),
-
-        colors =
-            CardDefaults
-                .cardColors(
-
-                    containerColor =
-                        Color.White
-                )
-
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        border = BorderStroke(1.dp, CardBorderStroke),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-
-
         Column(
-
-            modifier =
-                Modifier.padding(
-                    16.dp
-                )
-
+            modifier = Modifier.padding(16.dp)
         ) {
-
-
-            // ====================================================
-            // TITLE + STATUS
-            // ====================================================
-
+            // Top Row: Project Code/Name Pill & Priority Badge
             Row(
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                verticalAlignment =
-                    Alignment.CenterVertically
-
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
+                val projectTag = task.projectCode?.ifBlank { null } ?: task.project.ifBlank { "Project" }
+                Box(
+                    modifier = Modifier
+                        .background(IndigoBlueBg, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = projectTag.uppercase(),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = IndigoBlueText,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
 
+                if (task.phase.isNotBlank()) {
+                    Spacer(Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFFF1F5F9), RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = task.phase,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = TextSlate700,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
 
-                // =================================================
-                // STATUS DOT
-                // =================================================
+                Spacer(Modifier.weight(1f))
 
                 Box(
-
-                    modifier =
-                        Modifier
-                            .size(
-                                8.dp
-                            )
-                            .background(
-
-                                task.indicatorColor,
-
-                                CircleShape
-                            )
-                )
-
-
-                Spacer(
-
-                    modifier =
-                        Modifier.width(
-                            8.dp
-                        )
-                )
-
-
-                // =================================================
-                // TASK TITLE
-                // =================================================
-
-                Text(
-
-                    text =
-                        task.title,
-
-                    modifier =
-                        Modifier.weight(
-                            1f
-                        ),
-
-                    fontSize =
-                        16.sp,
-
-                    fontWeight =
-                        FontWeight.Bold
-                )
-
-
-                // =================================================
-                // STATUS
-                // =================================================
-
-                TaskStatusBadge(
-
-                    status =
-                        task.status
-                )
+                    modifier = Modifier
+                        .background(priorityBg, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 3.dp)
+                ) {
+                    Text(
+                        text = task.priority.ifBlank { "NORMAL" }.uppercase(),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = priorityTextColor
+                    )
+                }
             }
 
+            Spacer(Modifier.height(10.dp))
 
-            Spacer(
-
-                modifier =
-                    Modifier.height(
-                        12.dp
-                    )
-            )
-
-
-            // ====================================================
-            // PROJECT
-            // ====================================================
-
-            TaskDetailRow(
-
-                label =
-                    "Project",
-
-                value =
-                    task.project
-            )
-
-
-            // ====================================================
-            // PHASE
-            // ====================================================
-
-            TaskDetailRow(
-
-                label =
-                    "Phase",
-
-                value =
-                    task.phase
-            )
-
-
-            // ====================================================
-            // PRIORITY
-            // ====================================================
-
-            TaskDetailRow(
-
-                label =
-                    "Priority",
-
-                value =
-                    task.priority
-            )
-
-
-            // ====================================================
-            // ASSIGNEE
-            // ====================================================
-
-            TaskDetailRow(
-
-                label =
-                    "Assigned to",
-
-                value =
-                    task.assignee
-            )
-
-            if (task.subtasks.isNotEmpty()) {
-                val doneCount = task.subtasks.count { it.completed }
-                TaskDetailRow(
-                    label = "Subtasks",
-                    value = "$doneCount / ${task.subtasks.size} done"
-                )
-            }
-
-
-            Spacer(
-
-                modifier =
-                    Modifier.height(
-                        12.dp
-                    )
-            )
-
-
-            // ====================================================
-            // PROGRESS HEADER
-            // ====================================================
-
+            // Task Title + Status Badge
             Row(
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                verticalAlignment =
-                    Alignment.CenterVertically
-
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-
-
+                Box(
+                    modifier = Modifier
+                        .size(8.dp)
+                        .background(task.indicatorColor, CircleShape)
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
-
-                    text =
-                        "Progress",
-
-                    fontSize =
-                        10.sp,
-
-                    color =
-                        TaskGray
+                    text = task.title,
+                    modifier = Modifier.weight(1f),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TextSlate900,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
-
-
-                Spacer(
-
-                    modifier =
-                        Modifier.weight(
-                            1f
-                        )
-                )
-
-
-                Text(
-
-                    text =
-                        "${task.progress}%",
-
-                    fontSize =
-                        10.sp,
-
-                    fontWeight =
-                        FontWeight.Bold,
-
-                    color =
-                        TaskOrange
-                )
+                Spacer(Modifier.width(8.dp))
+                TaskStatusBadge(status = task.status)
             }
 
+            Spacer(Modifier.height(12.dp))
 
-            Spacer(
-
-                modifier =
-                    Modifier.height(
-                        6.dp
+            // Assignee & Subtasks Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Assignee Avatar
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .background(task.assigneeColor, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = task.assigneeInitials,
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
                     )
-            )
+                }
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    text = task.assignee.ifBlank { "Unassigned" },
+                    fontSize = 12.sp,
+                    color = TextSlate700,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
 
+                if (task.subtasks.isNotEmpty()) {
+                    Spacer(Modifier.width(10.dp))
+                    val doneCount = task.subtasks.count { it.completed }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(Color(0xFFF8FAFC), RoundedCornerShape(6.dp))
+                            .border(1.dp, CardBorderStroke, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.CheckCircle,
+                            contentDescription = null,
+                            tint = if (doneCount == task.subtasks.size) EmeraldGreen else TextSlate400,
+                            modifier = Modifier.size(13.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "$doneCount/${task.subtasks.size}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = TextSlate700
+                        )
+                    }
+                }
+            }
 
-            // ====================================================
-            // PROGRESS BAR
-            // ====================================================
+            Spacer(Modifier.height(12.dp))
 
+            // Progress Bar
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Progress",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextSlate500
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    text = "${task.progress}%",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = TaskOrange
+                )
+            }
+            Spacer(Modifier.height(6.dp))
             LinearProgressIndicator(
-
-                progress = {
-
-                    task.progress
-                        .coerceIn(
-                            0,
-                            100
-                        ) / 100f
-                },
-
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(
-                            6.dp
-                        ),
-
-                color =
-                    TaskOrange,
-
-                trackColor =
-                    Color(
-                        0xFFEAE4E1
-                    )
+                progress = { task.progress.coerceIn(0, 100) / 100f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(3.dp)),
+                color = TaskOrange,
+                trackColor = Color(0xFFE2E8F0)
             )
 
+            Spacer(Modifier.height(10.dp))
+            HorizontalDivider(color = Color(0xFFF1F5F9), thickness = 1.dp)
+            Spacer(Modifier.height(10.dp))
 
-            Spacer(
-
-                modifier =
-                    Modifier.height(
-                        12.dp
-                    )
-            )
-
-
-            HorizontalDivider()
-
-
-            Spacer(
-
-                modifier =
-                    Modifier.height(
-                        10.dp
-                    )
-            )
-
-
-            // ====================================================
-            // DUE DATE
-            // ====================================================
-
+            // Due Date & Chevron Footer
             Row(
-
-                modifier =
-                    Modifier.fillMaxWidth(),
-
-                verticalAlignment =
-                    Alignment.CenterVertically
-
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-
-
                 Icon(
-
-                    imageVector =
-                        if (
-                            task.overdue
-                        ) {
-
-                            Icons.Outlined.Warning
-
-                        } else {
-
-                            Icons.Outlined.Schedule
-                        },
-
-                    contentDescription =
-                        null,
-
-                    modifier =
-                        Modifier.size(
-                            16.dp
-                        ),
-
-                    tint =
-                        if (
-                            task.overdue
-                        ) {
-
-                            TaskRed
-
-                        } else {
-
-                            TaskGray
-                        }
+                    imageVector = if (task.overdue) Icons.Outlined.Warning else Icons.Outlined.Schedule,
+                    contentDescription = null,
+                    modifier = Modifier.size(15.dp),
+                    tint = if (task.overdue) TaskRed else TextSlate400
                 )
-
-
-                Spacer(
-
-                    modifier =
-                        Modifier.width(
-                            6.dp
-                        )
-                )
-
-
+                Spacer(Modifier.width(6.dp))
                 Text(
-
-                    text =
-                        if (
-                            task.overdue
-                        ) {
-
-                            "Overdue: ${task.schedule}"
-
-                        } else {
-
-                            "Due: ${task.schedule}"
-                        },
-
-                    modifier =
-                        Modifier.weight(
-                            1f
-                        ),
-
-                    fontSize =
-                        10.sp,
-
-                    color =
-                        if (
-                            task.overdue
-                        ) {
-
-                            TaskRed
-
-                        } else {
-
-                            TaskGray
-                        }
+                    text = if (task.overdue) "Overdue: ${task.schedule}" else "Due: ${task.schedule}",
+                    modifier = Modifier.weight(1f),
+                    fontSize = 11.sp,
+                    fontWeight = if (task.overdue) FontWeight.SemiBold else FontWeight.Normal,
+                    color = if (task.overdue) TaskRed else TextSlate500
                 )
-
-
-                // =================================================
-                // OPEN ARROW
-                // =================================================
-
                 Icon(
-
-                    imageVector =
-                        Icons.Outlined.ChevronRight,
-
-                    contentDescription =
-                        "Open Task",
-
-                    modifier =
-                        Modifier.size(
-                            18.dp
-                        ),
-
-                    tint =
-                        TaskOrange
+                    imageVector = Icons.Outlined.ChevronRight,
+                    contentDescription = "Open Task",
+                    modifier = Modifier.size(18.dp),
+                    tint = TaskOrange
                 )
             }
         }

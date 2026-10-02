@@ -18,6 +18,12 @@ object SyncManager {
     private const val IMMEDIATE_SYNC_NAME =
         "sitepulse_immediate_sync"
 
+    private const val PERIODIC_NOTIFICATION_SYNC_NAME =
+        "sitepulse_periodic_notification_sync"
+
+    private const val IMMEDIATE_NOTIFICATION_SYNC_NAME =
+        "sitepulse_immediate_notification_sync"
+
 
     // ============================================================
     // PERIODIC BACKGROUND SYNC
@@ -26,7 +32,6 @@ object SyncManager {
     fun startPeriodicSync(
         context: Context
     ) {
-
         val constraints =
             Constraints.Builder()
                 .setRequiredNetworkType(
@@ -36,7 +41,6 @@ object SyncManager {
                     true
                 )
                 .build()
-
 
         val syncRequest =
             PeriodicWorkRequestBuilder<SyncWorker>(
@@ -48,16 +52,38 @@ object SyncManager {
                 )
                 .build()
 
+        WorkManager
+            .getInstance(context)
+            .enqueueUniquePeriodicWork(
+                PERIODIC_SYNC_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                syncRequest
+            )
+
+        // Schedule periodic notification and message checking in background
+        val notifConstraints =
+            Constraints.Builder()
+                .setRequiredNetworkType(
+                    NetworkType.CONNECTED
+                )
+                .build()
+
+        val notifRequest =
+            PeriodicWorkRequestBuilder<NotificationSyncWorker>(
+                15,
+                TimeUnit.MINUTES
+            )
+                .setConstraints(
+                    notifConstraints
+                )
+                .build()
 
         WorkManager
             .getInstance(context)
             .enqueueUniquePeriodicWork(
-
-                PERIODIC_SYNC_NAME,
-
-                ExistingPeriodicWorkPolicy.KEEP,
-
-                syncRequest
+                PERIODIC_NOTIFICATION_SYNC_NAME,
+                ExistingPeriodicWorkPolicy.UPDATE,
+                notifRequest
             )
     }
 
@@ -69,14 +95,12 @@ object SyncManager {
     fun requestImmediateSync(
         context: Context
     ) {
-
         val constraints =
             Constraints.Builder()
                 .setRequiredNetworkType(
                     NetworkType.CONNECTED
                 )
                 .build()
-
 
         val request =
             OneTimeWorkRequestBuilder<SyncWorker>()
@@ -85,15 +109,41 @@ object SyncManager {
                 )
                 .build()
 
+        WorkManager
+            .getInstance(context)
+            .enqueueUniqueWork(
+                IMMEDIATE_SYNC_NAME,
+                ExistingWorkPolicy.REPLACE,
+                request
+            )
+    }
+
+    // ============================================================
+    // CHECK NOTIFICATIONS IMMEDIATELY (BACKGROUND / ON-DEMAND)
+    // ============================================================
+
+    fun checkNotificationsImmediately(
+        context: Context
+    ) {
+        val constraints =
+            Constraints.Builder()
+                .setRequiredNetworkType(
+                    NetworkType.CONNECTED
+                )
+                .build()
+
+        val request =
+            OneTimeWorkRequestBuilder<NotificationSyncWorker>()
+                .setConstraints(
+                    constraints
+                )
+                .build()
 
         WorkManager
             .getInstance(context)
             .enqueueUniqueWork(
-
-                IMMEDIATE_SYNC_NAME,
-
+                IMMEDIATE_NOTIFICATION_SYNC_NAME,
                 ExistingWorkPolicy.REPLACE,
-
                 request
             )
     }

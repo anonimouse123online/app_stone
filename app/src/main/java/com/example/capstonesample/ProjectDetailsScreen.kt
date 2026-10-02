@@ -1,6 +1,7 @@
 package com.example.capstonesample
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,9 +10,27 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.Assignment
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.ReportProblem
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
+import android.app.DownloadManager
+import android.content.ContentValues
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
+import java.io.File
+import java.io.FileOutputStream
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.Request
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -20,16 +39,47 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.capstonesample.data.api.RetrofitClient
 
-private val DetailsBackground = Color(0xFFF0E1D8)
+import androidx.compose.foundation.BorderStroke
+import com.example.capstonesample.ui.theme.*
+import java.text.NumberFormat
+import java.util.Locale
+
+private val DetailsBackground = Color(0xFFF6F8FA)
 private val DetailsOrange = Color(0xFFF15A24)
-private val DetailsGray = Color(0xFF777777)
+private val DetailsGray = Color(0xFF64748B)
+
+private fun formatProjectBudget(rawBudget: String): String {
+    val clean = rawBudget.replace("₱", "").replace(",", "").trim()
+    val num = clean.toDoubleOrNull() ?: return if (rawBudget.isNotBlank()) rawBudget else "—"
+    val formatter = NumberFormat.getNumberInstance(Locale.US)
+    formatter.minimumFractionDigits = 2
+    formatter.maximumFractionDigits = 2
+    return "₱${formatter.format(num)}"
+}
+
+private fun formatDisplayDate(raw: String): String {
+    if (raw.isBlank()) return "—"
+    val trimmed = if (raw.contains("T")) raw.substringBefore("T") else raw
+    val parts = trimmed.split("-")
+    if (parts.size == 3) {
+        val y = parts[0]
+        val m = parts[1].toIntOrNull() ?: return trimmed
+        val d = parts[2].toIntOrNull() ?: return trimmed
+        val months = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+        if (m in 1..12) {
+            return "${months[m - 1]} $d, $y"
+        }
+    }
+    return trimmed
+}
 
 data class ProjectDocumentItem(
     val id: String = "",
     val name: String = "",
     val type: String = "",
     val category: String = "",
-    val uploadedAt: String = ""
+    val uploadedAt: String = "",
+    val filePath: String = ""
 )
 
 data class ProjectIssueItem(
@@ -58,6 +108,7 @@ fun ProjectDetailsScreen(
     issues: List<ProjectIssueItem> = emptyList(),
     reports: List<ProjectReportItem> = emptyList()
 ) {
+    val context = LocalContext.current
 
     var documents by remember {
         mutableStateOf<List<ProjectDocumentItem>>(emptyList())
@@ -110,7 +161,8 @@ fun ProjectDetailsScreen(
                             name = document.name ?: "Unnamed document",
                             type = document.type ?: "",
                             category = document.category ?: "",
-                            uploadedAt = document.uploadedAt ?: ""
+                            uploadedAt = document.uploadedAt ?: "",
+                            filePath = document.filePath ?: ""
                         )
                     }
 
@@ -305,7 +357,10 @@ fun ProjectDetailsScreen(
                     documents.forEach { document ->
 
                         DocumentListItem(
-                            document = document
+                            document = document,
+                            onDownloadClick = {
+                                downloadProjectDocument(context, document)
+                            }
                         )
 
                         Spacer(modifier = Modifier.height(8.dp))
@@ -479,48 +534,190 @@ private fun EmptySection(
     }
 }
 
+private fun downloadProjectDocument(context: Context, document: ProjectDocumentItem) {
+    if (document.filePath.isBlank()) {
+        Toast.makeText(context, "No attached file found for this document", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    val fullUrl = if (document.filePath.startsWith("http://") || document.filePath.startsWith("https://")) {
+        document.filePath
+    } else {
+        val base = RetrofitClient.BASE_URL.trimEnd('/')
+        val path = document.filePath.trimStart('/')
+        "$base/$path"
+    }
+
+    val extension = when {
+        document.filePath.contains(".") -> "." + document.filePath.substringAfterLast(".")
+        document.type.isNotBlank() -> "." + document.type.lowercase()
+        else -> ""
+    }
+
+    val safeFileName = if (document.name.contains(".")) {
+        document.name.replace("/", "_")
+    } else {
+        "${document.name.replace("/", "_")}$extension"
+    }
+
+    val mimeType = when (extension.lowercase()) {
+        ".pdf" -> "application/pdf"
+        ".xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ".xls" -> "application/vnd.ms-excel"
+        ".docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        ".doc" -> "application/msword"
+        ".dwg" -> "image/vnd.dwg"
+        else -> "application/octet-stream"
+    }
+
+    println("====================================")
+    println("📥 STARTING DOCUMENT DOWNLOAD")
+    println("NAME = ${document.name}")
+    println("FILE_PATH = ${document.filePath}")
+    println("URL = $fullUrl")
+    println("SAFE_FILE_NAME = $safeFileName")
+    println("MIME_TYPE = $mimeType")
+    println("====================================")
+
+    Toast.makeText(context, "Downloading $safeFileName...", Toast.LENGTH_SHORT).show()
+
+    // Download in background using OkHttp and save directly to Downloads
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val request = Request.Builder().url(fullUrl).build()
+            val response = RetrofitClient.okHttpClient.newCall(request).execute()
+
+            if (!response.isSuccessful) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Download failed: Server returned ${response.code}", Toast.LENGTH_LONG).show()
+                }
+                return@launch
+            }
+
+            val body = response.body
+            if (body == null) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "File is empty", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
+            var savedUri: Uri? = null
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val contentValues = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, safeFileName)
+                    put(MediaStore.MediaColumns.MIME_TYPE, mimeType)
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/SitePulse")
+                }
+                val resolver = context.contentResolver
+                savedUri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+                if (savedUri != null) {
+                    resolver.openOutputStream(savedUri)?.use { out ->
+                        body.byteStream().use { input ->
+                            input.copyTo(out)
+                        }
+                    }
+                }
+            } else {
+                val dir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "SitePulse")
+                if (!dir.exists()) dir.mkdirs()
+                val destFile = File(dir, safeFileName)
+                FileOutputStream(destFile).use { out ->
+                    body.byteStream().use { input ->
+                        input.copyTo(out)
+                    }
+                }
+                savedUri = Uri.fromFile(destFile)
+            }
+
+            // Also notify system download manager if possible
+            try {
+                val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+                val req = DownloadManager.Request(Uri.parse(fullUrl)).apply {
+                    setTitle(safeFileName)
+                    setDescription("Downloaded from SitePulse")
+                    setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "SitePulse/$safeFileName")
+                    setAllowedOverMetered(true)
+                    setAllowedOverRoaming(true)
+                }
+                dm?.enqueue(req)
+            } catch (e: Exception) {
+                // Ignore background notification failure
+            }
+
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, "✅ Downloaded: $safeFileName", Toast.LENGTH_LONG).show()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            withContext(Dispatchers.Main) {
+                try {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(fullUrl)).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                    Toast.makeText(context, "Opening document in browser...", Toast.LENGTH_SHORT).show()
+                } catch (e2: Exception) {
+                    Toast.makeText(context, "Could not download document: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun DocumentListItem(
-    document: ProjectDocumentItem
+    document: ProjectDocumentItem,
+    onDownloadClick: () -> Unit
 ) {
+    val (typeBg, typeColor) = when (document.type.uppercase()) {
+        "PDF" -> Color(0xFFFEE2E2) to Color(0xFFDC2626)
+        "DWG" -> Color(0xFFEEF2FF) to Color(0xFF4F46E5)
+        "XLS", "XLSX", "CSV" -> Color(0xFFECFDF5) to Color(0xFF059669)
+        "DOC", "DOCX" -> Color(0xFFEFF6FF) to Color(0xFF2563EB)
+        else -> Color(0xFFFFE7DD) to DetailsOrange
+    }
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onDownloadClick() },
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
-        )
+        ),
+        border = BorderStroke(1.dp, CardBorderStroke),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(15.dp),
+                .padding(14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-
             Box(
                 modifier = Modifier
-                    .size(45.dp)
+                    .size(44.dp)
                     .background(
-                        color = Color(0xFFFFE7DD),
+                        color = typeBg,
                         shape = RoundedCornerShape(11.dp)
                     ),
                 contentAlignment = Alignment.Center
             ) {
-
                 Icon(
                     imageVector = Icons.Outlined.Description,
                     contentDescription = "Document",
-                    tint = DetailsOrange
+                    tint = typeColor
                 )
             }
 
-            Spacer(modifier = Modifier.width(13.dp))
+            Spacer(modifier = Modifier.width(12.dp))
 
             Column(
                 modifier = Modifier.weight(1f)
             ) {
-
                 Text(
                     text = document.name,
                     fontSize = 14.sp,
@@ -530,36 +727,60 @@ private fun DocumentListItem(
 
                 Spacer(modifier = Modifier.height(3.dp))
 
-                Text(
-                    text = buildString {
-
-                        if (document.type.isNotBlank()) {
-                            append(document.type)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (document.type.isNotBlank()) {
+                        Surface(
+                            color = typeBg,
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = document.type.uppercase(),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = typeColor,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                            )
                         }
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
 
-                        if (document.category.isNotBlank()) {
-
-                            if (isNotEmpty()) {
-                                append(" • ")
-                            }
-
-                            append(document.category)
-                        }
-                    },
-                    fontSize = 11.sp,
-                    color = DetailsGray
-                )
+                    if (document.category.isNotBlank()) {
+                        Text(
+                            text = document.category,
+                            fontSize = 11.sp,
+                            color = DetailsGray
+                        )
+                    }
+                }
 
                 if (document.uploadedAt.isNotBlank()) {
-
                     Spacer(modifier = Modifier.height(3.dp))
-
                     Text(
-                        text = "Uploaded: ${document.uploadedAt}",
+                        text = "Uploaded: ${formatDisplayDate(document.uploadedAt)}",
                         fontSize = 10.sp,
                         color = DetailsGray
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            FilledTonalIconButton(
+                onClick = onDownloadClick,
+                modifier = Modifier.size(40.dp),
+                shape = RoundedCornerShape(10.dp),
+                colors = IconButtonDefaults.filledTonalIconButtonColors(
+                    containerColor = if (document.filePath.isNotBlank()) Color(0xFFFFE7DD) else Color(0xFFF1F5F9),
+                    contentColor = if (document.filePath.isNotBlank()) DetailsOrange else Color(0xFF94A3B8)
+                )
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.FileDownload,
+                    contentDescription = "Download document",
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
     }
@@ -759,7 +980,9 @@ private fun ProjectHeaderCard(
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
-        )
+        ),
+        border = BorderStroke(1.dp, CardBorderStroke),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
 
         Column(
@@ -857,6 +1080,12 @@ private fun DetailRow(
     label: String,
     value: String
 ) {
+    val displayValue = when (label.lowercase()) {
+        "budget" -> formatProjectBudget(value)
+        "start date", "due date" -> formatDisplayDate(value)
+        else -> value.ifBlank { "Not assigned" }
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -865,17 +1094,17 @@ private fun DetailRow(
 
         Text(
             text = "$label:",
-            modifier = Modifier.width(100.dp),
+            modifier = Modifier.width(105.dp),
             fontSize = 12.sp,
             color = DetailsGray
         )
 
         Text(
-            text = value,
+            text = displayValue,
             modifier = Modifier.weight(1f),
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
-            color = Color.Black
+            color = TextSlate900
         )
     }
 }
@@ -884,43 +1113,33 @@ private fun DetailRow(
 private fun StatusBadge(
     status: String
 ) {
-    val isGoodStatus =
-        status.equals("On track", ignoreCase = true) ||
-                status.equals("Active", ignoreCase = true) ||
-                status.equals("Ongoing", ignoreCase = true) ||
-                status.equals("Planning", ignoreCase = true)
-
-    val background =
-        if (isGoodStatus) {
-            Color(0xFFDDF4E1)
-        } else {
-            Color(0xFFFFDEDE)
-        }
-
-    val textColor =
-        if (isGoodStatus) {
-            Color(0xFF199642)
-        } else {
-            Color.Red
-        }
+    val statusLower = status.trim().lowercase()
+    val (statusBg, statusTextColor) = when {
+        statusLower.contains("track") || statusLower.contains("active") || statusLower.contains("ongoing") || statusLower.contains("completed") ->
+            Pair(EmeraldGreenBg, EmeraldGreenText)
+        statusLower.contains("delayed") || statusLower.contains("risk") || statusLower.contains("halt") || statusLower.contains("behind") ->
+            Pair(RoseRedBg, RoseRedText)
+        else ->
+            Pair(AmberWarningBg, AmberWarningText)
+    }
 
     Box(
         modifier = Modifier
             .background(
-                color = background,
-                shape = RoundedCornerShape(9.dp)
+                color = statusBg,
+                shape = RoundedCornerShape(8.dp)
             )
             .padding(
                 horizontal = 10.dp,
-                vertical = 6.dp
+                vertical = 5.dp
             )
     ) {
 
         Text(
-            text = status,
+            text = status.ifBlank { "ACTIVE" }.uppercase(),
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            color = textColor
+            color = statusTextColor
         )
     }
 }
