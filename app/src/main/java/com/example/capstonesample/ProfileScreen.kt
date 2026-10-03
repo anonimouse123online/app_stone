@@ -1,5 +1,8 @@
 package com.example.capstonesample
 
+import android.content.Context
+import android.content.SharedPreferences
+import android.util.Base64
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -11,37 +14,47 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.outlined.BusinessCenter
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
 import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.DeleteOutline
+import androidx.compose.material.icons.outlined.Email
 import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.TaskAlt
 import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.Refresh
-import java.util.Locale
-import android.util.Base64
-import org.json.JSONObject
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.capstonesample.ui.theme.*
-
 import com.example.capstonesample.data.api.RetrofitClient
-
+import com.example.capstonesample.data.model.ForgotPasswordRequest
+import com.example.capstonesample.ui.theme.*
 import kotlinx.coroutines.launch
+import org.json.JSONObject
+import java.io.File
+import java.util.Locale
 
 
 // ============================================================
@@ -851,91 +864,97 @@ fun ProfileScreen(
                 Column {
 
 
+                    // ------------------------------------------------
+                    // Which settings sheet is open
+                    // ------------------------------------------------
+                    var showAccountSettings    by remember { mutableStateOf(false) }
+                    var showNotifications      by remember { mutableStateOf(false) }
+                    var showAppearance         by remember { mutableStateOf(false) }
+                    var showDataStorage        by remember { mutableStateOf(false) }
+                    var showSecurity           by remember { mutableStateOf(false) }
+                    var showHelp               by remember { mutableStateOf(false) }
+
                     ProfileSettingRow(
-
-                        icon =
-                            Icons.Outlined.Person,
-
-                        title =
-                            "Account Settings",
-
-                        onClick = {}
+                        icon  = Icons.Outlined.Person,
+                        title = "Account Settings",
+                        onClick = { showAccountSettings = true }
                     )
-
 
                     ProfileDivider()
 
-
                     ProfileSettingRow(
-
-                        icon =
-                            Icons.Outlined.Notifications,
-
-                        title =
-                            "Notifications",
-
-                        onClick = {}
+                        icon  = Icons.Outlined.Notifications,
+                        title = "Notifications",
+                        onClick = { showNotifications = true }
                     )
-
 
                     ProfileDivider()
 
-
                     ProfileSettingRow(
-
-                        icon =
-                            Icons.Outlined.Visibility,
-
-                        title =
-                            "Appearance",
-
-                        onClick = {}
+                        icon  = Icons.Outlined.Visibility,
+                        title = "Appearance",
+                        onClick = { showAppearance = true }
                     )
-
 
                     ProfileDivider()
 
-
                     ProfileSettingRow(
-
-                        icon =
-                            Icons.Outlined.Storage,
-
-                        title =
-                            "Data and Storage",
-
-                        onClick = {}
+                        icon  = Icons.Outlined.Storage,
+                        title = "Data and Storage",
+                        onClick = { showDataStorage = true }
                     )
-
 
                     ProfileDivider()
 
-
                     ProfileSettingRow(
-
-                        icon =
-                            Icons.Outlined.Security,
-
-                        title =
-                            "Security",
-
-                        onClick = {}
+                        icon  = Icons.Outlined.Security,
+                        title = "Security",
+                        onClick = { showSecurity = true }
                     )
-
 
                     ProfileDivider()
 
-
                     ProfileSettingRow(
-
-                        icon =
-                            Icons.Outlined.HelpOutline,
-
-                        title =
-                            "Help and Support",
-
-                        onClick = {}
+                        icon  = Icons.Outlined.HelpOutline,
+                        title = "Help and Support",
+                        onClick = { showHelp = true }
                     )
+
+                    // ------------------------------------------------
+                    // SETTINGS BOTTOM SHEETS
+                    // ------------------------------------------------
+                    if (showAccountSettings) {
+                        AccountSettingsSheet(
+                            profile = profile,
+                            onDismiss = { showAccountSettings = false }
+                        )
+                    }
+                    if (showNotifications) {
+                        NotificationsSheet(
+                            onDismiss = { showNotifications = false }
+                        )
+                    }
+                    if (showAppearance) {
+                        AppearanceSheet(
+                            onDismiss = { showAppearance = false }
+                        )
+                    }
+                    if (showDataStorage) {
+                        DataStorageSheet(
+                            onDismiss = { showDataStorage = false }
+                        )
+                    }
+                    if (showSecurity) {
+                        SecuritySheet(
+                            email  = profile.email,
+                            onDismiss = { showSecurity = false }
+                        )
+                    }
+                    if (showHelp) {
+                        HelpSupportSheet(
+                            onDismiss = { showHelp = false }
+                        )
+                    }
                 }
             }
 
@@ -1730,3 +1749,933 @@ private fun RowScope.ProfileNavigationItem(
             )
     )
 }
+
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+private fun getAppPrefs(context: Context): SharedPreferences =
+    context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+
+/** Returns the total size of a directory in bytes. */
+private fun dirSizeBytes(dir: File): Long =
+    dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes >= 1_000_000L -> "%.1f MB".format(bytes / 1_000_000.0)
+    bytes >= 1_000L     -> "%.1f KB".format(bytes / 1_000.0)
+    else                -> "$bytes B"
+}
+
+
+// ============================================================
+// 1. ACCOUNT SETTINGS SHEET
+// ============================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AccountSettingsSheet(
+    profile: ProfileUiModel,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp)
+        ) {
+            Text(
+                text = "Account Settings",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.Black
+            )
+
+            Spacer(Modifier.height(6.dp))
+
+            Text(
+                text = "Your current account information",
+                fontSize = 12.sp,
+                color = ProfileGray
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            // Full name field (read-only)
+            AccountInfoItem(
+                icon  = Icons.Outlined.Person,
+                label = "Full Name",
+                value = profile.fullName.ifBlank { "—" }
+            )
+
+            HorizontalDivider(color = ProfileDividerColor, modifier = Modifier.padding(vertical = 10.dp))
+
+            // Email field (read-only)
+            AccountInfoItem(
+                icon  = Icons.Outlined.Email,
+                label = "Email",
+                value = profile.email.ifBlank { "—" }
+            )
+
+            HorizontalDivider(color = ProfileDividerColor, modifier = Modifier.padding(vertical = 10.dp))
+
+            // Role field (read-only)
+            AccountInfoItem(
+                icon  = Icons.Outlined.Info,
+                label = "Role",
+                value = profile.role.ifBlank { "—" }
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            Surface(
+                shape  = RoundedCornerShape(12.dp),
+                color  = Color(0xFFFFF3ED),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = null,
+                        tint  = ProfileOrange,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text  = "To update your account info, please contact your administrator.",
+                        fontSize = 11.sp,
+                        color = ProfileOrange
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AccountInfoItem(
+    icon: ImageVector,
+    label: String,
+    value: String
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = ProfileGray,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(text = label, fontSize = 10.sp, color = ProfileGray)
+            Text(text = value, fontSize = 14.sp, color = Color.Black, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+
+// ============================================================
+// 2. NOTIFICATIONS SHEET
+// ============================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NotificationsSheet(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val prefs   = remember { getAppPrefs(context) }
+
+    var pushEnabled  by remember { mutableStateOf(prefs.getBoolean("notif_push",  true)) }
+    var emailEnabled by remember { mutableStateOf(prefs.getBoolean("notif_email", true)) }
+    var taskEnabled  by remember { mutableStateOf(prefs.getBoolean("notif_task",  true)) }
+    var chatEnabled  by remember { mutableStateOf(prefs.getBoolean("notif_chat",  true)) }
+
+    fun save() {
+        prefs.edit()
+            .putBoolean("notif_push",  pushEnabled)
+            .putBoolean("notif_email", emailEnabled)
+            .putBoolean("notif_task",  taskEnabled)
+            .putBoolean("notif_chat",  chatEnabled)
+            .apply()
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = { save(); onDismiss() },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp)
+        ) {
+            Text("Notifications", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            Spacer(Modifier.height(4.dp))
+            Text("Manage how you receive alerts", fontSize = 12.sp, color = ProfileGray)
+            Spacer(Modifier.height(20.dp))
+
+            NotifToggleRow(
+                title       = "Push Notifications",
+                subtitle    = "Receive alerts on your device",
+                checked     = pushEnabled,
+                onToggle    = { pushEnabled = it; save() }
+            )
+            HorizontalDivider(color = ProfileDividerColor, modifier = Modifier.padding(vertical = 8.dp))
+
+            NotifToggleRow(
+                title       = "Email Notifications",
+                subtitle    = "Get updates sent to your email",
+                checked     = emailEnabled,
+                onToggle    = { emailEnabled = it; save() }
+            )
+            HorizontalDivider(color = ProfileDividerColor, modifier = Modifier.padding(vertical = 8.dp))
+
+            NotifToggleRow(
+                title       = "Task Reminders",
+                subtitle    = "Alerts for upcoming due dates",
+                checked     = taskEnabled,
+                onToggle    = { taskEnabled = it; save() }
+            )
+            HorizontalDivider(color = ProfileDividerColor, modifier = Modifier.padding(vertical = 8.dp))
+
+            NotifToggleRow(
+                title       = "Chat Messages",
+                subtitle    = "Notifications for new messages",
+                checked     = chatEnabled,
+                onToggle    = { chatEnabled = it; save() }
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            Button(
+                onClick = { save(); onDismiss() },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape  = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = ProfileOrange)
+            ) {
+                Text("Save Preferences", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotifToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title,    fontSize = 14.sp, color = Color.Black, fontWeight = FontWeight.Medium)
+            Text(text = subtitle, fontSize = 11.sp, color = ProfileGray)
+        }
+        Switch(
+            checked         = checked,
+            onCheckedChange = onToggle,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor  = Color.White,
+                checkedTrackColor  = ProfileOrange,
+                uncheckedThumbColor = Color.White,
+                uncheckedTrackColor = Color(0xFFCBD5E1)
+            )
+        )
+    }
+}
+
+
+// ============================================================
+// 3. APPEARANCE SHEET
+// ============================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppearanceSheet(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val prefs   = remember { getAppPrefs(context) }
+
+    var darkMode     by remember { mutableStateOf(prefs.getBoolean("appearance_dark",    false)) }
+    var compactMode  by remember { mutableStateOf(prefs.getBoolean("appearance_compact", false)) }
+    var largeText    by remember { mutableStateOf(prefs.getBoolean("appearance_large_text", false)) }
+
+    // Selected accent: 0=Orange (default), 1=Blue, 2=Green
+    var selectedAccent by remember { mutableIntStateOf(prefs.getInt("appearance_accent", 0)) }
+
+    val accentColors = listOf(
+        Color(0xFFF15A24) to "Orange",
+        Color(0xFF3B82F6) to "Blue",
+        Color(0xFF10B981) to "Green"
+    )
+
+    fun save() {
+        prefs.edit()
+            .putBoolean("appearance_dark",       darkMode)
+            .putBoolean("appearance_compact",    compactMode)
+            .putBoolean("appearance_large_text", largeText)
+            .putInt("appearance_accent",         selectedAccent)
+            .apply()
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = { save(); onDismiss() },
+        containerColor = Color.White,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp)
+        ) {
+            Text("Appearance", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            Spacer(Modifier.height(4.dp))
+            Text("Customize how the app looks", fontSize = 12.sp, color = ProfileGray)
+            Spacer(Modifier.height(20.dp))
+
+            // Dark Mode
+            NotifToggleRow(
+                title    = "Dark Mode",
+                subtitle = "Switch to a dark color scheme",
+                checked  = darkMode,
+                onToggle = { darkMode = it; save() }
+            )
+            HorizontalDivider(color = ProfileDividerColor, modifier = Modifier.padding(vertical = 8.dp))
+
+            // Compact Mode
+            NotifToggleRow(
+                title    = "Compact Layout",
+                subtitle = "Show more content with smaller spacing",
+                checked  = compactMode,
+                onToggle = { compactMode = it; save() }
+            )
+            HorizontalDivider(color = ProfileDividerColor, modifier = Modifier.padding(vertical = 8.dp))
+
+            // Large Text
+            NotifToggleRow(
+                title    = "Large Text",
+                subtitle = "Increase font size for readability",
+                checked  = largeText,
+                onToggle = { largeText = it; save() }
+            )
+
+            Spacer(Modifier.height(16.dp))
+
+            Text("Accent Color", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.Black)
+            Spacer(Modifier.height(10.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                accentColors.forEachIndexed { idx, (color, name) ->
+                    val selected = selectedAccent == idx
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clickable { selectedAccent = idx; save() }
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(color, CircleShape)
+                                .then(
+                                    if (selected) Modifier.background(color, CircleShape)
+                                    else Modifier
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (selected) {
+                                Icon(
+                                    imageVector = Icons.Filled.Visibility,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = name,
+                            fontSize = 10.sp,
+                            color = if (selected) color else ProfileGray,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Button(
+                onClick = { save(); onDismiss() },
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape  = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = ProfileOrange)
+            ) {
+                Text("Apply Changes", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+
+// ============================================================
+// 4. DATA AND STORAGE SHEET
+// ============================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DataStorageSheet(onDismiss: () -> Unit) {
+    val context  = LocalContext.current
+    var cacheCleared by remember { mutableStateOf(false) }
+
+    // Measure cache size (run once)
+    val cacheDir = context.cacheDir
+    var cacheSizeText by remember {
+        mutableStateOf(formatBytes(dirSizeBytes(cacheDir)))
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp)
+        ) {
+            Text("Data and Storage", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            Spacer(Modifier.height(4.dp))
+            Text("Manage cached data and storage usage", fontSize = 12.sp, color = ProfileGray)
+            Spacer(Modifier.height(20.dp))
+
+            // Cache card
+            Surface(
+                shape  = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, ProfileDividerColor),
+                color  = Color.White,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(Color(0xFFFFF3ED), RoundedCornerShape(11.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Storage,
+                            contentDescription = null,
+                            tint = ProfileOrange,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(14.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Cache", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.Black)
+                        Text(
+                            text = if (cacheCleared) "Cleared successfully" else cacheSizeText,
+                            fontSize = 12.sp,
+                            color = if (cacheCleared) Color(0xFF10B981) else ProfileGray
+                        )
+                    }
+                    if (!cacheCleared) {
+                        OutlinedButton(
+                            onClick = {
+                                // Clear cache
+                                cacheDir.listFiles()?.forEach { it.deleteRecursively() }
+                                cacheSizeText = formatBytes(dirSizeBytes(cacheDir))
+                                cacheCleared = true
+                            },
+                            shape  = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, ProfileOrange),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ProfileOrange),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.DeleteOutline,
+                                contentDescription = "Clear",
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text("Clear", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // Storage info rows
+            StorageInfoRow(label = "App Data", value = formatBytes(dirSizeBytes(context.filesDir)))
+            HorizontalDivider(color = ProfileDividerColor, modifier = Modifier.padding(vertical = 8.dp))
+            StorageInfoRow(label = "Downloads", value = formatBytes(dirSizeBytes(context.getExternalFilesDir(null) ?: context.filesDir)))
+            HorizontalDivider(color = ProfileDividerColor, modifier = Modifier.padding(vertical = 8.dp))
+            StorageInfoRow(label = "Database", value = formatBytes(dirSizeBytes(context.getDatabasePath("placeholder").parentFile ?: context.filesDir)))
+
+            Spacer(Modifier.height(20.dp))
+
+            Button(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape  = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = ProfileOrange)
+            ) {
+                Text("Done", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun StorageInfoRow(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        Text(label, fontSize = 13.sp, color = Color.Black, modifier = Modifier.weight(1f))
+        Text(value, fontSize = 13.sp, color = ProfileGray, fontWeight = FontWeight.Medium)
+    }
+}
+
+
+// ============================================================
+// 5. SECURITY SHEET  (change password via email OTP flow)
+// ============================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SecuritySheet(
+    email: String,
+    onDismiss: () -> Unit
+) {
+    val scope   = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // Step: 0 = home, 1 = OTP sent / verify, 2 = done
+    var step       by remember { mutableIntStateOf(0) }
+    var isLoading  by remember { mutableStateOf(false) }
+    var errorMsg   by remember { mutableStateOf<String?>(null) }
+    var successMsg by remember { mutableStateOf<String?>(null) }
+
+    var otpValue      by remember { mutableStateOf("") }
+    var newPassword   by remember { mutableStateOf("") }
+    var showPassword  by remember { mutableStateOf(false) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp)
+        ) {
+            Text("Security", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            Spacer(Modifier.height(4.dp))
+            Text("Change your account password", fontSize = 12.sp, color = ProfileGray)
+            Spacer(Modifier.height(20.dp))
+
+            when (step) {
+
+                // -----------------------------------------------
+                // STEP 0: Request password-reset OTP
+                // -----------------------------------------------
+                0 -> {
+                    Surface(
+                        shape  = RoundedCornerShape(14.dp),
+                        color  = Color(0xFFF6F8FA),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Email,
+                                contentDescription = null,
+                                tint = ProfileGray,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column {
+                                Text("Registered Email", fontSize = 10.sp, color = ProfileGray)
+                                Text(email.ifBlank { "No email on record" }, fontSize = 14.sp, color = Color.Black, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Text(
+                        text = "We will send a one-time password reset code to your registered email address.",
+                        fontSize = 12.sp,
+                        color = ProfileGray
+                    )
+
+                    errorMsg?.let {
+                        Spacer(Modifier.height(10.dp))
+                        Text(it, fontSize = 12.sp, color = Color.Red)
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+
+                    Button(
+                        onClick = {
+                            if (email.isBlank()) {
+                                errorMsg = "No email address associated with your account."
+                                return@Button
+                            }
+                            isLoading = true
+                            errorMsg  = null
+                            scope.launch {
+                                try {
+                                    val resp = RetrofitClient.api.forgotPassword(
+                                        ForgotPasswordRequest(email = email)
+                                    )
+                                    if (resp.isSuccessful && resp.body()?.success == true) {
+                                        step = 1
+                                    } else {
+                                        errorMsg = resp.body()?.message ?: "Failed to send OTP. Try again."
+                                    }
+                                } catch (e: Exception) {
+                                    errorMsg = e.message ?: "Network error."
+                                } finally {
+                                    isLoading = false
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape  = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ProfileOrange),
+                        enabled = !isLoading
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Icon(imageVector = Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Send Reset Code", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+
+                // -----------------------------------------------
+                // STEP 1: Enter OTP + new password
+                // -----------------------------------------------
+                1 -> {
+                    Text(
+                        text = "Enter the 6-digit code sent to $email and choose a new password.",
+                        fontSize = 12.sp,
+                        color = ProfileGray
+                    )
+                    Spacer(Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value         = otpValue,
+                        onValueChange = { otpValue = it.take(6) },
+                        label         = { Text("Reset Code") },
+                        singleLine    = true,
+                        modifier      = Modifier.fillMaxWidth(),
+                        shape         = RoundedCornerShape(12.dp),
+                        leadingIcon   = { Icon(Icons.Outlined.Security, null, tint = ProfileGray, modifier = Modifier.size(18.dp)) }
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value         = newPassword,
+                        onValueChange = { newPassword = it },
+                        label         = { Text("New Password") },
+                        singleLine    = true,
+                        modifier      = Modifier.fillMaxWidth(),
+                        shape         = RoundedCornerShape(12.dp),
+                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        leadingIcon  = { Icon(Icons.Filled.Lock, null, tint = ProfileGray, modifier = Modifier.size(18.dp)) },
+                        trailingIcon = {
+                            IconButton(onClick = { showPassword = !showPassword }) {
+                                Icon(
+                                    imageVector = if (showPassword) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                    contentDescription = null,
+                                    tint = ProfileGray,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                    )
+
+                    errorMsg?.let {
+                        Spacer(Modifier.height(8.dp))
+                        Text(it, fontSize = 12.sp, color = Color.Red)
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+
+                    Button(
+                        onClick = {
+                            if (otpValue.length < 6) { errorMsg = "Enter the 6-digit code."; return@Button }
+                            if (newPassword.length < 6) { errorMsg = "Password must be at least 6 characters."; return@Button }
+                            isLoading = true
+                            errorMsg  = null
+                            scope.launch {
+                                try {
+                                    val resp = RetrofitClient.api.verifyResetCode(
+                                        com.example.capstonesample.data.model.VerifyResetCodeRequest(
+                                            email = email,
+                                            code  = otpValue
+                                        )
+                                    )
+                                    if (resp.isSuccessful && resp.body()?.success == true) {
+                                        val resetResp = RetrofitClient.api.resetPassword(
+                                            com.example.capstonesample.data.model.ResetPasswordRequest(
+                                                email       = email,
+                                                code        = otpValue,
+                                                newPassword = newPassword
+                                            )
+                                        )
+                                        if (resetResp.isSuccessful && resetResp.body()?.success == true) {
+                                            step = 2
+                                        } else {
+                                            errorMsg = resetResp.body()?.message ?: "Failed to reset password."
+                                        }
+                                    } else {
+                                        errorMsg = resp.body()?.message ?: "Invalid or expired code."
+                                    }
+                                } catch (e: Exception) {
+                                    errorMsg = e.message ?: "Network error."
+                                } finally {
+                                    isLoading = false
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape  = RoundedCornerShape(14.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ProfileOrange),
+                        enabled = !isLoading
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                        } else {
+                            Text("Change Password", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    TextButton(onClick = { step = 0; errorMsg = null }) {
+                        Text("← Back", color = ProfileGray, fontSize = 13.sp)
+                    }
+                }
+
+                // -----------------------------------------------
+                // STEP 2: Success
+                // -----------------------------------------------
+                2 -> {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Spacer(Modifier.height(12.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .background(Color(0xFFD1FAE5), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Outlined.Security,
+                                contentDescription = null,
+                                tint = Color(0xFF10B981),
+                                modifier = Modifier.size(32.dp)
+                            )
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Text("Password Changed!", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = "Your password has been updated successfully. Use your new password next time you log in.",
+                            fontSize = 13.sp,
+                            color = ProfileGray
+                        )
+                        Spacer(Modifier.height(24.dp))
+                        Button(
+                            onClick = onDismiss,
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            shape  = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = ProfileOrange)
+                        ) {
+                            Text("Done", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+// ============================================================
+// 6. HELP AND SUPPORT SHEET
+// ============================================================
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HelpSupportSheet(onDismiss: () -> Unit) {
+
+    val faqs = listOf(
+        "How do I join a project?" to
+            "Go to the Projects screen and tap 'Join Project'. Enter the project code provided by your project manager.",
+        "How do I log hours?" to
+            "Open any task assigned to you and use the 'Log Hours' button inside the task details.",
+        "Can I change my role?" to
+            "Roles are assigned by the administrator. Contact your manager if your role needs to be updated.",
+        "How do I complete a task?" to
+            "Open the task, fill in your report, then tap 'Mark as Completed'. It will be sent for review.",
+        "What happens if I'm offline?" to
+            "The app will queue your actions and sync them automatically when connectivity is restored."
+    )
+
+    var expandedIndex by remember { mutableIntStateOf(-1) }
+
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = Color.White,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 36.dp)
+        ) {
+            Text("Help & Support", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            Spacer(Modifier.height(4.dp))
+            Text("Frequently asked questions", fontSize = 12.sp, color = ProfileGray)
+            Spacer(Modifier.height(20.dp))
+
+            faqs.forEachIndexed { idx, (question, answer) ->
+                val isOpen = expandedIndex == idx
+                Surface(
+                    shape  = RoundedCornerShape(14.dp),
+                    color  = if (isOpen) Color(0xFFFFF3ED) else Color(0xFFF6F8FA),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { expandedIndex = if (isOpen) -1 else idx }
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = question,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.Black,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(
+                                imageVector = Icons.Outlined.ChevronRight,
+                                contentDescription = null,
+                                tint = if (isOpen) ProfileOrange else ProfileGray,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                        if (isOpen) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(answer, fontSize = 12.sp, color = ProfileGray)
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Text("Contact Support", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.Black)
+            Spacer(Modifier.height(10.dp))
+
+            // Email support card
+            Surface(
+                shape  = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, ProfileDividerColor),
+                color  = Color.White,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color(0xFFFFF3ED), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Outlined.Email, null, tint = ProfileOrange, modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text("Email Us", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.Black)
+                        Text("support@constructionapp.ph", fontSize = 11.sp, color = ProfileGray)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            // Phone support card
+            Surface(
+                shape  = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, ProfileDividerColor),
+                color  = Color.White,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .background(Color(0xFFFFF3ED), RoundedCornerShape(10.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Outlined.Phone, null, tint = ProfileOrange, modifier = Modifier.size(18.dp))
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text("Call Us", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.Black)
+                        Text("+63 2 8123 4567 · Mon–Fri, 8AM–5PM", fontSize = 11.sp, color = ProfileGray)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            OutlinedButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                shape  = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, ProfileOrange),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = ProfileOrange)
+            ) {
+                Text("Close", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}

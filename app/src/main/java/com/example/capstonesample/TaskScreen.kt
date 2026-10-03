@@ -1749,7 +1749,10 @@ private fun TasksTopBar(
                     "SitePulse",
 
                 fontWeight =
-                    FontWeight.Bold
+                    FontWeight.Bold,
+
+                color =
+                    Color.Black
             )
         },
 

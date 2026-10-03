@@ -523,6 +523,7 @@ fun TaskDetailScreen(
                     Column {
 
                         Text(
+
                             text =
                                 "Task Details",
 
@@ -530,7 +531,11 @@ fun TaskDetailScreen(
                                 FontWeight.Bold,
 
                             fontSize =
-                                18.sp
+                                18.sp,
+
+                            color =
+                                Color.Black
+
                         )
 
 

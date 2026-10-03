@@ -1591,7 +1591,10 @@ private fun ProjectsTopBar(
                     20.sp,
 
                 fontWeight =
-                    FontWeight.Bold
+                    FontWeight.Bold,
+
+                color =
+                    Color.Black
             )
         },
 
