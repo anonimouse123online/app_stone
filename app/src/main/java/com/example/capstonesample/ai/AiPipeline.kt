@@ -5,9 +5,14 @@ import android.net.Uri
 import android.util.Log
 
 import com.example.capstonesample.data.model.FieldAnnotation
+import com.example.capstonesample.data.api.SubtaskItem
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 
 class AiPipeline(
@@ -119,13 +124,15 @@ class AiPipeline(
     // ============================================================
 
     suspend fun analyzeImage(
-
         imageUri: Uri,
-
-        annotations:
-        List<FieldAnnotation> =
-            emptyList()
-
+        annotations: List<FieldAnnotation> = emptyList(),
+        taskTitle: String = "",
+        projectName: String = "",
+        location: String = "",
+        subtasks: List<SubtaskItem> = emptyList(),
+        assignee: String = "",
+        currentProgress: Int = 0,
+        manpower: String = ""
     ): AiAnalysisResult =
         withContext(
             Dispatchers.Default
@@ -389,36 +396,115 @@ class AiPipeline(
 
 
             // ========================================================
-            // GEMMA REPORT
+            // DAILY SITE REPORT PREPARATION
+            // ========================================================
+
+            val formattedDate =
+                SimpleDateFormat("MMMM d, yyyy", Locale.ENGLISH).format(Date())
+
+            val cleanProjectName =
+                projectName.ifBlank { "Construction Project" }
+
+            val cleanLocation =
+                location.ifBlank { "Project Site" }
+
+            // 1. Manpower
+            val manpowerText =
+                if (manpower.isNotBlank()) {
+                    manpower.trim()
+                } else {
+                    ""
+                }
+
+            // 2. Work Progress
+            val workProgressList =
+                mutableListOf<String>()
+
+            val completedSubtasks =
+                subtasks.filter { it.completed }
+
+            completedSubtasks.forEach {
+                workProgressList.add("${it.title.trim()}: 100% Completed")
+            }
+
+            annotations.forEach { ann ->
+                val prog = ann.progress ?: 100
+                val label = ann.label.trim()
+                if (label.isNotBlank() && workProgressList.none { it.startsWith(label, ignoreCase = true) }) {
+                    workProgressList.add("$label: $prog% Completed")
+                }
+            }
+
+            if (workProgressList.isEmpty()) {
+                val prog = if (currentProgress > 0) currentProgress else 100
+                workProgressList.add("${taskTitle.ifBlank { "Site Inspection & Testing" }}: $prog% Completed")
+            }
+
+            val workProgressText =
+                workProgressList.joinToString("\n")
+
+            // 3. Ongoing Scope of works
+            val ongoingList =
+                mutableListOf<String>()
+
+            val pendingSubtasks =
+                subtasks.filter { !it.completed }
+
+            pendingSubtasks.forEach {
+                ongoingList.add(it.title.trim())
+            }
+
+            annotations
+                .filter { it.stage.contains("ongoing", ignoreCase = true) || it.stage.contains("progress", ignoreCase = true) }
+                .forEach { ann ->
+                    val label = ann.label.trim()
+                    if (label.isNotBlank() && ongoingList.none { it.equals(label, ignoreCase = true) }) {
+                        ongoingList.add(label)
+                    }
+                }
+
+            if (ongoingList.isEmpty() && pendingSubtasks.isEmpty()) {
+                ongoingList.add("General Site Finishing & Testing")
+            }
+
+            val ongoingScopeText =
+                ongoingList.joinToString("\n")
+
+
+            // ========================================================
+            // GEMMA REPORT GENERATION WITH FALLBACK
             // ========================================================
 
             val report =
-                gemma.generateReport(
-
-                    /*
-                     * We intentionally put the engineer-driven
-                     * instructions into the main description so
-                     * Gemma cannot treat YOLO as the primary source.
-                     */
-
-                    imageDescription =
-                        primaryEngineerInput,
-
-                    /*
-                     * YOLO is placed in the secondary parameter.
-                     *
-                     * This prevents random object detections from
-                     * becoming the center of the report.
-                     */
-
-                    engineerAnnotations =
-                        secondaryVisualInput
-                )
-
+                try {
+                    gemma.generateReport(
+                        imageDescription = detectionSummary,
+                        engineerAnnotations = engineerAnnotationSummary,
+                        date = formattedDate,
+                        projectName = cleanProjectName,
+                        location = cleanLocation,
+                        manpowerInfo = manpowerText,
+                        workProgressInfo = workProgressText,
+                        ongoingScopeInfo = ongoingScopeText
+                    )
+                } catch (e: Exception) {
+                    Log.w(
+                        TAG,
+                        "Gemma generation encountered error, falling back to structured daily report: ${e.message}"
+                    )
+                    gemma.formatDailyReport(
+                        date = formattedDate,
+                        projectName = cleanProjectName,
+                        location = cleanLocation,
+                        manpowerInfo = manpowerText,
+                        workProgressInfo = workProgressText,
+                        ongoingScopeInfo = ongoingScopeText
+                    )
+                }
 
             Log.d(
                 TAG,
-                "Gemma engineer-guided report generated."
+                "Daily Site Report successfully generated."
             )
 
 
@@ -427,13 +513,10 @@ class AiPipeline(
             // ========================================================
 
             AiAnalysisResult(
-
                 detections =
                     detections,
-
                 detectionSummary =
                     detectionSummary,
-
                 report =
                     report
             )

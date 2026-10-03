@@ -184,12 +184,15 @@ class GemmaReportGenerator(
     // ============================================================
 
     suspend fun generateReport(
-
         imageDescription: String,
-
         engineerAnnotations: String =
-            "No engineer annotations were added to the image."
-
+            "No engineer annotations were added to the image.",
+        date: String = "",
+        projectName: String = "",
+        location: String = "",
+        manpowerInfo: String = "",
+        workProgressInfo: String = "",
+        ongoingScopeInfo: String = ""
     ): String = withContext(
         Dispatchers.Default
     ) {
@@ -200,102 +203,106 @@ class GemmaReportGenerator(
                     "Gemma has not been initialized."
                 )
 
+        Log.d(
+            TAG,
+            "Generating SitePulse client-formatted Daily Site Report..."
+        )
 
-        if (engineerAnnotations.isBlank()) {
-
-            throw IllegalArgumentException(
-                "Engineer annotation input is empty."
-            )
+        val cleanDate = date.ifBlank {
+            java.text.SimpleDateFormat("MMMM d, yyyy", java.util.Locale.ENGLISH).format(java.util.Date())
         }
-
-
-        Log.d(
-            TAG,
-            "Generating SitePulse engineer-guided AI report..."
-        )
-
-
-        Log.d(
-            TAG,
-            "Supporting visual input:\n$imageDescription"
-        )
-
-
-        Log.d(
-            TAG,
-            "Primary engineer annotation input:\n$engineerAnnotations"
-        )
-
+        val cleanProject = projectName.ifBlank { "Construction Project" }
+        val cleanLocation = location.ifBlank { "Project Site" }
+        val cleanManpower = manpowerInfo.trim()
+        val hasManpower = cleanManpower.isNotBlank()
+        val cleanWorkProgress = workProgressInfo.ifBlank {
+            "Site Inspection & Preparation: 100% Completed"
+        }
+        val cleanOngoingScope = ongoingScopeInfo.ifBlank {
+            "General Finishing & Quality Testing"
+        }
 
         // ========================================================
         // PROMPT
         // ========================================================
 
-        val prompt =
-            """
-You are SitePulse AI, a professional construction field reporting assistant.
+        val prompt = buildString {
+            appendLine("You are SitePulse AI, a professional construction site report generator.")
+            appendLine()
+            appendLine("Generate an official Daily Site Report matching the exact format below, based on the project and field information provided.")
+            appendLine()
+            appendLine("PROJECT DATA:")
+            appendLine("Date: $cleanDate")
+            appendLine("Project Name: $cleanProject")
+            appendLine("Location: $cleanLocation")
+            if (hasManpower) {
+                appendLine("Manpower:")
+                appendLine(cleanManpower)
+            }
+            appendLine()
+            appendLine("Work Progress:")
+            appendLine(cleanWorkProgress)
+            appendLine()
+            appendLine("Ongoing Scope of works:")
+            appendLine(cleanOngoingScope)
+            appendLine()
+            appendLine("Supporting Field Annotations:")
+            appendLine(engineerAnnotations)
+            appendLine()
+            appendLine("Visual Detections:")
+            appendLine(imageDescription)
+            appendLine()
+            appendLine("IMPORTANT FORMAT RULES:")
+            appendLine("1. Output MUST start with the exact title:")
+            appendLine("Daily Site Report")
+            appendLine("2. Followed by Date, Project Name, and Location.")
+            if (hasManpower) {
+                appendLine("3. Next section MUST be titled:")
+                appendLine("Manpower")
+                appendLine("Followed by the Total and breakdown.")
+            } else {
+                appendLine("3. Do NOT include a Manpower section.")
+            }
+            appendLine("4. Next section MUST be titled:")
+            appendLine("Work Progress")
+            appendLine("List completed work items line by line in this format:")
+            appendLine("[Item]: 100% Completed")
+            appendLine("5. Next section MUST be titled:")
+            appendLine("Ongoing Scope of works")
+            appendLine("List remaining or ongoing work items line by line.")
+            appendLine("6. Do NOT use markdown symbols such as ** or #.")
+            appendLine("7. Do NOT include greetings, intro remarks, conversational text, or disclaimers.")
+            appendLine("8. Every section MUST be separated by a blank line.")
+            appendLine()
+            appendLine("OUTPUT EXACTLY THIS STRUCTURE:")
+            appendLine()
+            appendLine("Daily Site Report")
+            appendLine()
+            appendLine("Date: $cleanDate")
+            appendLine()
+            appendLine("Project Name: $cleanProject")
+            appendLine("Location: $cleanLocation")
+            if (hasManpower) {
+                appendLine()
+                appendLine()
+                appendLine("Manpower")
+                appendLine()
+                appendLine(cleanManpower)
+            }
+            appendLine()
+            appendLine()
+            appendLine("Work Progress")
+            appendLine()
+            appendLine(cleanWorkProgress)
+            appendLine()
+            appendLine()
+            appendLine("Ongoing Scope of works")
+            appendLine()
+            appendLine(cleanOngoingScope)
+            appendLine()
+            appendLine("Generate the report now.")
+        }
 
-Generate a FINAL construction field assessment using the engineer-provided
-field information below.
-
-PRIMARY ENGINEER FIELD DATA:
-$engineerAnnotations
-
-SECONDARY VISUAL OBSERVATIONS:
-$imageDescription
-
-IMPORTANT RULES:
-
-1. Engineer-provided information is the authoritative source.
-2. Use the exact WORK_TYPE provided by the engineer.
-3. Use the exact STAGE provided by the engineer.
-4. If PROGRESS_PERCENT contains a number, use that exact percentage.
-5. NEVER state that no percentage was provided when a progress percentage exists.
-6. Never calculate progress from YOLO confidence.
-7. Automated object detections are secondary evidence only.
-8. Do not focus on helmets, persons, PPE, tools, or unrelated objects unless directly relevant.
-9. Do not invent construction work, defects, hazards, or progress.
-10. Use professional construction terminology.
-11. Do not say "Okay", "Sure", "Let's proceed", or ask for more information.
-12. Do not greet the user.
-13. Do not use Markdown symbols such as ** or #.
-14. Every section MUST be separated by a blank line.
-15. Generate the final report immediately.
-
-OUTPUT EXACTLY THIS STRUCTURE:
-
-SITEPULSE FIELD INSPECTION REPORT
-
-WORK ACTIVITY:
-[Exact engineer-provided work type]
-
-CURRENT STATUS:
-[Exact engineer-provided stage]
-
-ENGINEER-RECORDED PROGRESS:
-[Exact engineer-provided progress percentage]
-
-FIELD ASSESSMENT:
-[Write 2-3 professional sentences describing the current construction activity.]
-
-PROGRESS OBSERVATION:
-[Write 1-2 sentences explaining the current progress without changing the engineer percentage.]
-
-FIELD VERIFICATION:
-[State that the engineer-recorded progress should be verified through normal site inspection and project documentation procedures.]
-
-RECOMMENDED ACTIONS:
-1. [Relevant construction action]
-2. [Relevant inspection or verification action]
-
-OVERALL SUMMARY:
-[Maximum 2 professional sentences summarizing work activity, stage, and progress.]
-
-AI NOTE:
-This report was generated using engineer-provided field annotations. Automated image detections are used only as supporting information and do not determine construction progress.
-
-Generate the report now.
-    """.trimIndent()
         // ========================================================
         // RESULT BUILDER
         // ========================================================
@@ -312,34 +319,21 @@ Generate the report now.
             .createConversation()
             .use { conversation ->
 
-
                 conversation
                     .sendMessageAsync(
                         prompt
                     )
-
                     .catch { error ->
-
                         Log.e(
                             TAG,
                             "Gemma generation stream failed.",
                             error
                         )
-
-
                         throw error
                     }
-
                     .collect { message ->
-
-                        val chunk =
-                            message.toString()
-
+                        val chunk = message.toString()
                         if (chunk.isNotEmpty()) {
-
-                            // IMPORTANT:
-                            // Do NOT manually add spaces between chunks.
-                            // Gemma may stream fragments of the same word.
                             result.append(chunk)
                         }
                     }
@@ -347,7 +341,7 @@ Generate the report now.
 
 
         // ========================================================
-        // FINAL RESULT
+        // FINAL RESULT & POST-PROCESSING
         // ========================================================
 
         var finalReport =
@@ -357,123 +351,106 @@ Generate the report now.
 
         finalReport =
             finalReport
-                .replace(
-                    "SITEPULSE FIELD INSPECTION REPORT",
-                    "SITEPULSE FIELD INSPECTION REPORT\n\n"
-                )
-                .replace(
-                    "WORK ACTIVITY:",
-                    "\n\nWORK ACTIVITY:\n"
-                )
-                .replace(
-                    "CURRENT STATUS:",
-                    "\n\nCURRENT STATUS:\n"
-                )
-                .replace(
-                    "ENGINEER-RECORDED PROGRESS:",
-                    "\n\nENGINEER-RECORDED PROGRESS:\n"
-                )
-                .replace(
-                    "FIELD ASSESSMENT:",
-                    "\n\nFIELD ASSESSMENT:\n"
-                )
-                .replace(
-                    "PROGRESS OBSERVATION:",
-                    "\n\nPROGRESS OBSERVATION:\n"
-                )
-                .replace(
-                    "FIELD VERIFICATION:",
-                    "\n\nFIELD VERIFICATION:\n"
-                )
-                .replace(
-                    "RECOMMENDED ACTIONS:",
-                    "\n\nRECOMMENDED ACTIONS:\n"
-                )
-                .replace(
-                    "OVERALL SUMMARY:",
-                    "\n\nOVERALL SUMMARY:\n"
-                )
-                .replace(
-                    "AI NOTE:",
-                    "\n\nAI NOTE:\n"
-                )
-                .replace(
-                    Regex("\n{3,}"),
-                    "\n\n"
-                )
+                .replace("**", "")
+                .replace("* ", "- ")
+                .replace(Regex("(?i)^#+\\s*"), "")
+                .replace(Regex("\n{3,}"), "\n\n")
                 .trim()
 
-
-
         val badResponse =
-            finalReport.startsWith(
-                "Okay",
-                ignoreCase = true
-            ) ||
-                    finalReport.startsWith(
-                        "Sure",
-                        ignoreCase = true
-                    ) ||
-                    finalReport.contains(
-                        "please provide",
-                        ignoreCase = true
-                    ) ||
-                    finalReport.contains(
-                        "please send",
-                        ignoreCase = true
-                    ) ||
-                    finalReport.contains(
-                        "let's proceed",
-                        ignoreCase = true
-                    )
+            finalReport.startsWith("Okay", ignoreCase = true) ||
+            finalReport.startsWith("Sure", ignoreCase = true) ||
+            finalReport.contains("please provide", ignoreCase = true) ||
+            finalReport.contains("let's proceed", ignoreCase = true) ||
+            !finalReport.contains("Daily Site Report", ignoreCase = true) ||
+            !finalReport.contains("Work Progress", ignoreCase = true)
 
-
-        if (badResponse) {
-
-            Log.e(
+        if (badResponse || finalReport.isBlank()) {
+            Log.w(
                 TAG,
-                "Gemma returned conversational output instead of report: $finalReport"
+                "Gemma returned conversational or incomplete output. Using formatted structured report."
             )
-
-            throw IllegalStateException(
-                "AI did not generate the field report correctly. Please generate again."
-            )
-        }
-
-
-        if (finalReport.isBlank()) {
-
-            throw IllegalStateException(
-                "Gemma returned an empty response."
+            finalReport = formatDailyReport(
+                date = cleanDate,
+                projectName = cleanProject,
+                location = cleanLocation,
+                manpowerInfo = cleanManpower,
+                workProgressInfo = cleanWorkProgress,
+                ongoingScopeInfo = cleanOngoingScope
             )
         }
-
 
         Log.d(
             TAG,
             "========================================"
         )
-
-
         Log.d(
             TAG,
-            "GEMMA ENGINEER-GUIDED REPORT GENERATED"
+            "CLIENT DAILY SITE REPORT GENERATED"
         )
-
-
         Log.d(
             TAG,
             finalReport
         )
-
-
         Log.d(
             TAG,
             "========================================"
         )
 
-
         finalReport
+    }
+
+
+    // ============================================================
+    // STANDALONE FORMATTER
+    // ============================================================
+
+    fun formatDailyReport(
+        date: String,
+        projectName: String,
+        location: String,
+        manpowerInfo: String,
+        workProgressInfo: String,
+        ongoingScopeInfo: String
+    ): String {
+        val cleanDate = date.ifBlank {
+            java.text.SimpleDateFormat("MMMM d, yyyy", java.util.Locale.ENGLISH).format(java.util.Date())
+        }
+        val cleanProject = projectName.ifBlank { "Construction Project" }
+        val cleanLocation = location.ifBlank { "Project Site" }
+        val cleanManpower = manpowerInfo.trim()
+        val cleanWorkProgress = workProgressInfo.ifBlank {
+            "Site Inspection & Preparation: 100% Completed"
+        }
+        val cleanOngoingScope = ongoingScopeInfo.ifBlank {
+            "General Finishing & Quality Testing"
+        }
+
+        return buildString {
+            appendLine("Daily Site Report")
+            appendLine()
+            appendLine("Date: $cleanDate")
+            appendLine()
+            appendLine("Project Name: $cleanProject")
+            appendLine("Location: $cleanLocation")
+            if (cleanManpower.isNotBlank()) {
+                appendLine()
+                appendLine()
+                appendLine("Manpower")
+                appendLine()
+                appendLine(cleanManpower)
+            }
+            appendLine()
+            appendLine()
+            appendLine("Work Progress")
+            appendLine()
+            appendLine(cleanWorkProgress.trim())
+            appendLine()
+            appendLine()
+            appendLine("Ongoing Scope of works")
+            appendLine()
+            appendLine(cleanOngoingScope.trim())
+        }.trim()
     }
 
 

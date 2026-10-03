@@ -59,7 +59,8 @@ data class SiteTask(
     val assigneeColor: Color,
     val indicatorColor: Color,
     val overdue: Boolean = false,
-    val subtasks: List<SubtaskItem> = emptyList()
+    val subtasks: List<SubtaskItem> = emptyList(),
+    val projectLocation: String? = null
 )
 
 
@@ -784,7 +785,10 @@ fun TasksScreen(
                     ),
 
                 subtasks =
-                    task.subtasks ?: emptyList()
+                    task.subtasks ?: emptyList(),
+
+                projectLocation =
+                    task.projectLocation
             )
         }
 

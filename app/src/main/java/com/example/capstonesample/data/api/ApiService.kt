@@ -399,7 +399,13 @@ data class TaskResponse(
     val progress: Int? = null,
 
     @SerializedName("subtasks")
-    val subtasks: List<SubtaskItem>? = null
+    val subtasks: List<SubtaskItem>? = null,
+
+    @SerializedName(
+        value = "project_location",
+        alternate = ["location", "projectLocation"]
+    )
+    val projectLocation: String? = null
 )
 
 // ============================================================

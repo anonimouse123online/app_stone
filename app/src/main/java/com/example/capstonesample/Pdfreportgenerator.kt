@@ -25,47 +25,100 @@ object PdfReportGenerator {
 
         val pageWidth = 595  // A4 at 72dpi
         val pageHeight = 842
-        val marginLeft = 40f
-        var y = 60f
+        val marginLeft = 55f
+        val maxWidth = pageWidth - (marginLeft * 2)
+        var y = 70f
+        var pageNumber = 1
 
         val document = PdfDocument()
-        val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create()
-        val page = document.startPage(pageInfo)
-        val canvas = page.canvas
+        val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+        var page = document.startPage(pageInfo)
+        var canvas = page.canvas
 
         val titlePaint = Paint().apply {
             textSize = 20f
             isFakeBoldText = true
+            color = android.graphics.Color.BLACK
+            textAlign = Paint.Align.CENTER
         }
-        val labelPaint = Paint().apply {
-            textSize = 12f
+
+        val sectionHeaderPaint = Paint().apply {
+            textSize = 14f
             isFakeBoldText = true
-            color = android.graphics.Color.DKGRAY
+            color = android.graphics.Color.BLACK
+            textAlign = Paint.Align.LEFT
         }
+
+        val labelPaint = Paint().apply {
+            textSize = 11.5f
+            isFakeBoldText = true
+            color = android.graphics.Color.BLACK
+            textAlign = Paint.Align.LEFT
+        }
+
         val bodyPaint = Paint().apply {
-            textSize = 12f
+            textSize = 11.5f
+            isFakeBoldText = false
+            color = android.graphics.Color.BLACK
+            textAlign = Paint.Align.LEFT
         }
 
-        canvas.drawText("SITEPULSE INSPECTION REPORT", marginLeft, y, titlePaint)
-        y += 30f
+        fun checkPageBreak(requiredSpace: Float) {
+            if (y + requiredSpace > pageHeight - 50f) {
+                document.finishPage(page)
+                pageNumber++
+                val nextInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+                page = document.startPage(nextInfo)
+                canvas = page.canvas
+                y = 60f
+            }
+        }
 
-        canvas.drawText("Task: $taskTitle", marginLeft, y, labelPaint)
-        y += 20f
-        canvas.drawText("Lead Engineer: $engineer", marginLeft, y, labelPaint)
-        y += 20f
-        canvas.drawText("Status: $status", marginLeft, y, labelPaint)
-        y += 30f
+        val lines = reportText.split("\n")
+        var i = 0
 
-        canvas.drawText("AI ANALYSIS RESULT", marginLeft, y, labelPaint)
-        y += 20f
+        while (i < lines.size) {
+            val rawLine = lines[i].trim()
 
-        // Wrap long report text across multiple lines so it doesn't run off the page.
-        val maxWidth = pageWidth - (marginLeft * 2)
-        val lines = wrapText(reportText, bodyPaint, maxWidth)
-        for (line in lines) {
-            if (y > pageHeight - 60f) break // simple guard — extend to multi-page if reports get long
-            canvas.drawText(line, marginLeft, y, bodyPaint)
-            y += 18f
+            if (rawLine.equals("Daily Site Report", ignoreCase = true)) {
+                checkPageBreak(35f)
+                canvas.drawText("Daily Site Report", pageWidth / 2f, y, titlePaint)
+                y += 32f
+            } else if (rawLine.equals("Manpower", ignoreCase = true) ||
+                       rawLine.equals("Work Progress", ignoreCase = true) ||
+                       rawLine.equals("Ongoing Scope of works", ignoreCase = true) ||
+                       rawLine.equals("Ongoing Scope of work", ignoreCase = true)) {
+                checkPageBreak(32f)
+                y += 10f
+                canvas.drawText(rawLine, marginLeft, y, sectionHeaderPaint)
+                y += 20f
+            } else if (rawLine.startsWith("Date:", ignoreCase = true) ||
+                       rawLine.startsWith("Project Name:", ignoreCase = true) ||
+                       rawLine.startsWith("Location:", ignoreCase = true)) {
+                checkPageBreak(20f)
+                val colonIdx = rawLine.indexOf(':')
+                if (colonIdx != -1) {
+                    val label = rawLine.substring(0, colonIdx + 1) + " "
+                    val value = rawLine.substring(colonIdx + 1).trim()
+                    canvas.drawText(label, marginLeft, y, labelPaint)
+                    val labelWidth = labelPaint.measureText(label)
+                    canvas.drawText(value, marginLeft + labelWidth, y, bodyPaint)
+                } else {
+                    canvas.drawText(rawLine, marginLeft, y, bodyPaint)
+                }
+                y += 18f
+            } else if (rawLine.isBlank()) {
+                y += 10f
+            } else {
+                checkPageBreak(18f)
+                val wrapped = wrapText(rawLine, bodyPaint, maxWidth)
+                for (wLine in wrapped) {
+                    checkPageBreak(18f)
+                    canvas.drawText(wLine, marginLeft, y, bodyPaint)
+                    y += 16f
+                }
+            }
+            i++
         }
 
         document.finishPage(page)
