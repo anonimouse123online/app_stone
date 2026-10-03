@@ -405,7 +405,13 @@ data class TaskResponse(
         value = "project_location",
         alternate = ["location", "projectLocation"]
     )
-    val projectLocation: String? = null
+    val projectLocation: String? = null,
+
+    @SerializedName(
+        value = "project_status",
+        alternate = ["projectStatus"]
+    )
+    val projectStatus: String? = null
 )
 
 // ============================================================
