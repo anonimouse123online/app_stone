@@ -32,7 +32,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import android.widget.Toast
 import com.example.capstonesample.data.api.SubtaskItem
 import com.example.capstonesample.data.api.UpdateSubtasksRequest
@@ -101,6 +107,17 @@ private val TaskDetailGreen =
 
 private val TaskDetailRed =
     Color(0xFFEF4444)
+
+
+// ============================================================
+// MANPOWER DATA MODEL
+// ============================================================
+
+data class ManpowerItem(
+    val role: String,
+    val count: String = "1",
+    val isPreset: Boolean = false
+)
 
 
 // ============================================================
@@ -238,6 +255,9 @@ fun TaskDetailScreen(
     var downloadProgressPct by remember { mutableStateOf(0) }
     var downloadProgressText by remember { mutableStateOf("") }
     var downloadError by remember { mutableStateOf<String?>(null) }
+
+    // Manpower deployment inputs (starts empty so nothing is displayed until added)
+    var manpowerList by remember { mutableStateOf<List<ManpowerItem>>(emptyList()) }
 
     fun toggleSubtask(subtaskId: String) {
         val updated = currentSubtasks.map { item ->
@@ -747,6 +767,17 @@ fun TaskDetailScreen(
                 taskCompleted =
                     taskCompleted,
 
+                manpowerList =
+                    manpowerList,
+
+                onManpowerListChange = {
+                    manpowerList = it
+                },
+
+                onReportChange = {
+                    aiReport = it
+                },
+
                 onGenerateReport = {
 
                     val imageUri =
@@ -792,6 +823,23 @@ fun TaskDetailScreen(
                             actionMessage =
                                 null
 
+                            val totalManpower = manpowerList.sumOf { it.count.toIntOrNull() ?: 0 }
+
+                            val inputtedManpower = if (manpowerList.isNotEmpty() && totalManpower > 0) {
+                                val lines = mutableListOf<String>()
+                                lines.add("Total: $totalManpower")
+                                manpowerList.forEach { item ->
+                                    val c = item.count.toIntOrNull() ?: 0
+                                    val cleanRole = if (item.role.startsWith("PIC", ignoreCase = true)) "PIC" else item.role.trim()
+                                    if (cleanRole.isNotBlank() && c > 0) {
+                                        lines.add("- $cleanRole: $c")
+                                    }
+                                }
+                                lines.joinToString("\n")
+                            } else {
+                                ""
+                            }
+
                             aiScope.launch {
 
                                 try {
@@ -811,7 +859,28 @@ fun TaskDetailScreen(
                                                     imageUri,
 
                                                 annotations =
-                                                    fieldAnnotations
+                                                     fieldAnnotations,
+
+                                                taskTitle =
+                                                    task.title,
+
+                                                projectName =
+                                                    task.project,
+
+                                                location =
+                                                    task.projectLocation?.ifBlank { null } ?: "Project Site",
+
+                                                subtasks =
+                                                    currentSubtasks,
+
+                                                assignee =
+                                                    task.assignee,
+
+                                                currentProgress =
+                                                    currentProgress,
+
+                                                manpower =
+                                                    inputtedManpower
                                             )
 
                                         detectedObjects =
@@ -981,9 +1050,18 @@ fun TaskDetailScreen(
 
                                 } else {
 
+                                    val errServerMsg = try {
+                                        response.errorBody()?.string()?.let { errJson ->
+                                            val obj = org.json.JSONObject(errJson)
+                                            obj.optString("message").ifBlank { obj.optString("error") }
+                                        }
+                                    } catch (_: Exception) {
+                                        null
+                                    }
+
                                     aiError =
-                                        response.body()
-                                            ?.message
+                                        response.body()?.message
+                                            ?: errServerMsg?.takeIf { it.isNotBlank() }
                                             ?: "Unable to upload report."
                                 }
 
@@ -5134,6 +5212,12 @@ private fun AiFieldAnalysisCard(
 
     taskCompleted: Boolean,
 
+    manpowerList: List<ManpowerItem> = emptyList(),
+
+    onManpowerListChange: (List<ManpowerItem>) -> Unit = {},
+
+    onReportChange: (String) -> Unit = {},
+
     onGenerateReport: () -> Unit,
 
     onDownloadPdf: () -> Unit,
@@ -5398,6 +5482,389 @@ private fun AiFieldAnalysisCard(
 
 
             // ====================================================
+            // MANPOWER INPUT SECTION
+            // ====================================================
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                border = BorderStroke(1.dp, Color(0xFFFFD8CC))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    val totalManpower = manpowerList.sumOf { it.count.toIntOrNull() ?: 0 }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Outlined.Person,
+                                contentDescription = null,
+                                tint = TaskDetailOrange,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Manpower Deployment",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1E293B)
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = Color(0xFFFFECE5)
+                        ) {
+                            Text(
+                                text = "Total: $totalManpower",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TaskDetailOrange,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (manpowerList.isEmpty()) {
+                        Text(
+                            text = "No manpower added yet. Tap below to add:",
+                            fontSize = 11.sp,
+                            color = TaskDetailGray,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                    } else {
+                        // Display ONLY the manpower items that were added
+                        manpowerList.forEachIndexed { index, item ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (item.isPreset) {
+                                    Text(
+                                        text = item.role,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFF334155),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                } else {
+                                    Surface(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(32.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color.White,
+                                        border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+                                    ) {
+                                        Box(
+                                            contentAlignment = Alignment.CenterStart,
+                                            modifier = Modifier.padding(horizontal = 8.dp)
+                                        ) {
+                                            if (item.role.isEmpty()) {
+                                                Text(
+                                                    text = "Role name...",
+                                                    fontSize = 11.sp,
+                                                    color = Color(0xFF94A3B8)
+                                                )
+                                            }
+                                            BasicTextField(
+                                                value = item.role,
+                                                onValueChange = { newRole ->
+                                                    val updated = manpowerList.toMutableList()
+                                                    updated[index] = item.copy(role = newRole)
+                                                    onManpowerListChange(updated)
+                                                },
+                                                textStyle = TextStyle(
+                                                    fontSize = 12.sp,
+                                                    color = Color(0xFF0F172A)
+                                                ),
+                                                singleLine = true
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clickable {
+                                                val cur = item.count.toIntOrNull() ?: 0
+                                                if (cur > 0) {
+                                                    val updated = manpowerList.toMutableList()
+                                                    updated[index] = item.copy(count = (cur - 1).toString())
+                                                    onManpowerListChange(updated)
+                                                }
+                                            },
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFFF1F5F9)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = "−",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF475569)
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        modifier = Modifier
+                                            .width(46.dp)
+                                            .height(32.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color.White,
+                                        border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+                                    ) {
+                                        Box(
+                                            contentAlignment = Alignment.Center,
+                                            modifier = Modifier.fillMaxSize()
+                                        ) {
+                                            BasicTextField(
+                                                value = item.count,
+                                                onValueChange = { newText ->
+                                                    if (newText.isEmpty() || (newText.all { it.isDigit() } && newText.length <= 3)) {
+                                                        val updated = manpowerList.toMutableList()
+                                                        updated[index] = item.copy(count = newText)
+                                                        onManpowerListChange(updated)
+                                                    }
+                                                },
+                                                textStyle = TextStyle(
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    textAlign = TextAlign.Center,
+                                                    color = Color(0xFF0F172A)
+                                                ),
+                                                keyboardOptions = KeyboardOptions(
+                                                    keyboardType = KeyboardType.Number
+                                                ),
+                                                singleLine = true
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clickable {
+                                                val cur = item.count.toIntOrNull() ?: 0
+                                                val updated = manpowerList.toMutableList()
+                                                updated[index] = item.copy(count = (cur + 1).toString())
+                                                onManpowerListChange(updated)
+                                            },
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFFFFECE5)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = "+",
+                                                fontSize = 16.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TaskDetailOrange
+                                            )
+                                        }
+                                    }
+
+                                    IconButton(
+                                        onClick = {
+                                            val updated = manpowerList.toMutableList()
+                                            updated.removeAt(index)
+                                            onManpowerListChange(updated)
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Close,
+                                            contentDescription = "Remove role",
+                                            tint = Color(0xFF94A3B8),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+
+                    // Available role buttons to add
+                    val hasPic = manpowerList.any { it.role.startsWith("PIC", ignoreCase = true) }
+                    val hasHeadTech = manpowerList.any { it.role.startsWith("Head Tech", ignoreCase = true) }
+                    val hasTech = manpowerList.any { it.role.equals("Technicians", ignoreCase = true) }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (!hasPic) {
+                            Surface(
+                                modifier = Modifier.clickable {
+                                    onManpowerListChange(
+                                        manpowerList + ManpowerItem(
+                                            role = "PIC (Person In Charge)",
+                                            count = "1",
+                                            isPreset = true
+                                        )
+                                    )
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFFFFF1EB),
+                                border = BorderStroke(1.dp, Color(0xFFFFD8CC))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "+",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TaskDetailOrange
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "PIC",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TaskDetailOrange
+                                    )
+                                }
+                            }
+                        }
+
+                        if (!hasHeadTech) {
+                            Surface(
+                                modifier = Modifier.clickable {
+                                    onManpowerListChange(
+                                        manpowerList + ManpowerItem(
+                                            role = "Head Technician",
+                                            count = "1",
+                                            isPreset = true
+                                        )
+                                    )
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFFFFF1EB),
+                                border = BorderStroke(1.dp, Color(0xFFFFD8CC))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "+",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TaskDetailOrange
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Head Tech",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TaskDetailOrange
+                                    )
+                                }
+                            }
+                        }
+
+                        if (!hasTech) {
+                            Surface(
+                                modifier = Modifier.clickable {
+                                    onManpowerListChange(
+                                        manpowerList + ManpowerItem(
+                                            role = "Technicians",
+                                            count = "1",
+                                            isPreset = true
+                                        )
+                                    )
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFFFFF1EB),
+                                border = BorderStroke(1.dp, Color(0xFFFFD8CC))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "+",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TaskDetailOrange
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "Technicians",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TaskDetailOrange
+                                    )
+                                }
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier.clickable {
+                                onManpowerListChange(
+                                    manpowerList + ManpowerItem(
+                                        role = "",
+                                        count = "1",
+                                        isPreset = false
+                                    )
+                                )
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFF1F5F9),
+                            border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "+",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TaskDetailGray
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Other Role",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TaskDetailGray
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(
+                modifier =
+                    Modifier.height(16.dp)
+            )
+
+
+            // ====================================================
             // GENERATE REPORT
             // ====================================================
 
@@ -5604,43 +6071,63 @@ private fun AiFieldAnalysisCard(
                 )
 
 
-                Row(
+                var isEditingReport by remember { mutableStateOf(false) }
 
+                Row(
+                    modifier =
+                        Modifier.fillMaxWidth(),
+                    horizontalArrangement =
+                        Arrangement.SpaceBetween,
                     verticalAlignment =
                         Alignment.CenterVertically
-
                 ) {
 
-                    Icon(
+                    Row(
+                        verticalAlignment =
+                            Alignment.CenterVertically
+                    ) {
 
-                        imageVector =
-                            Icons.Outlined.Description,
+                        Icon(
+                            imageVector =
+                                Icons.Outlined.Description,
 
-                        contentDescription =
-                            null,
+                            contentDescription =
+                                null,
 
-                        tint =
-                            TaskDetailGreen
-                    )
-
-
-                    Spacer(
-                        modifier =
-                            Modifier.width(7.dp)
-                    )
+                            tint =
+                                TaskDetailGreen
+                        )
 
 
-                    Text(
+                        Spacer(
+                            modifier =
+                                Modifier.width(7.dp)
+                        )
 
-                        text =
-                            "Generated AI Report",
 
-                        fontSize =
-                            14.sp,
+                        Text(
+                            text =
+                                "Generated AI Report",
 
-                        fontWeight =
-                            FontWeight.Bold
-                    )
+                            fontSize =
+                                14.sp,
+
+                            fontWeight =
+                                FontWeight.Bold
+                        )
+                    }
+
+                    TextButton(
+                        onClick = { isEditingReport = !isEditingReport },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = if (isEditingReport) "Done" else "Edit",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TaskDetailOrange
+                        )
+                    }
                 }
 
 
@@ -5650,36 +6137,50 @@ private fun AiFieldAnalysisCard(
                 )
 
 
-                Card(
-
-                    modifier =
-                        Modifier.fillMaxWidth(),
-
-                    colors =
-                        CardDefaults.cardColors(
-                            containerColor =
-                                Color.White
+                if (isEditingReport) {
+                    OutlinedTextField(
+                        value = report,
+                        onValueChange = onReportChange,
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = TextStyle(
+                            fontSize = 11.sp,
+                            lineHeight = 17.sp,
+                            color = Color(0xFF0F172A)
                         ),
-
-                    shape =
-                        RoundedCornerShape(12.dp)
-
-                ) {
-
-                    Text(
-
-                        text =
-                            report,
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                } else {
+                    Card(
 
                         modifier =
-                            Modifier.padding(14.dp),
+                            Modifier.fillMaxWidth(),
 
-                        fontSize =
-                            11.sp,
+                        colors =
+                            CardDefaults.cardColors(
+                                containerColor =
+                                    Color.White
+                            ),
 
-                        lineHeight =
-                            17.sp
-                    )
+                        shape =
+                            RoundedCornerShape(12.dp)
+
+                    ) {
+
+                        Text(
+
+                            text =
+                                report,
+
+                            modifier =
+                                Modifier.padding(14.dp),
+
+                            fontSize =
+                                11.sp,
+
+                            lineHeight =
+                                17.sp
+                        )
+                    }
                 }
 
 
@@ -5981,6 +6482,9 @@ private fun AiStatusRow(
         )
     }
 }
+
+
+
 
 
 // ============================================================
