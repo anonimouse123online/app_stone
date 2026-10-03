@@ -300,7 +300,7 @@ class GemmaReportGenerator(
             appendLine()
             appendLine(cleanOngoingScope)
             appendLine()
-            appendLine("Generate the report now.")
+            appendLine()
         }
 
         // ========================================================
@@ -354,6 +354,7 @@ class GemmaReportGenerator(
                 .replace("**", "")
                 .replace("* ", "- ")
                 .replace(Regex("(?i)^#+\\s*"), "")
+                .replace(Regex("(?i)generate the report now\\.?"), "")
                 .replace(Regex("\n{3,}"), "\n\n")
                 .trim()
 
@@ -363,7 +364,8 @@ class GemmaReportGenerator(
             finalReport.contains("please provide", ignoreCase = true) ||
             finalReport.contains("let's proceed", ignoreCase = true) ||
             !finalReport.contains("Daily Site Report", ignoreCase = true) ||
-            !finalReport.contains("Work Progress", ignoreCase = true)
+            !finalReport.contains("Work Progress", ignoreCase = true) ||
+            (hasManpower && !finalReport.contains("Manpower", ignoreCase = true))
 
         if (badResponse || finalReport.isBlank()) {
             Log.w(
