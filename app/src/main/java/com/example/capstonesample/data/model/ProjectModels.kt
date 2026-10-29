@@ -6,7 +6,10 @@ import com.google.gson.annotations.SerializedName
 data class JoinProjectRequest(
 
     @SerializedName("invite_code")
-    val inviteCode: String
+    val inviteCode: String,
+
+    @SerializedName("position")
+    val position: String
 )
 
 

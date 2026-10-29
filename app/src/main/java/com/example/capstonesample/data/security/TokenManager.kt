@@ -80,6 +80,7 @@ object TokenManager {
         email: String,
         role: String
     ) {
+        BiometricSessionStore(context).markLastAccount(email)
         val prefs =
             context.getSharedPreferences(
                 PREF_NAME,

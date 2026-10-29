@@ -60,7 +60,11 @@ data class SiteTask(
     val indicatorColor: Color,
     val overdue: Boolean = false,
     val subtasks: List<SubtaskItem> = emptyList(),
-    val projectLocation: String? = null
+    val projectLocation: String? = null,
+    val materialsRequired: String? = null,
+    val siteInstructions: String? = null,
+    val allocatedMaterials: List<com.example.capstonesample.data.model.TaskAssignedResource> = emptyList(),
+    val resources: List<com.example.capstonesample.data.model.TaskAssignedResource> = emptyList()
 )
 
 
@@ -788,7 +792,11 @@ fun TasksScreen(
                     task.subtasks ?: emptyList(),
 
                 projectLocation =
-                    task.projectLocation
+                    task.projectLocation,
+                materialsRequired = task.materialsRequired,
+                siteInstructions = task.siteInstructions,
+                allocatedMaterials = task.allocatedMaterials.orEmpty(),
+                resources = task.resources.orEmpty()
             )
         }
 
@@ -909,6 +917,23 @@ fun TasksScreen(
 
             task =
                 openedTask,
+
+            onTaskUpdated = { saved ->
+                serverTasks = serverTasks.map { existing ->
+                    if (existing.id == saved.id) existing.copy(
+                        status = saved.status ?: existing.status,
+                        progress = saved.progress ?: existing.progress,
+                        subtasks = saved.subtasks ?: existing.subtasks
+                    ) else existing
+                }
+                selectedTask = selectedTask?.let { existing ->
+                    if (existing.id == saved.id) existing.copy(
+                        status = saved.status ?: existing.status,
+                        progress = saved.progress ?: existing.progress,
+                        subtasks = saved.subtasks ?: existing.subtasks
+                    ) else existing
+                }
+            },
 
 
             // ====================================================

@@ -6,7 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
 
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -22,17 +22,32 @@ import android.os.Build
 
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.security.TokenManager
+import com.example.capstonesample.security.BiometricSessionStore
 import com.example.capstonesample.sync.SyncManager
 import com.example.capstonesample.ui.theme.CapstoneSampleTheme
 
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     private val navigateToState = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
 
         super.onCreate(savedInstanceState)
+
+        // Clear a locked session before background work or Retrofit can read its active JWT.
+        val session = TokenManager.getUserSession(this)
+        val biometricStore = BiometricSessionStore(this)
+        val startupSession = if (session != null && biometricStore.isEnabled(session.email)) {
+            biometricStore.markLastAccount(session.email)
+            TokenManager.clearSession(this)
+            null
+        } else if (TokenManager.isRememberMe(this)) {
+            session
+        } else {
+            TokenManager.clearSession(this)
+            null
+        }
 
         // ============================================================
         // CREATE SITEPULSE NOTIFICATION CHANNEL
@@ -144,11 +159,7 @@ class MainActivity : ComponentActivity() {
 
 
                 val savedSession = remember {
-                    if (TokenManager.isRememberMe(context)) {
-                        TokenManager.getUserSession(context)
-                    } else {
-                        null
-                    }
+                    startupSession
                 }
 
                 // ====================================================
@@ -164,16 +175,6 @@ class MainActivity : ComponentActivity() {
                 var currentScreen by remember {
                     mutableStateOf(startScreen)
                 }
-
-                LaunchedEffect(navigateToState.value) {
-                    navigateToState.value?.let { screen ->
-                        if (savedSession != null) {
-                            currentScreen = screen
-                        }
-                        navigateToState.value = null
-                    }
-                }
-
 
                 // ====================================================
                 // AUTHENTICATION STATE
@@ -196,6 +197,13 @@ class MainActivity : ComponentActivity() {
 
                 var loggedInRole by remember {
                     mutableStateOf(savedSession?.role ?: "")
+                }
+
+                LaunchedEffect(navigateToState.value) {
+                    navigateToState.value?.let { screen ->
+                        if (authToken.isNotBlank()) currentScreen = screen
+                        navigateToState.value = null
+                    }
                 }
 
 

@@ -2,6 +2,8 @@ package com.example.capstonesample.data.api
 
 import android.content.Context
 import com.example.capstonesample.security.TokenManager
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
@@ -9,6 +11,11 @@ import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
 object RetrofitClient {
+
+    internal fun isBackendOrigin(url: HttpUrl): Boolean {
+        val backend = BASE_URL.toHttpUrl()
+        return url.scheme == backend.scheme && url.host == backend.host && url.port == backend.port
+    }
 
     // ============================================================
     // APP CONTEXT
@@ -26,7 +33,9 @@ object RetrofitClient {
     // ============================================================
 
     // PHYSICAL PHONE 
-    const val BASE_URL = "http://192.168.254.108:5001/"
+
+    const val BASE_URL = "http://192.168.1.6:5001/"
+
     //const val BASE_URL = "http://192.168.1.4:5001/"
 
     // ANDROID EMULATOR
@@ -42,7 +51,8 @@ object RetrofitClient {
         HttpLoggingInterceptor().apply {
 
             level =
-                HttpLoggingInterceptor.Level.BODY
+                // Do not log JWT response bodies, decrypted sessions, or login passwords.
+                HttpLoggingInterceptor.Level.BASIC
         }
 
 
@@ -62,14 +72,16 @@ object RetrofitClient {
             originalRequest.newBuilder()
 
         // Only try reading token after RetrofitClient.init()
-        if (::appContext.isInitialized) {
+        if (!isBackendOrigin(originalRequest.url)) {
+            requestBuilder.removeHeader("Authorization")
+        } else if (::appContext.isInitialized) {
 
             val token =
                 TokenManager.getToken(
                     appContext
                 )
 
-            if (!token.isNullOrBlank()) {
+            if (!token.isNullOrBlank() && originalRequest.header("Authorization") == null) {
 
                 requestBuilder.header(
                     "Authorization",
@@ -103,6 +115,15 @@ object RetrofitClient {
             .addInterceptor(
                 loggingInterceptor
             )
+
+            // Also enforce the origin boundary on every redirect/network exchange.
+            .addNetworkInterceptor { chain ->
+                val request = chain.request()
+                chain.proceed(
+                    if (isBackendOrigin(request.url)) request
+                    else request.newBuilder().removeHeader("Authorization").build()
+                )
+            }
 
             .connectTimeout(
                 15,

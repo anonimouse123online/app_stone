@@ -475,12 +475,18 @@ fun ProjectsScreen(
             },
 
 
-            onJoin = { inviteCode ->
+            onJoin = join@{ inviteCode, projectPosition ->
+
+                // Lock before launching so rapid taps cannot send two join requests.
+                if (isJoining) return@join
+                val cleanPosition = projectPosition.trim()
+                if (cleanPosition.isEmpty()) {
+                    joinError = "Enter your project position."
+                    return@join
+                }
+                isJoining = true
 
                 scope.launch {
-
-                    isJoining =
-                        true
 
                     joinError =
                         null
@@ -555,7 +561,10 @@ fun ProjectsScreen(
                                         JoinProjectRequest(
 
                                             inviteCode =
-                                                cleanCode
+                                                cleanCode,
+
+                                            position =
+                                                cleanPosition
                                         )
                                 )
 
@@ -1316,13 +1325,16 @@ private fun JoinProjectDialog(
 
     onDismiss: () -> Unit,
 
-    onJoin: (String) -> Unit
+    onJoin: (String, String) -> Unit
 
 ) {
 
     var projectCode by remember {
         mutableStateOf("")
     }
+
+    var projectPosition by remember { mutableStateOf("") }
+    var positionError by remember { mutableStateOf<String?>(null) }
 
 
     AlertDialog(
@@ -1414,6 +1426,26 @@ private fun JoinProjectDialog(
                         )
                 )
 
+                Spacer(Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = projectPosition,
+                    onValueChange = {
+                        projectPosition = it
+                        positionError = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Project Position *") },
+                    placeholder = { Text("Enter your project position") },
+                    enabled = !isLoading,
+                    singleLine = true,
+                    isError = positionError != null,
+                    supportingText = {
+                        positionError?.let { Text(it) }
+                    },
+                    shape = RoundedCornerShape(12.dp)
+                )
+
 
                 if (
                     errorMessage != null
@@ -1479,15 +1511,20 @@ private fun JoinProjectDialog(
 
                     val cleanCode =
                         projectCode.trim()
+                    val cleanPosition = projectPosition.trim()
 
 
                     if (
                         cleanCode.isNotEmpty()
                     ) {
 
-                        onJoin(
-                            cleanCode
-                        )
+                        if (cleanPosition.isEmpty()) {
+                            positionError = "Enter your project position."
+                        } else {
+                            positionError = null
+                            projectPosition = cleanPosition
+                            onJoin(cleanCode, cleanPosition)
+                        }
                     }
                 },
 

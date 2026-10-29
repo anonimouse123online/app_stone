@@ -42,12 +42,26 @@ import androidx.compose.ui.text.input.KeyboardType
 import android.widget.Toast
 import com.example.capstonesample.data.api.SubtaskItem
 import com.example.capstonesample.data.api.UpdateSubtasksRequest
+import com.example.capstonesample.data.api.TaskResponse
+import com.example.capstonesample.data.model.TaskUpdateResponse
+import com.example.capstonesample.data.model.UpdateTaskWorkStatusRequest
+import com.example.capstonesample.data.model.UpdateSubtaskWorkStatusRequest
+import com.example.capstonesample.data.model.isFinishedWorkStatus
+import com.example.capstonesample.data.model.workStatusLabel
+import com.example.capstonesample.data.model.taskAssignedResources
+import com.example.capstonesample.data.model.resourceQuantityLabel
+import org.json.JSONObject
+import retrofit2.Response
 import com.example.capstonesample.data.model.CreateIssueRequest
+import com.example.capstonesample.data.model.IssueImage
+import com.example.capstonesample.data.model.toMultipartFields
+import com.example.capstonesample.issues.IssueImagesPreview
 import com.example.capstonesample.data.model.FieldAnnotation
 
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.Assignment
 import androidx.compose.material.icons.outlined.*
 
 import androidx.compose.material3.*
@@ -74,6 +88,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 
 import com.example.capstonesample.ai.AiPipeline
+import com.example.capstonesample.ai.AiReportImage
 import com.example.capstonesample.ai.ModelStatusChecker
 import com.example.capstonesample.pdf.PdfReportGenerator
 
@@ -136,7 +151,8 @@ fun TaskDetailScreen(
     // Camera is now handled directly inside this screen.
     onCameraClick: () -> Unit = {},
 
-    onReportClick: () -> Unit
+    onReportClick: () -> Unit,
+    onTaskUpdated: (TaskResponse) -> Unit = {}
 
 ) {
 
@@ -182,26 +198,30 @@ fun TaskDetailScreen(
         )
     }
 
-    var isGeneratingAiReport by remember {
+    var isGeneratingAiReport by remember(task.id) {
         mutableStateOf(false)
     }
 
-    var detectedObjects by remember {
+    var detectedObjects by remember(task.id) {
         mutableStateOf("")
     }
 
-    var aiReport by remember {
+    var aiReport by remember(task.id) {
         mutableStateOf<String?>(null)
     }
 
-    var aiError by remember {
+    var aiReportImage by remember(task.id) { mutableStateOf<AiReportImage?>(null) }
+    var imageSelectionVersion by remember(task.id) { mutableIntStateOf(0) }
+    val activeTaskId by rememberUpdatedState(task.id)
+
+    var aiError by remember(task.id) {
         mutableStateOf<String?>(null)
     }
-    var isUploadingReport by remember {
+    var isUploadingReport by remember(task.id) {
         mutableStateOf(false)
     }
 
-    var reportUploaded by remember {
+    var reportUploaded by remember(task.id) {
         mutableStateOf(false)
     }
 
@@ -222,7 +242,7 @@ fun TaskDetailScreen(
         )
     }
 
-    var actionMessage by remember {
+    var actionMessage by remember(task.id) {
         mutableStateOf<String?>(null)
     }
 
@@ -230,7 +250,7 @@ fun TaskDetailScreen(
     // ENGINEER IMAGE ANNOTATIONS
     // ============================================================
 
-    var fieldAnnotations by remember {
+    var fieldAnnotations by remember(task.id) {
         mutableStateOf<List<FieldAnnotation>>(emptyList())
     }
 
@@ -249,6 +269,9 @@ fun TaskDetailScreen(
     var isUpdatingSubtasks by remember {
         mutableStateOf(false)
     }
+    var isSavingTaskStatus by remember { mutableStateOf(false) }
+    var savingSubtaskStatusId by remember { mutableStateOf<String?>(null) }
+    var workStatusError by remember { mutableStateOf<String?>(null) }
 
     // Download state for Gemma model
     var isDownloadingModel by remember { mutableStateOf(false) }
@@ -259,38 +282,70 @@ fun TaskDetailScreen(
     // Manpower deployment inputs (starts empty so nothing is displayed until added)
     var manpowerList by remember { mutableStateOf<List<ManpowerItem>>(emptyList()) }
 
-    fun toggleSubtask(subtaskId: String) {
-        val updated = currentSubtasks.map { item ->
-            if (item.id == subtaskId) item.copy(completed = !item.completed) else item
+    fun applyTaskUpdate(response: Response<TaskUpdateResponse>) {
+        val body = response.body()
+        val saved = body?.data
+        if (!response.isSuccessful || body?.success != true || saved == null) {
+            val serverError = runCatching {
+                val json = JSONObject(response.errorBody()?.string().orEmpty())
+                json.optString("error").ifBlank { json.optString("message") }
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+            throw IllegalStateException(serverError ?: body?.error ?: body?.message
+                ?: "Unable to save task changes (${response.code()}).")
         }
-        val doneCount = updated.count { it.completed }
-        val newPct = if (updated.isNotEmpty()) Math.round((doneCount.toFloat() / updated.size.toFloat()) * 100) else 0
-        val newStatus = when {
-            newPct >= 100 -> "Completed"
-            newPct > 0 -> "In Progress"
-            else -> "Pending"
-        }
+        currentStatus = saved.status ?: currentStatus
+        currentProgress = saved.progress ?: currentProgress
+        currentSubtasks = saved.subtasks ?: currentSubtasks
+        taskCompleted = currentStatus.equals("Completed", true) ||
+            currentStatus.equals("Done", true) || currentStatus.equals("Approved", true)
+        onTaskUpdated(saved)
+    }
 
-        currentSubtasks = updated
-        currentProgress = newPct
-        currentStatus = newStatus
-        if (newPct >= 100) {
-            taskCompleted = true
+    fun saveWorkStatus(status: String, subtaskId: String? = null) {
+        if (isSavingTaskStatus || isUpdatingSubtasks || isCompletingTask || isFinishedWorkStatus(currentStatus)) return
+        workStatusError = null
+        if (subtaskId == null) isSavingTaskStatus = true
+        else {
+            isUpdatingSubtasks = true
+            savingSubtaskStatusId = subtaskId
         }
-
         aiScope.launch {
             try {
-                isUpdatingSubtasks = true
+                val response = if (subtaskId == null) {
+                    RetrofitClient.api.updateTaskWorkStatus(task.id, UpdateTaskWorkStatusRequest(status))
+                } else {
+                    RetrofitClient.api.updateSubtaskWorkStatus(task.id, UpdateSubtaskWorkStatusRequest(subtaskId, status))
+                }
+                applyTaskUpdate(response)
+            } catch (e: Exception) {
+                workStatusError = e.message ?: "Unable to save work status."
+            } finally {
+                if (subtaskId == null) isSavingTaskStatus = false
+                else {
+                    isUpdatingSubtasks = false
+                    savingSubtaskStatusId = null
+                }
+            }
+        }
+    }
+
+    fun toggleSubtask(subtaskId: String) {
+        if (isUpdatingSubtasks || isSavingTaskStatus || isCompletingTask) return
+        val updated = currentSubtasks.map { item ->
+            if (item.id == subtaskId) item.copy(completed = !item.completed, progress = if (item.completed) 0 else 100) else item
+        }
+        workStatusError = null
+        isUpdatingSubtasks = true
+        aiScope.launch {
+            try {
                 val response = RetrofitClient.api.updateSubtasks(
                     taskId = task.id,
                     request = UpdateSubtasksRequest(subtasks = updated)
                 )
-                if (!response.isSuccessful) {
-                    Toast.makeText(context, "Failed to sync subtask: ${response.code()}", Toast.LENGTH_SHORT).show()
-                }
+                applyTaskUpdate(response)
             } catch (e: Exception) {
                 Log.e("SUBTASKS", "Failed to update subtasks", e)
-                Toast.makeText(context, "Network error updating subtask", Toast.LENGTH_SHORT).show()
+                workStatusError = e.message ?: "Unable to save subtask completion."
             } finally {
                 isUpdatingSubtasks = false
             }
@@ -378,12 +433,12 @@ fun TaskDetailScreen(
     // ============================================================
 
     // URI of the photo that has successfully been captured.
-    var capturedPhotoUri by remember {
+    var capturedPhotoUri by remember(task.id) {
         mutableStateOf<Uri?>(null)
     }
 
     // URI where the next photo will be saved.
-    var pendingPhotoUri by remember {
+    var pendingPhotoUri by remember(task.id) {
         mutableStateOf<Uri?>(null)
     }
 
@@ -404,6 +459,11 @@ fun TaskDetailScreen(
                     pendingPhotoUri
 
                 // New photo = clear old AI result and old annotations.
+                imageSelectionVersion++
+                if (!isUploadingReport && !isGeneratingAiReport) aiReportImage?.file?.delete()
+                aiReportImage = null
+                reportUploaded = false
+                actionMessage = null
                 fieldAnnotations = emptyList()
                 detectedObjects = ""
                 aiReport = null
@@ -424,6 +484,12 @@ fun TaskDetailScreen(
         ) { uri: Uri? ->
             if (uri != null) {
                 capturedPhotoUri = uri
+                imageSelectionVersion++
+                if (!isUploadingReport && !isGeneratingAiReport) aiReportImage?.file?.delete()
+                aiReportImage = null
+                reportUploaded = false
+                actionMessage = null
+                fieldAnnotations = emptyList()
                 detectedObjects = ""
                 aiReport = null
                 aiError = null
@@ -627,6 +693,9 @@ fun TaskDetailScreen(
                     task
             )
 
+            Spacer(modifier = Modifier.height(14.dp))
+            TaskAssignmentDetails(task = task)
+
 
             Spacer(
                 modifier =
@@ -643,6 +712,10 @@ fun TaskDetailScreen(
                     currentSubtasks,
                 isUpdating =
                     isUpdatingSubtasks,
+                enabled = !isSavingTaskStatus && !isCompletingTask,
+                canChangeStatus = !isFinishedWorkStatus(currentStatus),
+                savingStatusId = savingSubtaskStatusId,
+                onStatusChange = { subtaskId, status -> saveWorkStatus(status, subtaskId) },
                 onToggleSubtask = { subtaskId ->
                     toggleSubtask(subtaskId)
                 }
@@ -665,8 +738,20 @@ fun TaskDetailScreen(
                 progress =
                     currentProgress,
                 status =
-                    currentStatus
+                    currentStatus,
+                isSavingStatus = isSavingTaskStatus,
+                canChangeStatus = !isUpdatingSubtasks && !isCompletingTask && !isFinishedWorkStatus(currentStatus),
+                onStatusChange = { saveWorkStatus(it) }
             )
+
+            workStatusError?.let { message ->
+                Text(
+                    text = message,
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
 
 
             Spacer(
@@ -757,6 +842,8 @@ fun TaskDetailScreen(
                 report =
                     aiReport,
 
+                reportImageUri = aiReportImage?.uri,
+
                 error =
                     aiError,
 
@@ -808,7 +895,11 @@ fun TaskDetailScreen(
                                 "The bundled Gemma AI model is not ready."
                         }
 
-                        !isGeneratingAiReport -> {
+                        !isGeneratingAiReport && !isUploadingReport -> {
+
+                            val selectionVersion = imageSelectionVersion
+                            val existingImage = aiReportImage
+                            val reportAnnotations = fieldAnnotations
 
                             isGeneratingAiReport =
                                 true
@@ -847,7 +938,12 @@ fun TaskDetailScreen(
 
                             aiScope.launch {
 
+                                var analysisImage: AiReportImage? = null
+
                                 try {
+
+                                    val image = existingImage ?: AiReportImage.snapshot(context, task.id, imageUri)
+                                    analysisImage = image
 
                                     val pipeline =
                                         AiPipeline(
@@ -861,10 +957,10 @@ fun TaskDetailScreen(
                                         val result =
                                             pipeline.analyzeImage(
                                                 imageUri =
-                                                    imageUri,
+                                                    image.uri,
 
                                                 annotations =
-                                                     fieldAnnotations,
+                                                     reportAnnotations,
 
                                                 taskTitle =
                                                     task.title,
@@ -888,11 +984,12 @@ fun TaskDetailScreen(
                                                     inputtedManpower
                                             )
 
-                                        detectedObjects =
-                                            result.detectionSummary
-
-                                        aiReport =
-                                            result.report
+                                        // A newer selection/task must never receive this result.
+                                        if (activeTaskId == task.id && imageSelectionVersion == selectionVersion) {
+                                            detectedObjects = result.detectionSummary
+                                            aiReportImage = image
+                                            aiReport = result.report
+                                        }
 
                                     } finally {
 
@@ -907,11 +1004,13 @@ fun TaskDetailScreen(
                                         e
                                     )
 
-                                    aiError =
-                                        e.message
-                                            ?: "AI report generation failed."
+                                    if (activeTaskId == task.id && imageSelectionVersion == selectionVersion) {
+                                        aiError = e.message ?: "AI report generation failed."
+                                    }
 
                                 } finally {
+
+                                    if (aiReportImage !== analysisImage) analysisImage?.file?.delete()
 
                                     isGeneratingAiReport =
                                         false
@@ -994,13 +1093,18 @@ fun TaskDetailScreen(
 
                     val reportText =
                         aiReport
+                    val reportImage = aiReportImage
 
                     if (reportText.isNullOrBlank()) {
 
                         aiError =
                             "Generate an AI report first."
 
-                    } else if (!isUploadingReport) {
+                    } else if (reportImage == null || reportImage.taskId != task.id) {
+
+                        aiError = "Generate a report with the selected image before submitting."
+
+                    } else if (!isUploadingReport && !isGeneratingAiReport) {
 
                         isUploadingReport =
                             true
@@ -1014,6 +1118,10 @@ fun TaskDetailScreen(
                         aiScope.launch {
 
                             try {
+
+                                val projectCode = task.projectCode
+                                    ?: throw IllegalStateException("Project code is missing for this task.")
+                                val imageReference = reportImage.uploadReference(RetrofitClient.api)
 
                                 val response =
                                     RetrofitClient.api
@@ -1029,16 +1137,16 @@ fun TaskDetailScreen(
                                                         task.id,
 
                                                     projectCode =
-                                                        task.projectCode
-                                                            ?: throw IllegalStateException(
-                                                                "Project code is missing for this task."
-                                                            ),
+                                                        projectCode,
 
                                                     title =
                                                         "AI Field Report - ${task.title}",
 
                                                     reportText =
-                                                        reportText
+                                                        reportText,
+
+                                                    images = listOf(imageReference),
+                                                    reportDate = checkNotNull(reportImage.uploadedDate)
                                                 )
                                         )
 
@@ -1047,11 +1155,10 @@ fun TaskDetailScreen(
                                     response.body()?.success == true
                                 ) {
 
-                                    reportUploaded =
-                                        true
-
-                                    actionMessage =
-                                        "Report uploaded successfully."
+                                    if (aiReportImage === reportImage && activeTaskId == task.id) {
+                                        reportUploaded = true
+                                        actionMessage = "Report uploaded successfully."
+                                    }
 
                                 } else {
 
@@ -1064,10 +1171,11 @@ fun TaskDetailScreen(
                                         null
                                     }
 
-                                    aiError =
-                                        response.body()?.message
+                                    if (aiReportImage === reportImage && activeTaskId == task.id) {
+                                        aiError = response.body()?.message
                                             ?: errServerMsg?.takeIf { it.isNotBlank() }
                                             ?: "Unable to upload report."
+                                    }
                                 }
 
                             } catch (e: Exception) {
@@ -1078,11 +1186,13 @@ fun TaskDetailScreen(
                                     e
                                 )
 
-                                aiError =
-                                    e.message
-                                        ?: "Unable to upload report."
+                                if (aiReportImage === reportImage && activeTaskId == task.id) {
+                                    aiError = e.message ?: "Unable to upload report."
+                                }
 
                             } finally {
+
+                                if (aiReportImage !== reportImage) reportImage.file.delete()
 
                                 isUploadingReport =
                                     false
@@ -1093,7 +1203,7 @@ fun TaskDetailScreen(
 
                 onMarkDone = {
 
-                    if (!isCompletingTask) {
+                    if (!isCompletingTask && !isSavingTaskStatus && !isUpdatingSubtasks) {
 
                         isCompletingTask =
                             true
@@ -1494,6 +1604,82 @@ private fun TaskInformationCard(
 // ============================================================
 
 @Composable
+private fun TaskAssignmentDetails(task: SiteTask) {
+    val materials = remember(task.materialsRequired, task.allocatedMaterials, task.resources) {
+        taskAssignedResources(task.allocatedMaterials, task.resources, task.materialsRequired)
+    }
+    TaskAssignmentSection("Materials & Resources", Icons.Outlined.Inventory2) {
+        if (materials.isEmpty()) {
+            Text("No materials or resources assigned.", fontSize = 13.sp, color = TaskDetailGray)
+        } else {
+            materials.forEach { entry ->
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFFF8FAFC)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = entry.name?.takeIf { it.isNotBlank() } ?: "Unnamed resource",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF0F172A)
+                        )
+                        entry.category?.takeIf { it.isNotBlank() }?.let {
+                            Text(it, fontSize = 12.sp, color = TaskDetailGray)
+                        }
+                        resourceQuantityLabel(entry)?.let {
+                            Text(it, fontSize = 13.sp, color = Color(0xFF0F172A))
+                        }
+                        entry.supplier?.takeIf { it.isNotBlank() }?.let {
+                            Text("Supplier: $it", fontSize = 12.sp, color = TaskDetailGray)
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Spacer(modifier = Modifier.height(14.dp))
+    TaskAssignmentSection("Site Instructions", Icons.AutoMirrored.Outlined.Assignment) {
+        val instructions = task.siteInstructions?.trim().orEmpty()
+        Text(
+            text = instructions.ifBlank { "No site instructions provided." },
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+            color = if (instructions.isBlank()) TaskDetailGray else Color(0xFF0F172A)
+        )
+    }
+}
+
+@Composable
+private fun TaskAssignmentSection(
+    title: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null, tint = TaskDetailOrange, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B))
+            }
+            content()
+        }
+    }
+}
+
+@Composable
 private fun InformationRow(
 
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -1575,6 +1761,10 @@ private fun InformationRow(
 private fun TaskSubtasksCard(
     subtasks: List<SubtaskItem>,
     isUpdating: Boolean,
+    enabled: Boolean,
+    canChangeStatus: Boolean,
+    savingStatusId: String?,
+    onStatusChange: (String, String) -> Unit,
     onToggleSubtask: (String) -> Unit
 ) {
     Card(
@@ -1611,6 +1801,15 @@ private fun TaskSubtasksCard(
                 )
 
                 Spacer(modifier = Modifier.weight(1f))
+
+                if (isUpdating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = TaskDetailOrange
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
 
                 if (totalCount > 0) {
                     Box(
@@ -1660,14 +1859,12 @@ private fun TaskSubtasksCard(
                                     color = if (isDone) Color(0xFFF8FAFC) else Color(0xFFFAFAFA),
                                     shape = RoundedCornerShape(10.dp)
                                 )
-                                .clickable {
-                                    onToggleSubtask(item.id)
-                                }
                                 .padding(horizontal = 10.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Checkbox(
                                 checked = isDone,
+                                enabled = enabled && !isUpdating,
                                 onCheckedChange = {
                                     onToggleSubtask(item.id)
                                 },
@@ -1681,14 +1878,29 @@ private fun TaskSubtasksCard(
 
                             Spacer(modifier = Modifier.width(12.dp))
 
-                            Text(
-                                text = item.title.ifBlank { "Untitled Step" },
-                                fontSize = 13.sp,
-                                fontWeight = if (isDone) FontWeight.Normal else FontWeight.Medium,
-                                color = if (isDone) TaskDetailGray else Color(0xFF1E293B),
-                                textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.title.ifBlank { "Untitled Step" },
+                                    fontSize = 13.sp,
+                                    fontWeight = if (isDone) FontWeight.Normal else FontWeight.Medium,
+                                    color = if (isDone) TaskDetailGray else Color(0xFF1E293B),
+                                    textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
+                                    modifier = Modifier.clickable(enabled = enabled && !isUpdating) {
+                                        onToggleSubtask(item.id)
+                                    }
+                                )
+                                WorkStatusDropdown(
+                                    status = if (isDone) "Completed" else item.status,
+                                    enabled = enabled && canChangeStatus && !isUpdating && !isDone && !isFinishedWorkStatus(item.status),
+                                    isSaving = savingStatusId == item.id,
+                                    onStatusChange = { onStatusChange(item.id, it) }
+                                )
+                                Text(
+                                    text = "Progress: ${item.displayedProgress}%",
+                                    fontSize = 11.sp,
+                                    color = TaskDetailGray
+                                )
+                            }
                         }
                     }
                 }
@@ -1703,10 +1915,50 @@ private fun TaskSubtasksCard(
 // ============================================================
 
 @Composable
+private fun WorkStatusDropdown(
+    status: String?,
+    enabled: Boolean,
+    isSaving: Boolean,
+    onStatusChange: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    LaunchedEffect(enabled) { if (!enabled) expanded = false }
+    Box {
+        OutlinedButton(
+            onClick = { expanded = true },
+            enabled = enabled,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+        ) {
+            Text(if (isSaving) "Saving..." else workStatusLabel(status), fontSize = 12.sp)
+            Spacer(Modifier.width(6.dp))
+            if (isSaving) {
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+            } else {
+                Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Select work status", modifier = Modifier.size(18.dp))
+            }
+        }
+        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+            listOf("pending" to "Pending", "ongoing" to "Ongoing").forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        if (workStatusLabel(status) != label) onStatusChange(value)
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun TaskProgressCard(
     task: SiteTask,
     progress: Int = task.progress,
-    status: String = task.status
+    status: String = task.status,
+    isSavingStatus: Boolean = false,
+    canChangeStatus: Boolean = true,
+    onStatusChange: (String) -> Unit = {}
 ) {
 
     val safeProgress =
@@ -1810,6 +2062,13 @@ private fun TaskProgressCard(
                     Modifier.height(12.dp)
             )
 
+
+            WorkStatusDropdown(
+                status = status,
+                enabled = canChangeStatus && !isSavingStatus,
+                isSaving = isSavingStatus,
+                onStatusChange = onStatusChange
+            )
 
             LinearProgressIndicator(
 
@@ -4381,45 +4640,50 @@ private fun ReportTaskCard(
     task: SiteTask,
     onReportClick: () -> Unit
 ) {
+    val context = LocalContext.current
     val scope =
         rememberCoroutineScope()
 
-    var isSending by remember {
+    var isSending by remember(task.id) {
         mutableStateOf(false)
     }
 
-    var expanded by remember {
+    var expanded by remember(task.id) {
         mutableStateOf(false)
     }
 
-    var reportTitle by remember {
+    var reportTitle by remember(task.id) {
         mutableStateOf("")
     }
 
-    var reportMessage by remember {
+    var reportMessage by remember(task.id) {
         mutableStateOf("")
     }
 
-    var attachmentUri by remember {
-        mutableStateOf<Uri?>(null)
+    var attachmentUris by remember(task.id) {
+        mutableStateOf<List<Uri>>(emptyList())
     }
 
-    var validationError by remember {
+    var validationError by remember(task.id) {
         mutableStateOf<String?>(null)
     }
 
-    var sentMessage by remember {
+    var sentMessage by remember(task.id) {
         mutableStateOf<String?>(null)
     }
+    var sentImages by remember(task.id) { mutableStateOf<List<IssueImage>>(emptyList()) }
 
     val attachmentPicker =
         rememberLauncherForActivityResult(
             contract =
-                ActivityResultContracts.GetContent()
-        ) { uri ->
+                ActivityResultContracts.GetMultipleContents()
+        ) { uris ->
 
-            if (uri != null) {
-                attachmentUri = uri
+            if (uris.isNotEmpty() && !isSending) {
+                attachmentUris = uris.distinct()
+                validationError = null
+                sentMessage = null
+                sentImages = emptyList()
             }
         }
 
@@ -4767,7 +5031,7 @@ private fun ReportTaskCard(
 
                     Text(
                         text =
-                            "Attachment",
+                            "Issue Photo / Evidence",
 
                         fontSize =
                             11.sp,
@@ -4788,6 +5052,8 @@ private fun ReportTaskCard(
                                 "image/*"
                             )
                         },
+
+                        enabled = !isSending,
 
                         modifier =
                             Modifier
@@ -4813,7 +5079,7 @@ private fun ReportTaskCard(
 
                         Text(
                             text =
-                                if (attachmentUri == null) {
+                                if (attachmentUris.isEmpty()) {
                                     "Attach Image"
                                 } else {
                                     "Change Attachment"
@@ -4825,7 +5091,19 @@ private fun ReportTaskCard(
                     }
 
 
-                    if (attachmentUri != null) {
+                    attachmentUris.forEach { previewUri ->
+
+                        coil.compose.AsyncImage(
+                            model = previewUri,
+                            contentDescription = "Selected issue photo",
+                            modifier = Modifier.fillMaxWidth().height(180.dp),
+                            contentScale = ContentScale.Fit,
+                            onError = {
+                                if (previewUri in attachmentUris) {
+                                    validationError = "Unable to preview this image. Please choose another picture."
+                                }
+                            }
+                        )
 
                         Spacer(
                             modifier =
@@ -4895,9 +5173,10 @@ private fun ReportTaskCard(
                                 )
 
                                 IconButton(
+                                    enabled = !isSending,
                                     onClick = {
-                                        attachmentUri =
-                                            null
+                                        attachmentUris = attachmentUris.filterNot { it == previewUri }
+                                        validationError = null
                                     }
                                 ) {
 
@@ -4985,6 +5264,11 @@ private fun ReportTaskCard(
                     }
 
 
+                    if (sentImages.isNotEmpty()) {
+                        Text("Submitted issue photos", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        IssueImagesPreview(sentImages)
+                    }
+
                     Spacer(
                         modifier =
                             Modifier.height(14.dp)
@@ -5016,14 +5300,25 @@ private fun ReportTaskCard(
 
                                     validationError = null
                                     sentMessage = null
+                                    sentImages = emptyList()
 
                                     if (!isSending) {
 
+                                        val selectedImages = attachmentUris.toList()
                                         isSending = true
 
                                         scope.launch {
 
                                             try {
+
+                                                val imageParts = withContext(Dispatchers.IO) {
+                                                    selectedImages.map { uri ->
+                                                        uriToMultipartPart(context, uri, "images")
+                                                            ?: throw IllegalStateException(
+                                                                "Unable to read a selected issue photo. Please attach it again."
+                                                            )
+                                                    }
+                                                }
 
                                                 Log.d(
                                                     "ISSUE_REPORT",
@@ -5037,7 +5332,7 @@ private fun ReportTaskCard(
                                                                 ?: throw IllegalStateException(
                                                                     "Project code is missing for this task."
                                                                 ),
-                                                            request =
+                                                            fields =
                                                                 CreateIssueRequest(
                                                                     title =
                                                                         reportTitle.trim(),
@@ -5058,7 +5353,8 @@ private fun ReportTaskCard(
 
                                                                     assigned_to =
                                                                         null
-                                                                )
+                                                                ).toMultipartFields(),
+                                                            images = imageParts
                                                         )
 
 
@@ -5073,7 +5369,8 @@ private fun ReportTaskCard(
 
                                                     reportTitle = ""
                                                     reportMessage = ""
-                                                    attachmentUri = null
+                                                    attachmentUris = emptyList()
+                                                    sentImages = response.body()?.data?.images.orEmpty()
 
                                                     onReportClick()
 
@@ -5081,6 +5378,11 @@ private fun ReportTaskCard(
 
                                                     validationError =
                                                         response.body()?.message
+                                                            ?: runCatching {
+                                                                val error = JSONObject(response.errorBody()?.string().orEmpty())
+                                                                error.optString("message").ifBlank { error.optString("error") }
+                                                                    .takeIf { it.isNotBlank() }
+                                                            }.getOrNull()
                                                             ?: "Unable to send issue report."
                                                 }
 
@@ -5206,6 +5508,8 @@ private fun AiFieldAnalysisCard(
     detectedObjects: String,
 
     report: String?,
+
+    reportImageUri: Uri?,
 
     error: String?,
 
@@ -5882,7 +6186,8 @@ private fun AiFieldAnalysisCard(
                     capturedPhotoUri != null &&
                             aiModelInstalled &&
                             !isPreparing &&
-                            !isGenerating,
+                            !isGenerating &&
+                            !isUploading,
 
                 modifier =
                     Modifier
@@ -6069,6 +6374,16 @@ private fun AiFieldAnalysisCard(
             // ====================================================
 
             if (!report.isNullOrBlank()) {
+
+                if (reportImageUri != null) {
+                    Spacer(modifier = Modifier.height(18.dp))
+                    coil.compose.AsyncImage(
+                        model = reportImageUri,
+                        contentDescription = "Original image used for this AI report",
+                        modifier = Modifier.fillMaxWidth().height(180.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                }
 
                 Spacer(
                     modifier =

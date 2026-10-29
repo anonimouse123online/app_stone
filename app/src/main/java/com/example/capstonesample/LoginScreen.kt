@@ -29,6 +29,8 @@ import com.example.capstonesample.data.model.LoginRequest
 import com.example.capstonesample.data.model.ForgotPasswordRequest
 import com.example.capstonesample.security.PasswordUtils
 import com.example.capstonesample.security.TokenManager
+import com.example.capstonesample.security.BiometricLoginSection
+import com.example.capstonesample.security.BiometricSessionStore
 import com.example.capstonesample.data.model.VerifyResetCodeRequest
 import com.example.capstonesample.data.model.ResetPasswordRequest
 
@@ -1223,6 +1225,16 @@ fun LoginScreen(
                     // MESSAGE
                     // ============================================
 
+                    BiometricLoginSection(
+                        enteredEmail = username,
+                        busy = isLoading,
+                        onBusyChange = { isLoading = it },
+                        onMessage = { message = it },
+                        onAuthenticated = { session ->
+                            onLoginClick(session.token, session.fullName, session.email, session.role)
+                        }
+                    )
+
                     if (
                         message.isNotEmpty()
                     ) {
@@ -1585,6 +1597,8 @@ fun ForgotPasswordDialog(
     onDismiss: () -> Unit,
     onPasswordReset: () -> Unit
 ) {
+
+    val context = LocalContext.current
 
     // ============================================================
     // STEPS
@@ -2585,6 +2599,8 @@ fun ForgotPasswordDialog(
 
                                     message =
                                         "Password successfully changed."
+
+                                    BiometricSessionStore(context).forgetSession(email)
 
 
                                     kotlinx.coroutines.delay(

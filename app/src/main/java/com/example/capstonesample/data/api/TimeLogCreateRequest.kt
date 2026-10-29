@@ -42,10 +42,7 @@ data class TimeLogCreateRequest(
     val equipmentUsed: String = "",
 
     @SerializedName("additional_notes")
-    val additionalNotes: String = "",
-
-    @SerializedName("has_incident")
-    val hasIncident: Boolean = false
+    val additionalNotes: String = ""
 )
 
 
@@ -105,9 +102,6 @@ data class TimeLogCreatedData(
 
     @SerializedName("additional_notes")
     val additionalNotes: String? = null,
-
-    @SerializedName("has_incident")
-    val hasIncident: Boolean? = null,
 
     @SerializedName("created_at")
     val createdAt: String? = null,

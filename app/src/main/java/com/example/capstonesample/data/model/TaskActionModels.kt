@@ -43,7 +43,26 @@ data class UploadTaskReportRequest(
     val reportText: String,
 
     @SerializedName("report_type")
-    val reportType: String = "AI Field Report"
+    val reportType: String = "AI Field Report",
+
+    // Only the image used by this report, never the task's entire image batch.
+    val images: List<String>,
+
+    @SerializedName("report_date")
+    val reportDate: String
+)
+
+data class UploadTaskImageResponse(
+    val success: Boolean = false,
+    val message: String? = null,
+    val error: String? = null,
+    val date: String? = null
+)
+
+data class TaskImagesResponse(
+    val success: Boolean = false,
+    val images: List<String> = emptyList(),
+    val error: String? = null
 )
 
 

@@ -532,8 +532,7 @@ fun DashboardScreen(
                             workCompleted = if (workCompleted.isNotBlank()) workCompleted.trim() else "Daily site supervision and engineering tasks.",
                             materialsDelivered = materialsDelivered.trim(),
                             equipmentUsed = equipmentUsed.trim(),
-                            additionalNotes = finalNotes,
-                            hasIncident = false
+                            additionalNotes = finalNotes
                         )
                     )
 

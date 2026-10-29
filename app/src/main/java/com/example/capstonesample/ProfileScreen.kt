@@ -50,6 +50,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.model.ForgotPasswordRequest
+import com.example.capstonesample.security.BiometricSettingsRow
+import com.example.capstonesample.security.BiometricSessionStore
 import com.example.capstonesample.ui.theme.*
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -2284,13 +2286,23 @@ fun SecuritySheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp)
                 .padding(bottom = 36.dp)
         ) {
             Text("Security", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black)
             Spacer(Modifier.height(4.dp))
-            Text("Change your account password", fontSize = 12.sp, color = ProfileGray)
+            Text("Manage biometric login and your account password", fontSize = 12.sp, color = ProfileGray)
             Spacer(Modifier.height(20.dp))
+
+            if (step == 0) {
+                BiometricSettingsRow(email = email, enabled = !isLoading)
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = ProfileDividerColor)
+                Spacer(Modifier.height(16.dp))
+                Text("Change Password", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.Black)
+                Spacer(Modifier.height(12.dp))
+            }
 
             when (step) {
 
@@ -2450,6 +2462,7 @@ fun SecuritySheet(
                                             )
                                         )
                                         if (resetResp.isSuccessful && resetResp.body()?.success == true) {
+                                            BiometricSessionStore(context).forgetSession(email)
                                             step = 2
                                         } else {
                                             errorMsg = resetResp.body()?.message ?: "Failed to reset password."

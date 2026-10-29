@@ -34,19 +34,34 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.ImageLoader
 import coil.compose.AsyncImage
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.model.MessageDto
 import com.example.capstonesample.data.model.SendMessageRequest
+import com.example.capstonesample.documents.projectDocumentUrl
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
 // ============================================================
 // MESSAGE DETAIL SCREEN
 // ============================================================
+
+internal fun chatAttachmentUrl(path: String?, baseUrl: String): String? = runCatching {
+    val url = projectDocumentUrl(path.orEmpty(), baseUrl)
+    // Uploaded message files belong to this backend, including legacy absolute URLs.
+    if (url.encodedPath.startsWith("/uploads/messages/")) {
+        val backend = baseUrl.toHttpUrl()
+        url.newBuilder().scheme(backend.scheme).host(backend.host).port(backend.port)
+            .username("").password("").build().toString()
+    } else {
+        url.toString()
+    }
+}.getOrNull()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,6 +76,10 @@ fun MessageDetailScreen(
     }
 
     val context = LocalContext.current
+    val imageLoader = remember(context) {
+        ImageLoader.Builder(context).okHttpClient(RetrofitClient.okHttpClient).build()
+    }
+    DisposableEffect(imageLoader) { onDispose { imageLoader.shutdown() } }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -425,21 +444,34 @@ fun MessageDetailScreen(
                                             }
 
                                             if (isImage) {
-                                                AsyncImage(
-                                                    model = fileUrl,
-                                                    contentDescription = attachment.originalName ?: "Image attachment",
-                                                    modifier = Modifier
-                                                        .fillMaxWidth()
-                                                        .heightIn(max = 220.dp)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .clickable {
-                                                            try {
-                                                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(fileUrl))
-                                                                context.startActivity(intent)
-                                                            } catch (_: Exception) {}
-                                                        },
-                                                    contentScale = ContentScale.Crop
-                                                )
+                                                val imageUrl = remember(attachment.filePath) {
+                                                    chatAttachmentUrl(attachment.filePath, RetrofitClient.BASE_URL)
+                                                }
+                                                var imageFailed by remember(imageUrl) { mutableStateOf(false) }
+                                                if (imageUrl == null || imageFailed) {
+                                                    Text("Unable to load image.", color = MaterialTheme.colorScheme.error)
+                                                    if (imageUrl != null) {
+                                                        TextButton(onClick = { imageFailed = false }) { Text("Retry") }
+                                                    }
+                                                } else {
+                                                    AsyncImage(
+                                                        model = imageUrl,
+                                                        imageLoader = imageLoader,
+                                                        onError = { imageFailed = true },
+                                                        contentDescription = attachment.originalName ?: "Image attachment",
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .heightIn(max = 220.dp)
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .clickable {
+                                                                try {
+                                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(imageUrl))
+                                                                    context.startActivity(intent)
+                                                                } catch (_: Exception) {}
+                                                            },
+                                                        contentScale = ContentScale.Crop
+                                                    )
+                                                }
                                                 Spacer(modifier = Modifier.height(4.dp))
                                             } else {
                                                 Surface(
@@ -527,7 +559,7 @@ fun MessageDetailScreen(
 // HELPER: URI TO MULTIPART
 // ============================================================
 
-private fun uriToMultipartPart(context: Context, uri: Uri, partName: String = "file"): MultipartBody.Part? {
+internal fun uriToMultipartPart(context: Context, uri: Uri, partName: String = "file"): MultipartBody.Part? {
     return try {
         val contentResolver = context.contentResolver
         val mimeType = contentResolver.getType(uri) ?: "application/octet-stream"

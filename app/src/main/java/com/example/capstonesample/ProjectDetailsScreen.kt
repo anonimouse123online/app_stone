@@ -38,6 +38,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.capstonesample.data.api.RetrofitClient
+import com.example.capstonesample.documents.ProjectDocumentViewer
+import com.example.capstonesample.data.model.IssueImage
+import com.example.capstonesample.issues.IssueImagesPreview
 
 import androidx.compose.foundation.BorderStroke
 import com.example.capstonesample.ui.theme.*
@@ -79,7 +82,8 @@ data class ProjectDocumentItem(
     val type: String = "",
     val category: String = "",
     val uploadedAt: String = "",
-    val filePath: String = ""
+    val filePath: String = "",
+    val mimeType: String = ""
 )
 
 data class ProjectIssueItem(
@@ -88,7 +92,8 @@ data class ProjectIssueItem(
     val category: String = "",
     val priority: String = "",
     val status: String = "",
-    val description: String = ""
+    val description: String = "",
+    val images: List<IssueImage> = emptyList()
 )
 
 data class ProjectReportItem(
@@ -109,6 +114,10 @@ fun ProjectDetailsScreen(
     reports: List<ProjectReportItem> = emptyList()
 ) {
     val context = LocalContext.current
+    var viewingDocument by remember(project.code) { mutableStateOf<ProjectDocumentItem?>(null) }
+    viewingDocument?.let { document ->
+        ProjectDocumentViewer(document = document, onDismiss = { viewingDocument = null })
+    }
 
     var documents by remember {
         mutableStateOf<List<ProjectDocumentItem>>(emptyList())
@@ -162,7 +171,8 @@ fun ProjectDetailsScreen(
                             type = document.type ?: "",
                             category = document.category ?: "",
                             uploadedAt = document.uploadedAt ?: "",
-                            filePath = document.filePath ?: ""
+                            filePath = document.filePath ?: "",
+                            mimeType = document.mimeType ?: ""
                         )
                     }
 
@@ -358,6 +368,7 @@ fun ProjectDetailsScreen(
 
                         DocumentListItem(
                             document = document,
+                            onOpenClick = { viewingDocument = document },
                             onDownloadClick = {
                                 downloadProjectDocument(context, document)
                             }
@@ -670,6 +681,7 @@ private fun downloadProjectDocument(context: Context, document: ProjectDocumentI
 @Composable
 private fun DocumentListItem(
     document: ProjectDocumentItem,
+    onOpenClick: () -> Unit,
     onDownloadClick: () -> Unit
 ) {
     val (typeBg, typeColor) = when (document.type.uppercase()) {
@@ -683,7 +695,7 @@ private fun DocumentListItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onDownloadClick() },
+            .clickable { onOpenClick() },
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
@@ -880,6 +892,11 @@ private fun IssueListItem(
                         fontSize = 11.sp,
                         color = DetailsGray
                     )
+                }
+
+                if (issue.images.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    IssueImagesPreview(issue.images)
                 }
             }
         }

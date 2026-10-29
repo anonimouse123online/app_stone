@@ -1,5 +1,9 @@
 package com.example.capstonesample.data.api
 
+import com.example.capstonesample.data.model.TaskUpdateResponse
+import com.example.capstonesample.data.model.UpdateTaskWorkStatusRequest
+import com.example.capstonesample.data.model.UpdateSubtaskWorkStatusRequest
+
 import com.example.capstonesample.data.model.DashboardResponse
 import com.example.capstonesample.data.model.JoinProjectRequest
 import com.example.capstonesample.data.model.JoinProjectResponse
@@ -20,7 +24,8 @@ import com.example.capstonesample.data.model.CompleteTaskRequest
 import com.example.capstonesample.data.model.CompleteTaskResponse
 import com.example.capstonesample.data.model.UploadTaskReportRequest
 import com.example.capstonesample.data.model.UploadTaskReportResponse
-import com.example.capstonesample.data.model.CreateIssueRequest
+import com.example.capstonesample.data.model.UploadTaskImageResponse
+import com.example.capstonesample.data.model.TaskImagesResponse
 import com.example.capstonesample.data.model.CreateIssueResponse
 import com.example.capstonesample.data.model.ForgotPasswordRequest
 import com.example.capstonesample.data.model.ForgotPasswordResponse
@@ -45,6 +50,7 @@ import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
 import retrofit2.http.Part
+import retrofit2.http.PartMap
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -54,7 +60,7 @@ interface ApiService {
 
     // ============================================================
     // AUTH
-    // ============================================================
+    // ==========================================   ==================
 
     @POST("auth/login")
     suspend fun login(
@@ -117,6 +123,19 @@ interface ApiService {
         @Body request: UploadTaskReportRequest
     ): Response<UploadTaskReportResponse>
 
+    @Multipart
+    @POST("tasks/{taskId}/images")
+    suspend fun uploadTaskImage(
+        @Path("taskId") taskId: String,
+        @Part image: MultipartBody.Part
+    ): Response<UploadTaskImageResponse>
+
+    @GET("tasks/{taskId}/images")
+    suspend fun getTaskImages(
+        @Path("taskId") taskId: String,
+        @Query("date") date: String
+    ): Response<TaskImagesResponse>
+
 
     @PATCH("tasks/{taskId}/complete")
     suspend fun completeTask(
@@ -128,12 +147,26 @@ interface ApiService {
     suspend fun updateSubtasks(
         @Path("taskId") taskId: String,
         @Body request: UpdateSubtasksRequest
-    ): Response<Any>
+    ): Response<TaskUpdateResponse>
 
+    @PATCH("tasks/{taskId}/status")
+    suspend fun updateTaskWorkStatus(
+        @Path("taskId") taskId: String,
+        @Body request: UpdateTaskWorkStatusRequest
+    ): Response<TaskUpdateResponse>
+
+    @PATCH("tasks/{taskId}/subtasks")
+    suspend fun updateSubtaskWorkStatus(
+        @Path("taskId") taskId: String,
+        @Body request: UpdateSubtaskWorkStatusRequest
+    ): Response<TaskUpdateResponse>
+
+    @Multipart
     @POST("projects/{projectCode}/issues")
     suspend fun createProjectIssue(
         @Path("projectCode") projectCode: String,
-        @Body request: CreateIssueRequest
+        @PartMap fields: Map<String, @JvmSuppressWildcards RequestBody>,
+        @Part images: List<@JvmSuppressWildcards MultipartBody.Part>
     ): Response<CreateIssueResponse>
 
 
@@ -330,7 +363,10 @@ data class ProjectDocumentResponse(
     val uploadedAt: String? = null,
 
     @SerializedName("file_path")
-    val filePath: String? = null
+    val filePath: String? = null,
+
+    @SerializedName("mime_type")
+    val mimeType: String? = null
 )
 data class TasksResponse(
 
@@ -358,6 +394,18 @@ data class TaskResponse(
     val title: String,
 
     val description: String? = null,
+
+    @SerializedName("materials_required")
+    val materialsRequired: String? = null,
+
+    @SerializedName("allocated_materials")
+    val allocatedMaterials: List<com.example.capstonesample.data.model.TaskAssignedResource>? = null,
+
+    @SerializedName("resources")
+    val resources: List<com.example.capstonesample.data.model.TaskAssignedResource>? = null,
+
+    @SerializedName("site_instructions")
+    val siteInstructions: String? = null,
 
     val status: String? = null,
 
@@ -415,8 +463,14 @@ data class TaskResponse(
 data class SubtaskItem(
     val id: String = "",
     val title: String = "",
-    val completed: Boolean = false
-)
+    val completed: Boolean = false,
+    val status: String? = null,
+    @SerializedName(value = "progress", alternate = ["progress_pct"])
+    val progress: Int? = null
+) {
+    val displayedProgress: Int
+        get() = if (completed) 100 else (progress ?: 0).coerceIn(0, 100)
+}
 
 data class UpdateSubtasksRequest(
     val subtasks: List<SubtaskItem>

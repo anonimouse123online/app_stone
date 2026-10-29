@@ -94,6 +94,8 @@ android {
 
 dependencies {
 
+    implementation("androidx.biometric:biometric:1.1.0")
+
     implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
     implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
     implementation("com.google.firebase:firebase-messaging")
