@@ -34,7 +34,7 @@ object RetrofitClient {
 
     // PHYSICAL PHONE 
 
-    const val BASE_URL = "http://192.168.1.6:5001/"
+    const val BASE_URL = "http://192.168.101.12:5001/"
 
     //const val BASE_URL = "http://192.168.1.4:5001/"
 

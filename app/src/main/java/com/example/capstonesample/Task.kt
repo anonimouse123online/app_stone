@@ -352,6 +352,55 @@ fun TaskDetailScreen(
         }
     }
 
+    fun updateSubtaskProgressFromEvidence(label: String, stage: String, progress: Int?) {
+        if (progress == null) return
+        val matching = currentSubtasks.firstOrNull { it.title.trim().equals(label.trim(), ignoreCase = true) } ?: return
+        val newProgress = progress.coerceIn(0, 100)
+        val isDone = newProgress >= 100
+        val newStatus = when {
+            isDone -> "completed"
+            newProgress > 0 || stage.contains("progress", ignoreCase = true) || stage.contains("started", ignoreCase = true) -> "ongoing"
+            else -> matching.status ?: "pending"
+        }
+        val updated = currentSubtasks.map { item ->
+            if (item.id == matching.id || item.title.trim().equals(label.trim(), ignoreCase = true)) {
+                item.copy(
+                    progress = newProgress,
+                    completed = isDone,
+                    status = newStatus
+                )
+            } else {
+                item
+            }
+        }
+        currentSubtasks = updated
+        val totalProgress = updated.sumOf { if (it.completed) 100 else (it.progress ?: 0) }
+        val avgProgress = if (updated.isNotEmpty()) totalProgress / updated.size else currentProgress
+        currentProgress = avgProgress
+        if (avgProgress >= 100) {
+            currentStatus = "Completed"
+            taskCompleted = true
+        } else if (avgProgress > 0 && currentStatus.equals("pending", ignoreCase = true)) {
+            currentStatus = "Ongoing"
+        }
+        workStatusError = null
+        isUpdatingSubtasks = true
+        aiScope.launch {
+            try {
+                val response = RetrofitClient.api.updateSubtasks(
+                    taskId = task.id,
+                    request = UpdateSubtasksRequest(subtasks = updated)
+                )
+                applyTaskUpdate(response)
+            } catch (e: Exception) {
+                Log.e("SUBTASKS", "Failed to update subtasks from evidence", e)
+                workStatusError = e.message ?: "Unable to save subtask progress."
+            } finally {
+                isUpdatingSubtasks = false
+            }
+        }
+    }
+
 
     // ============================================================
     // PREPARE / AUTO-DOWNLOAD GEMMA MODEL
@@ -775,6 +824,10 @@ fun TaskDetailScreen(
                 onAnnotationsChange = { updatedAnnotations ->
                     fieldAnnotations =
                         updatedAnnotations
+                    if (!isUploadingReport && !isGeneratingAiReport) {
+                        aiReportImage?.file?.delete()
+                        aiReportImage = null
+                    }
                 },
 
                 onCameraClick = {
@@ -783,6 +836,13 @@ fun TaskDetailScreen(
 
                 onGalleryClick = {
                     galleryLauncher.launch("image/*")
+                },
+
+                subtasks =
+                    currentSubtasks,
+
+                onSubtaskProgressUpdate = { label, stage, progress ->
+                    updateSubtaskProgressFromEvidence(label, stage, progress)
                 }
             )
 
@@ -858,6 +918,9 @@ fun TaskDetailScreen(
 
                 taskCompleted =
                     taskCompleted,
+
+                subtasks =
+                    currentSubtasks,
 
                 manpowerList =
                     manpowerList,
@@ -942,7 +1005,7 @@ fun TaskDetailScreen(
 
                                 try {
 
-                                    val image = existingImage ?: AiReportImage.snapshot(context, task.id, imageUri)
+                                    val image = existingImage ?: AiReportImage.snapshot(context, task.id, imageUri, reportAnnotations)
                                     analysisImage = image
 
                                     val pipeline =
@@ -1093,16 +1156,19 @@ fun TaskDetailScreen(
 
                     val reportText =
                         aiReport
-                    val reportImage = aiReportImage
+                    val currentPhotoUri =
+                        capturedPhotoUri
+                    val existingImage =
+                        aiReportImage
 
                     if (reportText.isNullOrBlank()) {
 
                         aiError =
                             "Generate an AI report first."
 
-                    } else if (reportImage == null || reportImage.taskId != task.id) {
+                    } else if (currentPhotoUri == null && (existingImage == null || existingImage.taskId != task.id)) {
 
-                        aiError = "Generate a report with the selected image before submitting."
+                        aiError = "Please capture or select an evidence photo before submitting."
 
                     } else if (!isUploadingReport && !isGeneratingAiReport) {
 
@@ -1117,10 +1183,26 @@ fun TaskDetailScreen(
 
                         aiScope.launch {
 
+                            var activeReportImage: AiReportImage? = null
+
                             try {
 
                                 val projectCode = task.projectCode
                                     ?: throw IllegalStateException("Project code is missing for this task.")
+
+                                val reportImage = existingImage?.takeIf { it.taskId == task.id }
+                                    ?: if (currentPhotoUri != null) {
+                                        AiReportImage.snapshot(
+                                            context,
+                                            task.id,
+                                            currentPhotoUri,
+                                            fieldAnnotations
+                                        ).also { aiReportImage = it }
+                                    } else {
+                                        throw IllegalStateException("No report image available for submission.")
+                                    }
+                                activeReportImage = reportImage
+
                                 val imageReference = reportImage.uploadReference(RetrofitClient.api)
 
                                 val response =
@@ -1186,13 +1268,13 @@ fun TaskDetailScreen(
                                     e
                                 )
 
-                                if (aiReportImage === reportImage && activeTaskId == task.id) {
+                                if (aiReportImage === activeReportImage && activeTaskId == task.id) {
                                     aiError = e.message ?: "Unable to upload report."
                                 }
 
                             } finally {
 
-                                if (aiReportImage !== reportImage) reportImage.file.delete()
+                                if (aiReportImage !== activeReportImage) activeReportImage?.file?.delete()
 
                                 isUploadingReport =
                                     false
@@ -1203,7 +1285,10 @@ fun TaskDetailScreen(
 
                 onMarkDone = {
 
-                    if (!isCompletingTask && !isSavingTaskStatus && !isUpdatingSubtasks) {
+                    if (!allSubtasksCompleted(currentSubtasks)) {
+                        aiError =
+                            "All subtasks must reach 100% before marking task as done."
+                    } else if (!isCompletingTask && !isSavingTaskStatus && !isUpdatingSubtasks) {
 
                         isCompletingTask =
                             true
@@ -1895,11 +1980,29 @@ private fun TaskSubtasksCard(
                                     isSaving = savingStatusId == item.id,
                                     onStatusChange = { onStatusChange(item.id, it) }
                                 )
-                                Text(
-                                    text = "Progress: ${item.displayedProgress}%",
-                                    fontSize = 11.sp,
-                                    color = TaskDetailGray
-                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    LinearProgressIndicator(
+                                        progress = {
+                                            (item.displayedProgress / 100f).coerceIn(0f, 1f)
+                                        },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(6.dp),
+                                        color = if (isDone) TaskDetailGreen else TaskDetailOrange,
+                                        trackColor = Color(0xFFEAE4E1)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "${item.displayedProgress}%",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (isDone) TaskDetailGreen else TaskDetailOrange
+                                    )
+                                }
                             }
                         }
                     }
@@ -2143,7 +2246,11 @@ private fun FieldEvidenceCard(
 
     onCameraClick: () -> Unit,
 
-    onGalleryClick: () -> Unit = {}
+    onGalleryClick: () -> Unit = {},
+
+    subtasks: List<SubtaskItem> = emptyList(),
+
+    onSubtaskProgressUpdate: ((label: String, stage: String, progress: Int?) -> Unit)? = null
 
 ) {
 
@@ -4164,6 +4271,12 @@ private fun FieldEvidenceCard(
 
                     selectedAnnotationId =
                         newAnnotation.id
+
+                    onSubtaskProgressUpdate?.invoke(
+                        label,
+                        stage,
+                        progress
+                    )
                 }
 
 
@@ -4186,7 +4299,10 @@ private fun FieldEvidenceCard(
                 // User can move the newly created box now.
                 annotationMode =
                     false
-            }
+            },
+
+            subtasks =
+                subtasks
         )
     }
 }
@@ -4208,6 +4324,26 @@ private data class PendingAnnotationBox(
 
 
 // ============================================================
+// HELPER: EXTRACT WORK LABELS FROM SUBTASKS
+// ============================================================
+
+internal fun subtaskWorkLabels(subtasks: List<SubtaskItem>): List<String> {
+    val labels = subtasks
+        .map { it.title.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+    return if (labels.isNotEmpty()) labels else listOf("General Work")
+}
+
+// ============================================================
+// HELPER: CHECK IF ALL SUBTASKS ARE 100% COMPLETED
+// ============================================================
+
+internal fun allSubtasksCompleted(subtasks: List<SubtaskItem>): Boolean {
+    return subtasks.isEmpty() || subtasks.all { it.completed || (it.progress ?: 0) >= 100 }
+}
+
+// ============================================================
 // ADD FIELD ANNOTATION DIALOG
 // ============================================================
 
@@ -4221,26 +4357,15 @@ private fun AddFieldAnnotationDialog(
         label: String,
         stage: String,
         progress: Int?
-    ) -> Unit
+    ) -> Unit,
+
+    subtasks: List<SubtaskItem> = emptyList()
 
 ) {
 
-    val workLabels =
-        listOf(
-            "Rebar Installation",
-            "Formwork Installation",
-            "Concrete Placement",
-            "Masonry Work",
-            "Wall Construction",
-            "Plastering",
-            "Painting",
-            "Excavation",
-            "Backfilling",
-            "Scaffolding",
-            "Electrical Installation",
-            "Plumbing Installation",
-            "Other"
-        )
+    val workLabels = remember(subtasks) {
+        subtaskWorkLabels(subtasks)
+    }
 
 
     val workStages =
@@ -4253,20 +4378,31 @@ private fun AddFieldAnnotationDialog(
         )
 
 
-    var selectedLabel by remember {
+    val initialMatchingSubtask = remember(workLabels, subtasks) {
+        val first = workLabels.firstOrNull()
+        subtasks.firstOrNull { it.title.trim().equals(first, ignoreCase = true) }
+    }
+
+    var selectedLabel by remember(workLabels) {
         mutableStateOf(
-            workLabels.first()
+            workLabels.firstOrNull().orEmpty()
         )
     }
 
-    var selectedStage by remember {
+    var selectedStage by remember(initialMatchingSubtask) {
         mutableStateOf(
-            "In Progress"
+            when {
+                initialMatchingSubtask?.completed == true || (initialMatchingSubtask?.displayedProgress ?: 0) >= 100 -> "Completed"
+                (initialMatchingSubtask?.displayedProgress ?: 0) > 0 -> "In Progress"
+                else -> "In Progress"
+            }
         )
     }
 
-    var progressValue by remember {
-        mutableStateOf(50f)
+    var progressValue by remember(initialMatchingSubtask) {
+        mutableStateOf(
+            initialMatchingSubtask?.displayedProgress?.toFloat() ?: 50f
+        )
     }
 
     var includeProgress by remember {
@@ -4334,7 +4470,7 @@ private fun AddFieldAnnotationDialog(
 
                         Text(
                             text =
-                                selectedLabel,
+                                selectedLabel.ifBlank { "Select Subtask" },
 
                             modifier =
                                 Modifier.weight(1f)
@@ -4383,6 +4519,17 @@ private fun AddFieldAnnotationDialog(
 
                                         labelMenuExpanded =
                                             false
+
+                                        val matching =
+                                            subtasks.firstOrNull { it.title.trim().equals(label, ignoreCase = true) }
+                                        if (matching != null) {
+                                            progressValue = matching.displayedProgress.toFloat()
+                                            if (matching.completed || matching.displayedProgress >= 100) {
+                                                selectedStage = "Completed"
+                                            } else if (matching.displayedProgress > 0) {
+                                                selectedStage = "In Progress"
+                                            }
+                                        }
                                     }
                                 )
                             }
@@ -4596,6 +4743,9 @@ private fun AddFieldAnnotationDialog(
                         }
                     )
                 },
+
+                enabled =
+                    selectedLabel.isNotBlank(),
 
                 colors =
                     ButtonDefaults
@@ -5520,6 +5670,8 @@ private fun AiFieldAnalysisCard(
     reportUploaded: Boolean,
 
     taskCompleted: Boolean,
+
+    subtasks: List<SubtaskItem> = emptyList(),
 
     manpowerList: List<ManpowerItem> = emptyList(),
 
@@ -6652,119 +6804,170 @@ private fun AiFieldAnalysisCard(
                                 FontWeight.Bold
                         )
                     }
-                }
-
-
-                // ====================================================
+                      // ====================================================
                 // MARK TASK AS DONE
-                // Available only after report upload succeeds
+                // Available only after all subtasks reach 100%
                 // ====================================================
 
-                Spacer(
-                    modifier =
-                        Modifier.height(10.dp)
-                )
+                val allSubtasksDone =
+                    allSubtasksCompleted(subtasks)
 
-                Button(
-                    onClick =
-                        onMarkDone,
+                if (taskCompleted || allSubtasksDone) {
 
-                    enabled =
-                        reportUploaded &&
-                                !isCompleting &&
-                                !taskCompleted,
+                    Spacer(
+                        modifier =
+                            Modifier.height(10.dp)
+                    )
 
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .height(50.dp),
+                    Button(
+                        onClick =
+                            onMarkDone,
 
-                    shape =
-                        RoundedCornerShape(12.dp),
+                        enabled =
+                            reportUploaded &&
+                                    !isCompleting &&
+                                    !taskCompleted,
 
-                    colors =
-                        ButtonDefaults.buttonColors(
-                            containerColor =
-                                TaskDetailGreen,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .height(50.dp),
 
-                            disabledContainerColor =
-                                if (taskCompleted) {
-                                    Color(0xFFE1F5E7)
-                                } else {
-                                    Color(0xFFE0E0E0)
-                                },
+                        shape =
+                            RoundedCornerShape(12.dp),
 
-                            disabledContentColor =
-                                if (taskCompleted) {
-                                    TaskDetailGreen
-                                } else {
-                                    Color.Gray
-                                }
-                        )
-                ) {
+                        colors =
+                            ButtonDefaults.buttonColors(
+                                containerColor =
+                                    TaskDetailGreen,
 
-                    if (isCompleting) {
+                                disabledContainerColor =
+                                    if (taskCompleted) {
+                                        Color(0xFFE1F5E7)
+                                    } else {
+                                        Color(0xFFE0E0E0)
+                                    },
 
-                        CircularProgressIndicator(
+                                disabledContentColor =
+                                    if (taskCompleted) {
+                                        TaskDetailGreen
+                                    } else {
+                                        Color.Gray
+                                    }
+                            )
+                    ) {
+
+                        if (isCompleting) {
+
+                            CircularProgressIndicator(
+                                modifier =
+                                    Modifier.size(19.dp),
+
+                                strokeWidth =
+                                    2.dp,
+
+                                color =
+                                    Color.White
+                            )
+
+                            Spacer(
+                                modifier =
+                                    Modifier.width(8.dp)
+                            )
+
+                            Text(
+                                text =
+                                    "Completing Task...",
+
+                                fontWeight =
+                                    FontWeight.Bold
+                            )
+
+                        } else {
+
+                            Icon(
+                                imageVector =
+                                    Icons.Outlined.CheckCircle,
+
+                                contentDescription =
+                                    null
+                            )
+
+                            Spacer(
+                                modifier =
+                                    Modifier.width(8.dp)
+                            )
+
+                            Text(
+                                text =
+                                    when {
+                                        taskCompleted ->
+                                            "Task Completed"
+
+                                        !reportUploaded ->
+                                            "Upload Report Before Completing"
+
+                                        else ->
+                                            "Mark Task as Done"
+                                    },
+
+                                fontWeight =
+                                    FontWeight.Bold
+                            )
+                        }
+                    }
+                } else if (!taskCompleted && reportUploaded) {
+
+                    Spacer(
+                        modifier =
+                            Modifier.height(10.dp)
+                    )
+
+                    Surface(
+                        color =
+                            Color(0xFFFFFBEB),
+                        shape =
+                            RoundedCornerShape(10.dp),
+                        modifier =
+                            Modifier.fillMaxWidth()
+                    ) {
+                        Row(
                             modifier =
-                                Modifier.size(19.dp),
-
-                            strokeWidth =
-                                2.dp,
-
-                            color =
-                                Color.White
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.width(8.dp)
-                        )
-
-                        Text(
-                            text =
-                                "Completing Task...",
-
-                            fontWeight =
-                                FontWeight.Bold
-                        )
-
-                    } else {
-
-                        Icon(
-                            imageVector =
-                                Icons.Outlined.CheckCircle,
-
-                            contentDescription =
-                                null
-                        )
-
-                        Spacer(
-                            modifier =
-                                Modifier.width(8.dp)
-                        )
-
-                        Text(
-                            text =
-                                when {
-                                    taskCompleted ->
-                                        "Task Completed"
-
-                                    !reportUploaded ->
-                                        "Upload Report Before Completing"
-
-                                    else ->
-                                        "Mark Task as Done"
-                                },
-
-                            fontWeight =
-                                FontWeight.Bold
-                        )
+                                Modifier.padding(12.dp),
+                            verticalAlignment =
+                                Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector =
+                                    Icons.Outlined.Info,
+                                contentDescription =
+                                    null,
+                                tint =
+                                    TaskDetailOrange,
+                                modifier =
+                                    Modifier.size(18.dp)
+                            )
+                            Spacer(
+                                modifier =
+                                    Modifier.width(8.dp)
+                            )
+                            Text(
+                                text =
+                                    "All subtasks must reach 100% to mark this task as done.",
+                                fontSize =
+                                    12.sp,
+                                color =
+                                    Color(0xFF92400E),
+                                fontWeight =
+                                    FontWeight.Medium
+                            )
+                        }
                     }
                 }
             }
         }
     }
+}
 }
 
 
