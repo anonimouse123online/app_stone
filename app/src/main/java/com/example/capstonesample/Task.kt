@@ -33,6 +33,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.border
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.TextStyle
@@ -133,6 +135,15 @@ data class ManpowerItem(
     val count: String = "1",
     val isPreset: Boolean = false
 )
+
+fun hasValidManpower(manpowerList: List<ManpowerItem>): Boolean {
+    return manpowerList.isNotEmpty() && manpowerList.sumOf { it.count.toIntOrNull() ?: 0 } > 0
+}
+
+fun resolveSelectedPhotoIndex(currentIndex: Int, totalPhotos: Int): Int {
+    if (totalPhotos <= 0) return 0
+    return currentIndex.coerceIn(0, totalPhotos - 1)
+}
 
 
 // ============================================================
@@ -247,11 +258,57 @@ fun TaskDetailScreen(
     }
 
     // ============================================================
-    // ENGINEER IMAGE ANNOTATIONS
+    // ENGINEER IMAGE ANNOTATIONS & MULTI-PHOTO STATE
     // ============================================================
 
-    var fieldAnnotations by remember(task.id) {
-        mutableStateOf<List<FieldAnnotation>>(emptyList())
+    var capturedPhotoUris by remember(task.id) {
+        mutableStateOf<List<Uri>>(emptyList())
+    }
+
+    var selectedPhotoIndex by remember(task.id) {
+        mutableIntStateOf(0)
+    }
+
+    var fieldAnnotationsMap by remember(task.id) {
+        mutableStateOf<Map<Uri, List<FieldAnnotation>>>(emptyMap())
+    }
+
+    val currentPhotoUri = capturedPhotoUris.getOrNull(
+        resolveSelectedPhotoIndex(selectedPhotoIndex, capturedPhotoUris.size)
+    )
+
+    val fieldAnnotations = currentPhotoUri?.let { fieldAnnotationsMap[it] } ?: emptyList()
+
+    val onRemovePhotoHandler: (Int) -> Unit = { removeIndex ->
+        if (removeIndex in capturedPhotoUris.indices) {
+            val removedUri = capturedPhotoUris[removeIndex]
+            val updatedList = capturedPhotoUris.toMutableList().apply { removeAt(removeIndex) }
+            capturedPhotoUris = updatedList
+            fieldAnnotationsMap = fieldAnnotationsMap - removedUri
+            selectedPhotoIndex = resolveSelectedPhotoIndex(selectedPhotoIndex, updatedList.size)
+            imageSelectionVersion++
+            if (!isUploadingReport && !isGeneratingAiReport) aiReportImage?.file?.delete()
+            aiReportImage = null
+            reportUploaded = false
+            actionMessage = null
+            detectedObjects = ""
+            aiReport = null
+            aiError = null
+        }
+    }
+
+    val onSelectPhotoIndexHandler: (Int) -> Unit = { newIndex ->
+        if (newIndex in capturedPhotoUris.indices && newIndex != selectedPhotoIndex) {
+            selectedPhotoIndex = newIndex
+            imageSelectionVersion++
+            if (!isUploadingReport && !isGeneratingAiReport) aiReportImage?.file?.delete()
+            aiReportImage = null
+            reportUploaded = false
+            actionMessage = null
+            detectedObjects = ""
+            aiReport = null
+            aiError = null
+        }
     }
 
     var currentSubtasks by remember(task.id) {
@@ -478,22 +535,13 @@ fun TaskDetailScreen(
 
 
     // ============================================================
-    // CAMERA & GALLERY STATE
+    // CAMERA & GALLERY LAUNCHERS
     // ============================================================
-
-    // URI of the photo that has successfully been captured.
-    var capturedPhotoUri by remember(task.id) {
-        mutableStateOf<Uri?>(null)
-    }
 
     // URI where the next photo will be saved.
     var pendingPhotoUri by remember(task.id) {
         mutableStateOf<Uri?>(null)
     }
-
-    // ============================================================
-    // CAMERA & GALLERY LAUNCHERS
-    // ============================================================
 
     val cameraLauncher =
         rememberLauncherForActivityResult(
@@ -502,43 +550,38 @@ fun TaskDetailScreen(
         ) { success ->
 
             if (success) {
+                pendingPhotoUri?.let { newUri ->
+                    capturedPhotoUris = capturedPhotoUris + newUri
+                    selectedPhotoIndex = capturedPhotoUris.lastIndex
 
-                // The camera successfully saved the image.
-                capturedPhotoUri =
-                    pendingPhotoUri
-
-                // New photo = clear old AI result and old annotations.
-                imageSelectionVersion++
-                if (!isUploadingReport && !isGeneratingAiReport) aiReportImage?.file?.delete()
-                aiReportImage = null
-                reportUploaded = false
-                actionMessage = null
-                fieldAnnotations = emptyList()
-                detectedObjects = ""
-                aiReport = null
-                aiError = null
-
+                    imageSelectionVersion++
+                    if (!isUploadingReport && !isGeneratingAiReport) aiReportImage?.file?.delete()
+                    aiReportImage = null
+                    reportUploaded = false
+                    actionMessage = null
+                    detectedObjects = ""
+                    aiReport = null
+                    aiError = null
+                }
             } else {
-
-                // User cancelled the camera.
-                pendingPhotoUri =
-                    null
+                pendingPhotoUri = null
             }
         }
 
     val galleryLauncher =
         rememberLauncherForActivityResult(
             contract =
-                ActivityResultContracts.GetContent()
-        ) { uri: Uri? ->
-            if (uri != null) {
-                capturedPhotoUri = uri
+                ActivityResultContracts.GetMultipleContents()
+        ) { uris: List<Uri> ->
+            if (uris.isNotEmpty()) {
+                val updated = (capturedPhotoUris + uris).distinct()
+                capturedPhotoUris = updated
+                selectedPhotoIndex = updated.lastIndex
                 imageSelectionVersion++
                 if (!isUploadingReport && !isGeneratingAiReport) aiReportImage?.file?.delete()
                 aiReportImage = null
                 reportUploaded = false
                 actionMessage = null
-                fieldAnnotations = emptyList()
                 detectedObjects = ""
                 aiReport = null
                 aiError = null
@@ -815,15 +858,28 @@ fun TaskDetailScreen(
 
             FieldEvidenceCard(
 
+                capturedPhotoUris =
+                    capturedPhotoUris,
+
+                selectedPhotoIndex =
+                    selectedPhotoIndex,
+
+                onSelectPhotoIndex =
+                    onSelectPhotoIndexHandler,
+
+                onRemovePhoto =
+                    onRemovePhotoHandler,
+
                 capturedPhotoUri =
-                    capturedPhotoUri,
+                    currentPhotoUri,
 
                 annotations =
                     fieldAnnotations,
 
                 onAnnotationsChange = { updatedAnnotations ->
-                    fieldAnnotations =
-                        updatedAnnotations
+                    currentPhotoUri?.let { uri ->
+                        fieldAnnotationsMap = fieldAnnotationsMap + (uri to updatedAnnotations)
+                    }
                     if (!isUploadingReport && !isGeneratingAiReport) {
                         aiReportImage?.file?.delete()
                         aiReportImage = null
@@ -876,7 +932,10 @@ fun TaskDetailScreen(
             AiFieldAnalysisCard(
 
                 capturedPhotoUri =
-                    capturedPhotoUri,
+                    currentPhotoUri,
+
+                capturedPhotoCount =
+                    capturedPhotoUris.size,
 
                 aiModelInstalled =
                     aiModelInstalled,
@@ -936,7 +995,7 @@ fun TaskDetailScreen(
                 onGenerateReport = {
 
                     val imageUri =
-                        capturedPhotoUri
+                        currentPhotoUri
 
                     when {
 
@@ -956,6 +1015,12 @@ fun TaskDetailScreen(
 
                             aiError =
                                 "The bundled Gemma AI model is not ready."
+                        }
+
+                        !hasValidManpower(manpowerList) -> {
+
+                            aiError =
+                                "Manpower deployment is required before generating the AI report."
                         }
 
                         !isGeneratingAiReport && !isUploadingReport -> {
@@ -1156,17 +1221,19 @@ fun TaskDetailScreen(
 
                     val reportText =
                         aiReport
-                    val currentPhotoUri =
-                        capturedPhotoUri
+                    val currentUri =
+                        currentPhotoUri
                     val existingImage =
                         aiReportImage
+                    val allUris =
+                        if (capturedPhotoUris.isNotEmpty()) capturedPhotoUris else listOfNotNull(currentUri)
 
                     if (reportText.isNullOrBlank()) {
 
                         aiError =
                             "Generate an AI report first."
 
-                    } else if (currentPhotoUri == null && (existingImage == null || existingImage.taskId != task.id)) {
+                    } else if (allUris.isEmpty() && (existingImage == null || existingImage.taskId != task.id)) {
 
                         aiError = "Please capture or select an evidence photo before submitting."
 
@@ -1183,27 +1250,46 @@ fun TaskDetailScreen(
 
                         aiScope.launch {
 
-                            var activeReportImage: AiReportImage? = null
+                            val temporaryImages = mutableListOf<AiReportImage>()
 
                             try {
 
                                 val projectCode = task.projectCode
                                     ?: throw IllegalStateException("Project code is missing for this task.")
 
-                                val reportImage = existingImage?.takeIf { it.taskId == task.id }
-                                    ?: if (currentPhotoUri != null) {
+                                val reportImages = mutableListOf<AiReportImage>()
+
+                                for (uri in allUris) {
+                                    val img = if (uri == currentUri && existingImage?.taskId == task.id) {
+                                        existingImage
+                                    } else {
+                                        val annotationsForUri = fieldAnnotationsMap[uri] ?: emptyList()
                                         AiReportImage.snapshot(
                                             context,
                                             task.id,
-                                            currentPhotoUri,
-                                            fieldAnnotations
-                                        ).also { aiReportImage = it }
-                                    } else {
-                                        throw IllegalStateException("No report image available for submission.")
+                                            uri,
+                                            annotationsForUri
+                                        ).also { temporaryImages.add(it) }
                                     }
-                                activeReportImage = reportImage
+                                    reportImages.add(img)
+                                }
 
-                                val imageReference = reportImage.uploadReference(RetrofitClient.api)
+                                if (reportImages.isEmpty() && existingImage?.taskId == task.id) {
+                                    reportImages.add(existingImage)
+                                }
+
+                                if (reportImages.isEmpty()) {
+                                    throw IllegalStateException("No report image available for submission.")
+                                }
+
+                                val imageReferences = mutableListOf<String>()
+                                for (reportImage in reportImages) {
+                                    val imageReference = reportImage.uploadReference(RetrofitClient.api)
+                                    imageReferences.add(imageReference)
+                                }
+
+                                val uploadDate = reportImages.firstNotNullOfOrNull { it.uploadedDate }
+                                    ?: throw IllegalStateException("Report image upload date missing.")
 
                                 val response =
                                     RetrofitClient.api
@@ -1227,8 +1313,8 @@ fun TaskDetailScreen(
                                                     reportText =
                                                         reportText,
 
-                                                    images = listOf(imageReference),
-                                                    reportDate = checkNotNull(reportImage.uploadedDate)
+                                                    images = imageReferences,
+                                                    reportDate = uploadDate
                                                 )
                                         )
 
@@ -1237,7 +1323,7 @@ fun TaskDetailScreen(
                                     response.body()?.success == true
                                 ) {
 
-                                    if (aiReportImage === reportImage && activeTaskId == task.id) {
+                                    if (activeTaskId == task.id) {
                                         reportUploaded = true
                                         actionMessage = "Report uploaded successfully."
                                     }
@@ -1253,7 +1339,7 @@ fun TaskDetailScreen(
                                         null
                                     }
 
-                                    if (aiReportImage === reportImage && activeTaskId == task.id) {
+                                    if (activeTaskId == task.id) {
                                         aiError = response.body()?.message
                                             ?: errServerMsg?.takeIf { it.isNotBlank() }
                                             ?: "Unable to upload report."
@@ -1268,13 +1354,17 @@ fun TaskDetailScreen(
                                     e
                                 )
 
-                                if (aiReportImage === activeReportImage && activeTaskId == task.id) {
+                                if (activeTaskId == task.id) {
                                     aiError = e.message ?: "Unable to upload report."
                                 }
 
                             } finally {
 
-                                if (aiReportImage !== activeReportImage) activeReportImage?.file?.delete()
+                                for (tempImg in temporaryImages) {
+                                    if (tempImg !== aiReportImage) {
+                                        tempImg.file.delete()
+                                    }
+                                }
 
                                 isUploadingReport =
                                     false
@@ -2237,7 +2327,15 @@ private fun TaskProgressCard(
 @Composable
 private fun FieldEvidenceCard(
 
-    capturedPhotoUri: Uri?,
+    capturedPhotoUris: List<Uri> = emptyList(),
+
+    selectedPhotoIndex: Int = 0,
+
+    onSelectPhotoIndex: (Int) -> Unit = {},
+
+    onRemovePhoto: (Int) -> Unit = {},
+
+    capturedPhotoUri: Uri? = null,
 
     annotations: List<FieldAnnotation>,
 
@@ -2260,6 +2358,9 @@ private fun FieldEvidenceCard(
     val latestAnnotations =
         rememberUpdatedState(annotations)
 
+    val photoList = if (capturedPhotoUris.isNotEmpty()) capturedPhotoUris else listOfNotNull(capturedPhotoUri)
+    val activeIndex = resolveSelectedPhotoIndex(selectedPhotoIndex, photoList.size)
+    val currentPhotoUri = photoList.getOrNull(activeIndex)
 
     // ============================================================
     // ANNOTATION STATE
@@ -2297,6 +2398,16 @@ private fun FieldEvidenceCard(
 
     var movingAnnotationId by remember {
         mutableStateOf<Long?>(null)
+    }
+
+    LaunchedEffect(currentPhotoUri) {
+        annotationMode = false
+        dragStart = null
+        dragEnd = null
+        pendingBox = null
+        showAnnotationDialog = false
+        selectedAnnotationId = null
+        movingAnnotationId = null
     }
 
 
@@ -2435,10 +2546,10 @@ private fun FieldEvidenceCard(
 
                     Text(
                         text =
-                            if (capturedPhotoUri == null) {
+                            if (photoList.isEmpty()) {
                                 "Camera"
                             } else {
-                                "Retake"
+                                "+ Camera"
                             },
                         fontSize =
                             13.sp,
@@ -2483,7 +2594,11 @@ private fun FieldEvidenceCard(
 
                     Text(
                         text =
-                            "Gallery",
+                            if (photoList.isEmpty()) {
+                                "Gallery"
+                            } else {
+                                "+ Gallery"
+                            },
                         fontSize =
                             13.sp,
                         fontWeight =
@@ -2494,10 +2609,88 @@ private fun FieldEvidenceCard(
 
 
             // ====================================================
+            // MULTI-PHOTO THUMBNAILS ROW
+            // ====================================================
+
+            if (photoList.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    photoList.forEachIndexed { index, uri ->
+                        val isSelected = index == activeIndex
+                        Box(
+                            modifier = Modifier
+                                .size(76.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .border(
+                                    width = if (isSelected) 2.5.dp else 1.dp,
+                                    color = if (isSelected) TaskDetailOrange else Color(0xFFE2E8F0),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .clickable {
+                                    onSelectPhotoIndex(index)
+                                }
+                        ) {
+                            coil.compose.AsyncImage(
+                                model = uri,
+                                contentDescription = "Photo thumbnail #${index + 1}",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+
+                            // Photo index badge
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(4.dp),
+                                shape = RoundedCornerShape(4.dp),
+                                color = Color.Black.copy(alpha = 0.65f)
+                            ) {
+                                Text(
+                                    text = "#${index + 1}",
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+
+                            // Delete button
+                            Surface(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(3.dp)
+                                    .size(20.dp)
+                                    .clickable {
+                                        onRemovePhoto(index)
+                                    },
+                                shape = CircleShape,
+                                color = Color.Black.copy(alpha = 0.7f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Close,
+                                    contentDescription = "Remove photo",
+                                    tint = Color.White,
+                                    modifier = Modifier.padding(3.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+
+            // ====================================================
             // CAPTURED PHOTO
             // ====================================================
 
-            if (capturedPhotoUri != null) {
+            if (currentPhotoUri != null) {
 
 
                 Spacer(
@@ -2530,7 +2723,11 @@ private fun FieldEvidenceCard(
                         Text(
 
                             text =
-                                "Captured Photo",
+                                if (photoList.size > 1) {
+                                    "Editing Photo ${activeIndex + 1} of ${photoList.size}"
+                                } else {
+                                    "Captured Photo"
+                                },
 
                             fontSize =
                                 13.sp,
@@ -2640,14 +2837,14 @@ private fun FieldEvidenceCard(
                 // =================================================
 
                 val bitmap =
-                    remember(capturedPhotoUri) {
+                    remember(currentPhotoUri) {
 
                         try {
 
                             context
                                 .contentResolver
                                 .openInputStream(
-                                    capturedPhotoUri
+                                    currentPhotoUri
                                 )
                                 ?.use { inputStream ->
 
@@ -5643,6 +5840,8 @@ private fun AiFieldAnalysisCard(
 
     capturedPhotoUri: Uri?,
 
+    capturedPhotoCount: Int = 1,
+
     aiModelInstalled: Boolean,
 
     isPreparing: Boolean,
@@ -5791,7 +5990,11 @@ private fun AiFieldAnalysisCard(
                 text =
                     if (capturedPhotoUri != null) {
 
-                        "Field photo ready"
+                        if (capturedPhotoCount > 1) {
+                            "$capturedPhotoCount field photos ready"
+                        } else {
+                            "Field photo ready"
+                        }
 
                     } else {
 
@@ -5829,6 +6032,33 @@ private fun AiFieldAnalysisCard(
 
                         else ->
                             "Gemma AI model is not ready"
+                    }
+            )
+
+
+            Spacer(
+                modifier =
+                    Modifier.height(8.dp)
+            )
+
+
+            // ====================================================
+            // MANPOWER STATUS
+            // ====================================================
+
+            val totalManpower = manpowerList.sumOf { it.count.toIntOrNull() ?: 0 }
+            val hasManpower = hasValidManpower(manpowerList)
+
+            AiStatusRow(
+
+                good =
+                    hasManpower,
+
+                text =
+                    if (hasManpower) {
+                        "Manpower deployment ready ($totalManpower deployed)"
+                    } else {
+                        "Add manpower deployment (Required)"
                     }
             )
 
@@ -5950,10 +6180,9 @@ private fun AiFieldAnalysisCard(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                border = BorderStroke(1.dp, Color(0xFFFFD8CC))
+                border = BorderStroke(1.dp, if (!hasManpower) Color(0xFFFFB4A2) else Color(0xFFFFD8CC))
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
-                    val totalManpower = manpowerList.sumOf { it.count.toIntOrNull() ?: 0 }
 
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -5974,17 +6203,30 @@ private fun AiFieldAnalysisCard(
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF1E293B)
                             )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (hasManpower) Color(0xFFE2F9E8) else Color(0xFFFFEDEC)
+                            ) {
+                                Text(
+                                    text = if (hasManpower) "Added" else "Required",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (hasManpower) TaskDetailGreen else Color(0xFFE11D48),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
                         }
 
                         Surface(
                             shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFFFFECE5)
+                            color = if (hasManpower) Color(0xFFFFECE5) else Color(0xFFF1F5F9)
                         ) {
                             Text(
                                 text = "Total: $totalManpower",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = TaskDetailOrange,
+                                color = if (hasManpower) TaskDetailOrange else TaskDetailGray,
                                 modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
@@ -5994,9 +6236,16 @@ private fun AiFieldAnalysisCard(
 
                     if (manpowerList.isEmpty()) {
                         Text(
-                            text = "No manpower added yet. Tap below to add:",
+                            text = "No manpower added yet. Tap below to add (Required):",
                             fontSize = 11.sp,
                             color = TaskDetailGray,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        )
+                    } else if (!hasManpower) {
+                        Text(
+                            text = "Total manpower is 0. Please set a count above 0 (Required):",
+                            fontSize = 11.sp,
+                            color = Color(0xFFE11D48),
                             modifier = Modifier.padding(bottom = 6.dp)
                         )
                     } else {
@@ -6337,6 +6586,7 @@ private fun AiFieldAnalysisCard(
                 enabled =
                     capturedPhotoUri != null &&
                             aiModelInstalled &&
+                            hasManpower &&
                             !isPreparing &&
                             !isGenerating &&
                             !isUploading,
@@ -6408,6 +6658,29 @@ private fun AiFieldAnalysisCard(
 
                         fontWeight =
                             FontWeight.Bold
+                    )
+                }
+            }
+
+            if (capturedPhotoUri != null && aiModelInstalled && !hasManpower) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Info,
+                        contentDescription = null,
+                        tint = Color(0xFFE11D48),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Manpower deployment is required before generating AI report",
+                        fontSize = 11.sp,
+                        color = Color(0xFFE11D48),
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }

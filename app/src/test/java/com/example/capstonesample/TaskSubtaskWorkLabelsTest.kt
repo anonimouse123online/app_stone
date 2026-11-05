@@ -70,4 +70,37 @@ class TaskSubtaskWorkLabelsTest {
     fun allSubtasksCompletedAcceptsEmptySubtasks() {
         org.junit.Assert.assertTrue(allSubtasksCompleted(emptyList()))
     }
+
+    @Test
+    fun hasValidManpowerRejectsEmptyOrZeroCount() {
+        org.junit.Assert.assertFalse(hasValidManpower(emptyList()))
+        org.junit.Assert.assertFalse(hasValidManpower(listOf(ManpowerItem(role = "PIC", count = "0"))))
+        org.junit.Assert.assertFalse(hasValidManpower(listOf(ManpowerItem(role = "PIC", count = ""))))
+        org.junit.Assert.assertFalse(hasValidManpower(listOf(ManpowerItem(role = "PIC", count = "abc"))))
+    }
+
+    @Test
+    fun hasValidManpowerAcceptsPositiveCount() {
+        org.junit.Assert.assertTrue(hasValidManpower(listOf(ManpowerItem(role = "PIC", count = "1"))))
+        org.junit.Assert.assertTrue(hasValidManpower(listOf(
+            ManpowerItem(role = "PIC", count = "0"),
+            ManpowerItem(role = "Head Tech", count = "2")
+        )))
+    }
+
+    @Test
+    fun resolveSelectedPhotoIndexHandlesEmptyAndBounds() {
+        assertEquals(0, resolveSelectedPhotoIndex(0, 0))
+        assertEquals(0, resolveSelectedPhotoIndex(-1, 0))
+        assertEquals(0, resolveSelectedPhotoIndex(5, 0))
+
+        assertEquals(0, resolveSelectedPhotoIndex(0, 1))
+        assertEquals(0, resolveSelectedPhotoIndex(-2, 1))
+        assertEquals(0, resolveSelectedPhotoIndex(3, 1))
+
+        assertEquals(1, resolveSelectedPhotoIndex(1, 3))
+        assertEquals(2, resolveSelectedPhotoIndex(2, 3))
+        assertEquals(2, resolveSelectedPhotoIndex(5, 3))
+        assertEquals(0, resolveSelectedPhotoIndex(-1, 3))
+    }
 }
