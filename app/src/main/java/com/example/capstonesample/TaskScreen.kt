@@ -33,6 +33,8 @@ import com.example.capstonesample.ui.theme.*
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.api.TaskResponse
 import com.example.capstonesample.data.api.SubtaskItem
+import com.example.capstonesample.data.model.isTaskOverdue
+import com.example.capstonesample.data.model.workStatusLabel
 
 import kotlinx.coroutines.launch
 
@@ -635,8 +637,7 @@ fun TasksScreen(
             // ========================================================
 
             val taskStatus =
-                task.status
-                    ?: "Pending"
+                workStatusLabel(task.status, task.dueDate)
 
 
             // ========================================================
@@ -655,18 +656,19 @@ fun TasksScreen(
                         TaskGreen
 
 
-                    "in progress",
-                    "ongoing" ->
-
-                        TaskOrange
-
-
+                    "delayed",
                     "urgent",
                     "overdue",
                     "blocked",
                     "rejected" ->
 
                         TaskRed
+
+
+                    "in progress",
+                    "ongoing" ->
+
+                        TaskOrange
 
 
                     else ->
@@ -784,9 +786,14 @@ fun TasksScreen(
 
                 overdue =
                     taskStatus.equals(
+                        "delayed",
+                        ignoreCase = true
+                    ) ||
+                    taskStatus.equals(
                         "overdue",
                         ignoreCase = true
-                    ),
+                    ) ||
+                    isTaskOverdue(task.dueDate),
 
                 subtasks =
                     task.subtasks ?: emptyList(),
@@ -848,9 +855,12 @@ fun TasksScreen(
                         "In Progress",
                         ignoreCase = true
                     ) ||
-
                             it.status.equals(
                                 "Ongoing",
+                                ignoreCase = true
+                            ) ||
+                            it.status.equals(
+                                "Delayed",
                                 ignoreCase = true
                             )
                 }
@@ -2173,6 +2183,7 @@ private fun TaskStatusBadge(
                 )
 
 
+            "delayed",
             "overdue",
             "blocked",
             "rejected",
@@ -2211,6 +2222,7 @@ private fun TaskStatusBadge(
                 TaskGreen
 
 
+            "delayed",
             "overdue",
             "blocked",
             "rejected",

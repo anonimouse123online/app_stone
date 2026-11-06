@@ -350,7 +350,7 @@ fun TaskDetailScreen(
             throw IllegalStateException(serverError ?: body?.error ?: body?.message
                 ?: "Unable to save task changes (${response.code()}).")
         }
-        currentStatus = saved.status ?: currentStatus
+        currentStatus = workStatusLabel(saved.status ?: currentStatus, task.schedule)
         currentProgress = saved.progress ?: currentProgress
         currentSubtasks = saved.subtasks ?: currentSubtasks
         taskCompleted = currentStatus.equals("Completed", true) ||
@@ -2110,24 +2110,35 @@ private fun TaskSubtasksCard(
 @Composable
 private fun WorkStatusDropdown(
     status: String?,
+    dueDate: String? = null,
     enabled: Boolean,
     isSaving: Boolean,
     onStatusChange: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     LaunchedEffect(enabled) { if (!enabled) expanded = false }
+    val displayLabel = workStatusLabel(status, dueDate)
+    val isDelayed = displayLabel.equals("Delayed", ignoreCase = true)
     Box {
         OutlinedButton(
             onClick = { expanded = true },
             enabled = enabled,
+            colors = if (isDelayed) {
+                ButtonDefaults.outlinedButtonColors(
+                    contentColor = TaskDetailRed
+                )
+            } else ButtonDefaults.outlinedButtonColors(),
+            border = if (isDelayed) {
+                BorderStroke(1.dp, Color(0xFFFECACA))
+            } else ButtonDefaults.outlinedButtonBorder(enabled),
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
         ) {
-            Text(if (isSaving) "Saving..." else workStatusLabel(status), fontSize = 12.sp)
+            Text(if (isSaving) "Saving..." else displayLabel, fontSize = 12.sp, color = if (isDelayed) TaskDetailRed else Color.Unspecified)
             Spacer(Modifier.width(6.dp))
             if (isSaving) {
-                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = if (isDelayed) TaskDetailRed else MaterialTheme.colorScheme.primary)
             } else {
-                Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Select work status", modifier = Modifier.size(18.dp))
+                Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Select work status", modifier = Modifier.size(18.dp), tint = if (isDelayed) TaskDetailRed else LocalContentColor.current)
             }
         }
         DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
@@ -2258,6 +2269,7 @@ private fun TaskProgressCard(
 
             WorkStatusDropdown(
                 status = status,
+                dueDate = task.schedule,
                 enabled = canChangeStatus && !isSavingStatus,
                 isSaving = isSavingStatus,
                 onStatusChange = onStatusChange
@@ -7301,6 +7313,7 @@ private fun TaskDetailStatusBadge(
             "done" ->
                 Color(0xFFE1F5E7)
 
+            "delayed",
             "overdue",
             "urgent",
             "blocked" ->
@@ -7320,6 +7333,7 @@ private fun TaskDetailStatusBadge(
             "done" ->
                 TaskDetailGreen
 
+            "delayed",
             "overdue",
             "urgent",
             "blocked" ->

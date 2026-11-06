@@ -56,4 +56,15 @@ class TaskWorkStatusTest {
         assertFalse(isFinishedWorkStatus("Pending"))
         assertFalse(isFinishedWorkStatus("Ongoing"))
     }
+
+    @Test
+    fun overdueTasksDisplayDelayedUnlessCompleted() {
+        assertEquals("Delayed", workStatusLabel("ongoing", "2000-01-01"))
+        assertEquals("Delayed", workStatusLabel("pending", "2000-01-01"))
+        assertEquals("Delayed", workStatusLabel("In Progress", "2000-01-01"))
+        assertEquals("Completed", workStatusLabel("Completed", "2000-01-01"))
+        assertEquals("Done", workStatusLabel("Done", "2000-01-01"))
+        assertEquals("Ongoing", workStatusLabel("ongoing", "2099-01-01"))
+        assertEquals("Pending", workStatusLabel("pending", "2099-01-01"))
+    }
 }

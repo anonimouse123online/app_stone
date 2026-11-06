@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.example.capstonesample.data.api.NotificationData
+import com.example.capstonesample.data.model.workStatusLabel
 import com.example.capstonesample.security.TokenManager
 import android.net.Uri
 import android.os.Environment
@@ -761,8 +762,7 @@ fun DashboardScreen(
                         buildString {
 
                             append(
-                                task.status
-                                    ?: "Pending"
+                                workStatusLabel(task.status, task.dueDate)
                             )
 
                             task.projectName?.let {
@@ -780,8 +780,8 @@ fun DashboardScreen(
 
                     type =
                         when (
-                            task.status
-                                ?.uppercase()
+                            workStatusLabel(task.status, task.dueDate)
+                                .uppercase()
                         ) {
 
                             "DELAYED",
@@ -817,17 +817,16 @@ fun DashboardScreen(
 
     val delayedTasks =
         tasks.count { task ->
-
-            task.status.equals(
-                "Delayed",
-                ignoreCase = true
-            ) ||
-
+            val label = workStatusLabel(task.status, task.dueDate)
+            label.equals("Delayed", ignoreCase = true) ||
+                    task.status.equals(
+                        "Delayed",
+                        ignoreCase = true
+                    ) ||
                     task.status.equals(
                         "Overdue",
                         ignoreCase = true
                     ) ||
-
                     task.status.equals(
                         "Blocked",
                         ignoreCase = true
