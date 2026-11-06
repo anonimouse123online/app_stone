@@ -2130,7 +2130,7 @@ private fun WorkStatusDropdown(
             } else ButtonDefaults.outlinedButtonColors(),
             border = if (isDelayed) {
                 BorderStroke(1.dp, Color(0xFFFECACA))
-            } else ButtonDefaults.outlinedButtonBorder(enabled),
+            } else ButtonDefaults.outlinedButtonBorder,
             contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Text(if (isSaving) "Saving..." else displayLabel, fontSize = 12.sp, color = if (isDelayed) TaskDetailRed else Color.Unspecified)
