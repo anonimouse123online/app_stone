@@ -438,6 +438,11 @@ fun TasksScreen(
                         serverTasks =
                             result.data
 
+                        NavBadgeState.ongoingTasksCount = serverTasks.count {
+                            NavBadgeState.isOngoingTask(it.status, it.dueDate, it.progress, it.subtasks)
+                        }
+                        NavBadgeState.refresh(token = authorizationToken)
+
 
                         println(
                             "✅ ANDROID RECEIVED ${result.data.size} TASK(S)"
@@ -637,7 +642,7 @@ fun TasksScreen(
             // ========================================================
 
             val taskStatus =
-                workStatusLabel(task.status, task.dueDate)
+                workStatusLabel(task.status, task.dueDate, task.progress)
 
 
             // ========================================================
@@ -785,15 +790,20 @@ fun TasksScreen(
                     indicatorColor,
 
                 overdue =
-                    taskStatus.equals(
-                        "delayed",
-                        ignoreCase = true
-                    ) ||
-                    taskStatus.equals(
-                        "overdue",
-                        ignoreCase = true
-                    ) ||
-                    isTaskOverdue(task.dueDate),
+                    !taskStatus.equals("Completed", ignoreCase = true) &&
+                    !taskStatus.equals("Done", ignoreCase = true) &&
+                    !taskStatus.equals("Approved", ignoreCase = true) &&
+                    (
+                        taskStatus.equals(
+                            "delayed",
+                            ignoreCase = true
+                        ) ||
+                        taskStatus.equals(
+                            "overdue",
+                            ignoreCase = true
+                        ) ||
+                        isTaskOverdue(task.dueDate)
+                    ),
 
                 subtasks =
                     task.subtasks ?: emptyList(),
@@ -2330,6 +2340,8 @@ private fun TasksBottomNavigationBar(
                 selectedScreen ==
                         "dashboard",
 
+            badgeCount = 0,
+
             onClick =
                 onHomeClick
         )
@@ -2350,6 +2362,8 @@ private fun TasksBottomNavigationBar(
             selected =
                 selectedScreen ==
                         "projects",
+
+            badgeCount = NavBadgeState.ongoingProjectsCount,
 
             onClick =
                 onProjectsClick
@@ -2372,6 +2386,8 @@ private fun TasksBottomNavigationBar(
                 selectedScreen ==
                         "chat",
 
+            badgeCount = NavBadgeState.unreadMessagesCount,
+
             onClick =
                 onMessagesClick
         )
@@ -2392,6 +2408,8 @@ private fun TasksBottomNavigationBar(
             selected =
                 selectedScreen ==
                         "tasks",
+
+            badgeCount = NavBadgeState.ongoingTasksCount,
 
             onClick =
                 onTasksClick
@@ -2414,6 +2432,8 @@ private fun TasksBottomNavigationBar(
                 selectedScreen ==
                         "profile",
 
+            badgeCount = 0,
+
             onClick =
                 onProfileClick
         )
@@ -2434,6 +2454,8 @@ private fun RowScope.TasksNavigationItem(
 
     selected: Boolean,
 
+    badgeCount: Int = 0,
+
     onClick: () -> Unit
 
 ) {
@@ -2448,19 +2470,36 @@ private fun RowScope.TasksNavigationItem(
 
         icon = {
 
+            BadgedBox(
+                badge = {
+                    if (badgeCount > 0) {
+                        Badge(
+                            containerColor = TaskOrange,
+                            contentColor = Color.White
+                        ) {
+                            Text(
+                                text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            ) {
+                Icon(
+                    imageVector =
+                        icon,
 
-            Icon(
+                    contentDescription =
+                        title,
 
-                imageVector =
-                    icon,
-
-                contentDescription =
-                    title
-            )
+                    modifier =
+                        Modifier.size(21.dp)
+                )
+            }
         },
 
         label = {
-
 
             Text(
 
@@ -2468,7 +2507,11 @@ private fun RowScope.TasksNavigationItem(
                     title,
 
                 fontSize =
-                    9.sp
+                    9.sp,
+
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
         },
 

@@ -428,6 +428,15 @@ fun ProfileScreen(
                 // 2. Fetch tasks to calculate completed tasks count
                 val tasksResponse = RetrofitClient.api.getTasks(token = authHeader)
                 val taskList = tasksResponse.body()?.data.orEmpty()
+                val userTasks = if (!currentUserId.isNullOrBlank()) {
+                    taskList.filter { it.assigneeId.isNullOrBlank() || it.assigneeId.equals(currentUserId, ignoreCase = true) }
+                } else {
+                    taskList
+                }
+                NavBadgeState.ongoingTasksCount = userTasks.count {
+                    NavBadgeState.isOngoingTask(it.status, it.dueDate, it.progress, it.subtasks)
+                }
+                NavBadgeState.refresh(token = authHeader)
 
                 val completedTasksAssigned = taskList.count { task ->
                     val status = task.status.orEmpty().trim().lowercase(Locale.ROOT)
@@ -1604,6 +1613,8 @@ private fun ProfileBottomNavigationBar(
             selected =
                 false,
 
+            badgeCount = 0,
+
             onClick =
                 onHomeClick
         )
@@ -1619,6 +1630,8 @@ private fun ProfileBottomNavigationBar(
 
             selected =
                 false,
+
+            badgeCount = NavBadgeState.ongoingProjectsCount,
 
             onClick =
                 onProjectsClick
@@ -1636,6 +1649,8 @@ private fun ProfileBottomNavigationBar(
             selected =
                 false,
 
+            badgeCount = NavBadgeState.unreadMessagesCount,
+
             onClick =
                 onMessagesClick
         )
@@ -1652,6 +1667,8 @@ private fun ProfileBottomNavigationBar(
             selected =
                 false,
 
+            badgeCount = NavBadgeState.ongoingTasksCount,
+
             onClick =
                 onTasksClick
         )
@@ -1667,6 +1684,8 @@ private fun ProfileBottomNavigationBar(
 
             selected =
                 true,
+
+            badgeCount = 0,
 
             onClick =
                 onProfileClick
@@ -1688,6 +1707,8 @@ private fun RowScope.ProfileNavigationItem(
 
     selected: Boolean,
 
+    badgeCount: Int = 0,
+
     onClick: () -> Unit
 
 ) {
@@ -1702,19 +1723,36 @@ private fun RowScope.ProfileNavigationItem(
 
         icon = {
 
-            Icon(
+            BadgedBox(
+                badge = {
+                    if (badgeCount > 0) {
+                        Badge(
+                            containerColor = ProfileOrange,
+                            contentColor = Color.White
+                        ) {
+                            Text(
+                                text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            ) {
+                Icon(
 
-                imageVector =
-                    icon,
+                    imageVector =
+                        icon,
 
-                contentDescription =
-                    title,
+                    contentDescription =
+                        title,
 
-                modifier =
-                    Modifier.size(
-                        21.dp
-                    )
-            )
+                    modifier =
+                        Modifier.size(
+                            21.dp
+                        )
+                )
+            }
         },
 
         label = {
@@ -1725,7 +1763,11 @@ private fun RowScope.ProfileNavigationItem(
                     title,
 
                 fontSize =
-                    9.sp
+                    9.sp,
+
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
         },
 

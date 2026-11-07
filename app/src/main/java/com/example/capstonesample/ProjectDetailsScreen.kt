@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.model.IssueImage
 import com.example.capstonesample.documents.ProjectDocumentViewer
+import com.example.capstonesample.security.TokenManager
 
 import androidx.compose.foundation.BorderStroke
 import com.example.capstonesample.ui.theme.*
@@ -113,7 +114,7 @@ fun ProjectDetailsScreen(
     val context = LocalContext.current
     var viewingDocument by remember(project.code) { mutableStateOf<ProjectDocumentItem?>(null) }
     viewingDocument?.let { document ->
-        ProjectDocumentViewer(document = document, onDismiss = { viewingDocument = null })
+        ProjectDocumentViewer(document = document, token = token, onDismiss = { viewingDocument = null })
     }
 
     var documents by remember {
@@ -367,7 +368,7 @@ fun ProjectDetailsScreen(
                             document = document,
                             onOpenClick = { viewingDocument = document },
                             onDownloadClick = {
-                                downloadProjectDocument(context, document)
+                                downloadProjectDocument(context, document, token)
                             }
                         )
 
@@ -462,30 +463,49 @@ private fun EmptySection(
     }
 }
 
-private fun downloadProjectDocument(context: Context, document: ProjectDocumentItem) {
+private fun downloadProjectDocument(
+    context: Context,
+    document: ProjectDocumentItem,
+    token: String? = null
+) {
     if (document.filePath.isBlank()) {
         Toast.makeText(context, "No attached file found for this document", Toast.LENGTH_SHORT).show()
         return
     }
 
-    val fullUrl = if (document.filePath.startsWith("http://") || document.filePath.startsWith("https://")) {
+    val effectiveToken = if (!token.isNullOrBlank()) {
+        token
+    } else {
+        TokenManager.getToken(context).orEmpty()
+    }
+
+    val base = RetrofitClient.BASE_URL.trimEnd('/')
+    val rawPath = document.filePath.trimStart('/')
+    val baseUrlStr = if (document.filePath.startsWith("http://") || document.filePath.startsWith("https://")) {
         document.filePath
     } else {
-        val base = RetrofitClient.BASE_URL.trimEnd('/')
-        val path = document.filePath.trimStart('/')
-        "$base/$path"
+        "$base/$rawPath"
+    }
+
+    val cleanToken = effectiveToken.removePrefix("Bearer ").trim()
+    val fullUrl = if (cleanToken.isNotBlank() && !baseUrlStr.contains("token=")) {
+        val sep = if (baseUrlStr.contains("?")) "&" else "?"
+        "$baseUrlStr${sep}token=$cleanToken"
+    } else {
+        baseUrlStr
     }
 
     val extension = when {
-        document.filePath.contains(".") -> "." + document.filePath.substringAfterLast(".")
+        document.filePath.contains(".") -> "." + document.filePath.substringBefore("?").substringBefore("#").substringAfterLast(".")
         document.type.isNotBlank() -> "." + document.type.lowercase()
         else -> ""
     }
 
-    val safeFileName = if (document.name.contains(".")) {
-        document.name.replace("/", "_")
+    val rawSafeName = document.name.trim().replace(Regex("[/\\\\?%*:|\"<>]"), "_")
+    val safeFileName = if (rawSafeName.contains(".")) {
+        rawSafeName
     } else {
-        "${document.name.replace("/", "_")}$extension"
+        "$rawSafeName$extension"
     }
 
     val mimeType = when (extension.lowercase()) {
@@ -495,6 +515,8 @@ private fun downloadProjectDocument(context: Context, document: ProjectDocumentI
         ".docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ".doc" -> "application/msword"
         ".dwg" -> "image/vnd.dwg"
+        ".png" -> "image/png"
+        ".jpg", ".jpeg" -> "image/jpeg"
         else -> "application/octet-stream"
     }
 
@@ -509,11 +531,14 @@ private fun downloadProjectDocument(context: Context, document: ProjectDocumentI
 
     Toast.makeText(context, "Downloading $safeFileName...", Toast.LENGTH_SHORT).show()
 
-    // Download in background using OkHttp and save directly to Downloads
     CoroutineScope(Dispatchers.IO).launch {
         try {
-            val request = Request.Builder().url(fullUrl).build()
-            val response = RetrofitClient.okHttpClient.newCall(request).execute()
+            val reqBuilder = Request.Builder().url(fullUrl)
+            if (effectiveToken.isNotBlank()) {
+                val authHeader = if (effectiveToken.startsWith("Bearer ")) effectiveToken else "Bearer $effectiveToken"
+                reqBuilder.addHeader("Authorization", authHeader)
+            }
+            val response = RetrofitClient.okHttpClient.newCall(reqBuilder.build()).execute()
 
             if (!response.isSuccessful) {
                 withContext(Dispatchers.Main) {
@@ -559,24 +584,20 @@ private fun downloadProjectDocument(context: Context, document: ProjectDocumentI
                 savedUri = Uri.fromFile(destFile)
             }
 
-            // Also notify system download manager if possible
-            try {
-                val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
-                val req = DownloadManager.Request(Uri.parse(fullUrl)).apply {
-                    setTitle(safeFileName)
-                    setDescription("Downloaded from SitePulse")
-                    setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "SitePulse/$safeFileName")
-                    setAllowedOverMetered(true)
-                    setAllowedOverRoaming(true)
-                }
-                dm?.enqueue(req)
-            } catch (e: Exception) {
-                // Ignore background notification failure
-            }
-
             withContext(Dispatchers.Main) {
-                Toast.makeText(context, "✅ Downloaded: $safeFileName", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "✅ Downloaded to Downloads/SitePulse:\n$safeFileName", Toast.LENGTH_LONG).show()
+                if (savedUri != null) {
+                    try {
+                        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(savedUri, mimeType)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        }
+                        context.startActivity(Intent.createChooser(viewIntent, "Open with").apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        })
+                    } catch (_: Exception) {}
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()

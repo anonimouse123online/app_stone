@@ -37,6 +37,8 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import java.util.Locale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -1903,7 +1905,9 @@ private fun InformationRow(
         )
 
 
-        Column {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
             val displayValue = if (label.equals("Task ID", ignoreCase = true) && value.length > 8) {
                 "#${value.take(8).uppercase()}"
             } else {
@@ -2054,23 +2058,30 @@ private fun TaskSubtasksCard(
                             Spacer(modifier = Modifier.width(12.dp))
 
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = item.title.ifBlank { "Untitled Step" },
-                                    fontSize = 13.sp,
-                                    fontWeight = if (isDone) FontWeight.Normal else FontWeight.Medium,
-                                    color = if (isDone) TaskDetailGray else Color(0xFF1E293B),
-                                    textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
-                                    modifier = Modifier.clickable(enabled = enabled && !isUpdating) {
-                                        onToggleSubtask(item.id)
-                                    }
-                                )
-                                WorkStatusDropdown(
-                                    status = if (isDone) "Completed" else item.status,
-                                    enabled = enabled && canChangeStatus && !isUpdating && !isDone && !isFinishedWorkStatus(item.status),
-                                    isSaving = savingStatusId == item.id,
-                                    onStatusChange = { onStatusChange(item.id, it) }
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = item.title.ifBlank { "Untitled Step" },
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isDone) FontWeight.Normal else FontWeight.SemiBold,
+                                        color = if (isDone) TaskDetailGray else Color(0xFF1E293B),
+                                        textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier
+                                            .weight(1f, fill = false)
+                                            .clickable(enabled = enabled && !isUpdating) {
+                                                onToggleSubtask(item.id)
+                                            }
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    WorkStatusBadge(
+                                        status = if (isDone) "Completed" else item.status
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.fillMaxWidth()
@@ -2108,51 +2119,48 @@ private fun TaskSubtasksCard(
 // ============================================================
 
 @Composable
+private fun WorkStatusBadge(
+    status: String?,
+    dueDate: String? = null
+) {
+    val displayLabel = workStatusLabel(status, dueDate)
+    val lower = displayLabel.lowercase(Locale.ROOT)
+
+    val (badgeBg, badgeText, badgeBorder) = when {
+        lower in setOf("completed", "done", "approved", "verified") ->
+            Triple(Color(0xFFE1F5E7), TaskDetailGreen, Color(0xFFB9F6CA))
+        lower in setOf("delayed", "overdue", "late") ->
+            Triple(Color(0xFFFFE1E1), TaskDetailRed, Color(0xFFFFCDD2))
+        lower in setOf("ongoing", "in progress", "in-progress") ->
+            Triple(Color(0xFFFFE5D8), TaskDetailOrange, Color(0xFFFFCCBC))
+        else ->
+            Triple(Color(0xFFF1F5F9), Color(0xFF475569), Color(0xFFE2E8F0))
+    }
+
+    Box(
+        modifier = Modifier
+            .background(badgeBg, RoundedCornerShape(8.dp))
+            .border(1.dp, badgeBorder, RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = displayLabel,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = badgeText
+        )
+    }
+}
+
+@Composable
 private fun WorkStatusDropdown(
     status: String?,
     dueDate: String? = null,
-    enabled: Boolean,
-    isSaving: Boolean,
-    onStatusChange: (String) -> Unit
+    enabled: Boolean = false,
+    isSaving: Boolean = false,
+    onStatusChange: (String) -> Unit = {}
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    LaunchedEffect(enabled) { if (!enabled) expanded = false }
-    val displayLabel = workStatusLabel(status, dueDate)
-    val isDelayed = displayLabel.equals("Delayed", ignoreCase = true)
-    Box {
-        OutlinedButton(
-            onClick = { expanded = true },
-            enabled = enabled,
-            colors = if (isDelayed) {
-                ButtonDefaults.outlinedButtonColors(
-                    contentColor = TaskDetailRed
-                )
-            } else ButtonDefaults.outlinedButtonColors(),
-            border = if (isDelayed) {
-                BorderStroke(1.dp, Color(0xFFFECACA))
-            } else ButtonDefaults.outlinedButtonBorder,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            Text(if (isSaving) "Saving..." else displayLabel, fontSize = 12.sp, color = if (isDelayed) TaskDetailRed else Color.Unspecified)
-            Spacer(Modifier.width(6.dp))
-            if (isSaving) {
-                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = if (isDelayed) TaskDetailRed else MaterialTheme.colorScheme.primary)
-            } else {
-                Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Select work status", modifier = Modifier.size(18.dp), tint = if (isDelayed) TaskDetailRed else LocalContentColor.current)
-            }
-        }
-        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
-            listOf("pending" to "Pending", "ongoing" to "Ongoing").forEach { (value, label) ->
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    onClick = {
-                        expanded = false
-                        if (workStatusLabel(status) != label) onStatusChange(value)
-                    }
-                )
-            }
-        }
-    }
+    WorkStatusBadge(status = status, dueDate = dueDate)
 }
 
 @Composable
@@ -2226,7 +2234,6 @@ private fun TaskProgressCard(
 
 
                 Text(
-
                     text =
                         "Task Progress",
 
@@ -2237,15 +2244,19 @@ private fun TaskProgressCard(
                         FontWeight.Bold
                 )
 
+                Spacer(modifier = Modifier.width(8.dp))
+
+                WorkStatusBadge(
+                    status = status,
+                    dueDate = task.schedule
+                )
 
                 Spacer(
                     modifier =
                         Modifier.weight(1f)
                 )
 
-
                 Text(
-
                     text =
                         "$safeProgress%",
 
@@ -2260,19 +2271,9 @@ private fun TaskProgressCard(
                 )
             }
 
-
             Spacer(
                 modifier =
-                    Modifier.height(12.dp)
-            )
-
-
-            WorkStatusDropdown(
-                status = status,
-                dueDate = task.schedule,
-                enabled = canChangeStatus && !isSavingStatus,
-                isSaving = isSavingStatus,
-                onStatusChange = onStatusChange
+                    Modifier.height(14.dp)
             )
 
             LinearProgressIndicator(
@@ -4642,7 +4643,11 @@ private fun AddFieldAnnotationDialog(
 
         text = {
 
-            Column {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
 
                 Text(
 

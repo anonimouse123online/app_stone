@@ -206,6 +206,12 @@ class MainActivity : FragmentActivity() {
                     }
                 }
 
+                LaunchedEffect(authToken) {
+                    if (authToken.isNotBlank()) {
+                        com.example.capstonesample.NavBadgeState.refresh(context, authToken)
+                    }
+                }
+
 
                 // ====================================================
                 // SELECTED PROJECT

@@ -88,16 +88,27 @@ fun MessageDetailScreen(
     isGroup: Boolean = false,
     onBackClick: () -> Unit
 ) {
-    BackHandler {
-        onBackClick()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val handleBack: () -> Unit = {
+        scope.launch {
+            try {
+                RetrofitClient.api.markConversationAsRead(conversationId)
+                NavBadgeState.refresh(context)
+            } catch (_: Exception) {}
+            onBackClick()
+        }
     }
 
-    val context = LocalContext.current
+    BackHandler {
+        handleBack()
+    }
+
     val imageLoader = remember(context) {
         ImageLoader.Builder(context).okHttpClient(RetrofitClient.okHttpClient).build()
     }
     DisposableEffect(imageLoader) { onDispose { imageLoader.shutdown() } }
-    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val density = LocalDensity.current
     val imeBottom = WindowInsets.ime.getBottom(density)
@@ -186,6 +197,10 @@ fun MessageDetailScreen(
         isLoading = true
         errorMessage = null
         loadMessages()
+        try {
+            RetrofitClient.api.markConversationAsRead(conversationId)
+            NavBadgeState.refresh(context)
+        } catch (_: Exception) {}
     }
 
     // ============================================================
@@ -201,6 +216,7 @@ fun MessageDetailScreen(
                     val body = response.body()
                     if (body != null && body.success) {
                         messages = body.messages
+                        RetrofitClient.api.markConversationAsRead(conversationId)
                     }
                 }
             } catch (_: Exception) {}
@@ -228,7 +244,7 @@ fun MessageDetailScreen(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
+                    IconButton(onClick = handleBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                             contentDescription = "Back"

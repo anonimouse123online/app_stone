@@ -123,6 +123,11 @@ class NotificationSyncWorker(
                         prefs.edit().putString(prefKey, lastMsgTime).apply()
                     }
                 }
+
+                val totalUnread = conversations.sumOf { (it.unreadCount ?: 0).coerceAtLeast(0) }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    com.example.capstonesample.NavBadgeState.unreadMessagesCount = totalUnread
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error checking chat messages: ${e.message}")

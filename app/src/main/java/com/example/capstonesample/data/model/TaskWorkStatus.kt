@@ -8,9 +8,11 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-fun isFinishedWorkStatus(status: String?): Boolean =
-    status?.trim()?.lowercase(Locale.ROOT) in
-        setOf("completed", "done", "approved", "verified", "closed", "cancelled")
+fun isFinishedWorkStatus(status: String?, progress: Int? = null): Boolean {
+    if (progress != null && progress >= 100) return true
+    return status?.trim()?.lowercase(Locale.ROOT) in
+        setOf("completed", "done", "approved", "verified", "closed", "cancelled", "finished")
+}
 
 fun isTaskOverdue(dueDate: String?): Boolean {
     if (dueDate.isNullOrBlank()) return false
@@ -60,8 +62,8 @@ fun isTaskOverdue(dueDate: String?): Boolean {
     }
 }
 
-fun workStatusLabel(status: String?, dueDate: String? = null): String {
-    if (isFinishedWorkStatus(status)) {
+fun workStatusLabel(status: String?, dueDate: String? = null, progress: Int? = null): String {
+    if (isFinishedWorkStatus(status, progress)) {
         return when (status?.trim()?.lowercase(Locale.ROOT)) {
             "completed" -> "Completed"
             "done" -> "Done"
@@ -69,7 +71,8 @@ fun workStatusLabel(status: String?, dueDate: String? = null): String {
             "verified" -> "Verified"
             "closed" -> "Closed"
             "cancelled" -> "Cancelled"
-            else -> status.orEmpty().trim()
+            "finished" -> "Completed"
+            else -> if (progress != null && progress >= 100) "Completed" else status.orEmpty().trim()
         }
     }
     if (!dueDate.isNullOrBlank() && isTaskOverdue(dueDate)) {

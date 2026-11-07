@@ -20,6 +20,7 @@ import com.example.capstonesample.data.model.CreateConversationResponse
 import com.example.capstonesample.data.model.MessagesResponse
 import com.example.capstonesample.data.model.SendMessageRequest
 import com.example.capstonesample.data.model.SendMessageResponse
+import com.example.capstonesample.data.model.MarkReadResponse
 import com.example.capstonesample.data.model.CompleteTaskRequest
 import com.example.capstonesample.data.model.CompleteTaskResponse
 import com.example.capstonesample.data.model.UploadTaskReportRequest
@@ -49,6 +50,7 @@ import retrofit2.http.Header
 import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.PartMap
 import retrofit2.http.Path
@@ -225,6 +227,14 @@ interface ApiService {
         conversationId: Int
 
     ): Response<MessagesResponse>
+
+    @PUT("messages/conversations/{conversationId}/read")
+    suspend fun markConversationAsRead(
+
+        @Path("conversationId")
+        conversationId: Int
+
+    ): Response<MarkReadResponse>
 
 
     @POST("messages")

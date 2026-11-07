@@ -28,6 +28,7 @@ import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import com.example.capstonesample.ProjectDocumentItem
 import com.example.capstonesample.data.api.RetrofitClient
+import com.example.capstonesample.security.TokenManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -76,9 +77,15 @@ internal fun projectDocumentMimeType(path: String, type: String, mimeType: Strin
 internal suspend fun cacheProjectDocument(
     directory: File,
     url: HttpUrl,
-    client: OkHttpClient
+    client: OkHttpClient,
+    token: String? = null
 ): File = withContext(Dispatchers.IO) {
-    client.newCall(Request.Builder().url(url).build()).execute().use { response ->
+    val reqBuilder = Request.Builder().url(url)
+    if (!token.isNullOrBlank()) {
+        val auth = if (token.startsWith("Bearer ")) token else "Bearer $token"
+        reqBuilder.addHeader("Authorization", auth)
+    }
+    client.newCall(reqBuilder.build()).execute().use { response ->
         check(response.isSuccessful) {
             when (response.code) {
                 401 -> "Your login session has expired. Please sign in again."
@@ -103,8 +110,13 @@ internal suspend fun cacheProjectDocument(
 }
 
 @Composable
-internal fun ProjectDocumentViewer(document: ProjectDocumentItem, onDismiss: () -> Unit) {
+internal fun ProjectDocumentViewer(
+    document: ProjectDocumentItem,
+    token: String? = null,
+    onDismiss: () -> Unit
+) {
     val context = LocalContext.current
+    val effectiveToken = if (!token.isNullOrBlank()) token else TokenManager.getToken(context).orEmpty()
     var file by remember(document) { mutableStateOf<File?>(null) }
     var error by remember(document) { mutableStateOf<String?>(null) }
     var textContent by remember(document) { mutableStateOf<String?>(null) }
@@ -114,8 +126,14 @@ internal fun ProjectDocumentViewer(document: ProjectDocumentItem, onDismiss: () 
 
     LaunchedEffect(document) {
         try {
-            val url = projectDocumentUrl(document.filePath, RetrofitClient.BASE_URL)
-            val cached = cacheProjectDocument(context.cacheDir, url, RetrofitClient.okHttpClient)
+            val baseDocUrl = projectDocumentUrl(document.filePath, RetrofitClient.BASE_URL)
+            val cleanToken = effectiveToken.removePrefix("Bearer ").trim()
+            val url = if (cleanToken.isNotBlank() && baseDocUrl.queryParameter("token") == null) {
+                baseDocUrl.newBuilder().addQueryParameter("token", cleanToken).build()
+            } else {
+                baseDocUrl
+            }
+            val cached = cacheProjectDocument(context.cacheDir, url, RetrofitClient.okHttpClient, effectiveToken)
             if (isText) {
                 textContent = withContext(Dispatchers.IO) {
                     cached.readText(document.mimeType.toMediaTypeOrNull()?.charset() ?: Charsets.UTF_8)

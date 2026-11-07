@@ -33,6 +33,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,7 +45,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -229,6 +232,9 @@ fun DashboardScreen(
     val initials = remember(resolvedUserName) {
         generateInitials(resolvedUserName)
     }
+
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
 
     var showLogTimeDialog by remember {
         mutableStateOf(false)
@@ -626,6 +632,7 @@ fun DashboardScreen(
                                         ?: "Active"
                             )
                         }
+                    NavBadgeState.ongoingProjectsCount = projects.count { NavBadgeState.isOngoingProject(it.status) }
 
                 } else {
 
@@ -675,6 +682,16 @@ fun DashboardScreen(
 
                     tasks =
                         body.data
+                    val currentUid = NavBadgeState.getUserIdFromJwt(authorizationToken)
+                    val myTasks = if (!currentUid.isNullOrBlank()) {
+                        tasks.filter { it.assigneeId.isNullOrBlank() || it.assigneeId.equals(currentUid, ignoreCase = true) }
+                    } else {
+                        tasks
+                    }
+                    NavBadgeState.ongoingTasksCount = myTasks.count {
+                        NavBadgeState.isOngoingTask(it.status, it.dueDate, it.progress, it.subtasks)
+                    }
+                    NavBadgeState.refresh(context, authorizationToken)
 
                 } else {
 
@@ -1216,17 +1233,6 @@ fun DashboardScreen(
                             requestLocation()
                         }
                         showLogTimeDialog = true
-                    },
-                    onCaptureClick = {
-                        openDashboardCamera()
-                    },
-                    onReportClick = {
-                        onTasksClick()
-                        Toast.makeText(
-                            context,
-                            "Select a task to generate an AI field report or log issues",
-                            Toast.LENGTH_SHORT
-                        ).show()
                     }
                 )
             }
@@ -1295,6 +1301,15 @@ fun DashboardScreen(
                     EmptyDashboardCard(
                         text =
                             "No projects available."
+                    )
+                }
+
+            } else if (isSmallScreen) {
+
+                items(projects.take(2), key = { "proj-${it.name}" }) { project ->
+                    ProjectCard(
+                        project = project,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
 
@@ -1878,7 +1893,10 @@ private fun NotificationDialog(
                                 11.sp,
 
                             color =
-                                TextGray
+                                TextGray,
+
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
@@ -3810,8 +3828,9 @@ private fun HealthStatusCard(
 
                 val displayDelayed = if (delayed > 0) delayed else delayedTasks
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     StatusBadge(
                         text =
@@ -3820,11 +3839,6 @@ private fun HealthStatusCard(
                             Color(0xFFE1F5E7),
                         textColor =
                             Green
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.width(8.dp)
                     )
 
                     StatusBadge(
@@ -3852,7 +3866,9 @@ private fun HealthStatusCard(
                     fontSize =
                         11.sp,
                     color =
-                        TextGray
+                        TextGray,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -3907,18 +3923,13 @@ private fun StatusBadge(
 @Composable
 private fun QuickActions(
     isLoggingTime: Boolean = false,
-    onLogTimeClick: () -> Unit = {},
-    onCaptureClick: () -> Unit = {},
-    onReportClick: () -> Unit = {}
+    onLogTimeClick: () -> Unit = {}
 ) {
 
     Row(
 
         modifier =
-            Modifier.fillMaxWidth(),
-
-        horizontalArrangement =
-            Arrangement.spacedBy(10.dp)
+            Modifier.fillMaxWidth()
 
     ) {
 
@@ -3930,23 +3941,9 @@ private fun QuickActions(
                     "Log Time"
                 },
             icon = Icons.Outlined.Schedule,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
             enabled = !isLoggingTime,
             onClick = onLogTimeClick
-        )
-
-        QuickActionButton(
-            title = "Capture",
-            icon = Icons.Outlined.CameraAlt,
-            modifier = Modifier.weight(1f),
-            onClick = onCaptureClick
-        )
-
-        QuickActionButton(
-            title = "Report",
-            icon = Icons.Outlined.PriorityHigh,
-            modifier = Modifier.weight(1f),
-            onClick = onReportClick
         )
     }
 }
@@ -4025,7 +4022,7 @@ private fun QuickActionButton(
 
             Text(
                 text = title,
-                fontSize = 11.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -4097,13 +4094,16 @@ private fun ProjectCard(
                     text = project.type,
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Bold,
-                    color = TextGray
+                    color = TextGray,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
 
 
                 Spacer(
                     modifier =
-                        Modifier.weight(1f)
+                        Modifier.width(6.dp)
                 )
 
 
@@ -4136,7 +4136,9 @@ private fun ProjectCard(
             Text(
                 text = project.name,
                 fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
 
 
@@ -4236,19 +4238,25 @@ private fun ActivityRow(
         )
 
 
-        Column {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
 
             Text(
                 text = activity.title,
                 fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
 
 
             Text(
                 text = activity.description,
                 fontSize = 10.sp,
-                color = TextGray
+                color = TextGray,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -4322,6 +4330,7 @@ fun SitePulseBottomNavigation(
             icon = Icons.Outlined.Home,
             selected =
                 selectedScreen == "dashboard",
+            badgeCount = 0,
             onClick = onHomeClick
         )
 
@@ -4331,6 +4340,7 @@ fun SitePulseBottomNavigation(
             icon = Icons.Outlined.BusinessCenter,
             selected =
                 selectedScreen == "projects",
+            badgeCount = NavBadgeState.ongoingProjectsCount,
             onClick = onProjectsClick
         )
 
@@ -4341,6 +4351,7 @@ fun SitePulseBottomNavigation(
                 Icons.Outlined.ChatBubbleOutline,
             selected =
                 selectedScreen == "chat",
+            badgeCount = NavBadgeState.unreadMessagesCount,
             onClick = onMessagesClick
         )
 
@@ -4350,6 +4361,7 @@ fun SitePulseBottomNavigation(
             icon = Icons.Outlined.TaskAlt,
             selected =
                 selectedScreen == "tasks",
+            badgeCount = NavBadgeState.ongoingTasksCount,
             onClick = onTasksClick
         )
 
@@ -4359,6 +4371,7 @@ fun SitePulseBottomNavigation(
             icon = Icons.Outlined.Person,
             selected =
                 selectedScreen == "profile",
+            badgeCount = 0,
             onClick = onProfileClick
         )
     }
@@ -4378,6 +4391,8 @@ private fun RowScope.SitePulseNavigationItem(
 
     selected: Boolean,
 
+    badgeCount: Int = 0,
+
     onClick: () -> Unit
 
 ) {
@@ -4392,21 +4407,41 @@ private fun RowScope.SitePulseNavigationItem(
 
         icon = {
 
-            Icon(
-                imageVector =
-                    icon,
-                contentDescription =
-                    title,
-                modifier =
-                    Modifier.size(21.dp)
-            )
+            BadgedBox(
+                badge = {
+                    if (badgeCount > 0) {
+                        Badge(
+                            containerColor = SitePulseOrange,
+                            contentColor = Color.White
+                        ) {
+                            Text(
+                                text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            ) {
+                Icon(
+                    imageVector =
+                        icon,
+                    contentDescription =
+                        title,
+                    modifier =
+                        Modifier.size(21.dp)
+                )
+            }
         },
 
         label = {
 
             Text(
                 text = title,
-                fontSize = 9.sp
+                fontSize = 9.sp,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
         },
 

@@ -3,6 +3,8 @@ package com.example.capstonesample
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -159,8 +161,23 @@ fun ChatScreen(
                         avatarTextColor = if (isGroup) Color(0xFFF15A24) else Color(0xFF2962CC)
                     )
                 }
+                NavBadgeState.unreadMessagesCount = chatList.sumOf { it.unreadCount }
             }
         } catch (_: Exception) {}
+    }
+
+    fun openChat(chat: ChatUser) {
+        selectedChat = chat
+        chatList = chatList.map {
+            if (it.conversationId == chat.conversationId) it.copy(unreadCount = 0)
+            else it
+        }
+        NavBadgeState.unreadMessagesCount = chatList.sumOf { it.unreadCount }
+        scope.launch {
+            try {
+                RetrofitClient.api.markConversationAsRead(chat.conversationId)
+            } catch (_: Exception) {}
+        }
     }
 
 
@@ -237,6 +254,7 @@ fun ChatScreen(
         errorMessage = null
 
         try {
+            NavBadgeState.refresh(context)
 
             val response =
                 RetrofitClient.api
@@ -277,6 +295,8 @@ fun ChatScreen(
                             )
                         }
 
+                    NavBadgeState.unreadMessagesCount = chatList.sumOf { it.unreadCount }
+
                 } else {
 
                     errorMessage =
@@ -311,6 +331,7 @@ fun ChatScreen(
     // ============================================================
 
     if (selectedChat != null) {
+        val activeChat = selectedChat
 
         MessageDetailScreen(
 
@@ -324,9 +345,24 @@ fun ChatScreen(
                 selectedChat!!.isGroup,
 
             onBackClick = {
-
-                selectedChat =
-                    null
+                val closedId = activeChat?.conversationId
+                selectedChat = null
+                if (closedId != null) {
+                    chatList = chatList.map {
+                        if (it.conversationId == closedId) it.copy(unreadCount = 0)
+                        else it
+                    }
+                    NavBadgeState.unreadMessagesCount = chatList.sumOf { it.unreadCount }
+                }
+                scope.launch {
+                    try {
+                        if (closedId != null) {
+                            RetrofitClient.api.markConversationAsRead(closedId)
+                        }
+                    } catch (_: Exception) {}
+                    refreshConversations()
+                    NavBadgeState.refresh(context)
+                }
             }
         )
 
@@ -765,9 +801,7 @@ fun ChatScreen(
                                     chat,
 
                                 onClick = {
-
-                                    selectedChat =
-                                        chat
+                                    openChat(chat)
                                 }
                             )
                         }
@@ -1135,9 +1169,7 @@ fun ChatScreen(
                             chat,
 
                         onClick = {
-
-                            selectedChat =
-                                chat
+                            openChat(chat)
                         }
                     )
                 }
@@ -1706,82 +1738,43 @@ private fun MessagesBottomNavigationBar(
 
 
         MessagesNavigationItem(
-
-            title =
-                "Home",
-
-            icon =
-                Icons.Outlined.Home,
-
-            selected =
-                false,
-
-            onClick =
-                onHomeClick
+            title = "Home",
+            icon = Icons.Outlined.Home,
+            selected = false,
+            badgeCount = 0,
+            onClick = onHomeClick
         )
 
-
         MessagesNavigationItem(
-
-            title =
-                "Projects",
-
-            icon =
-                Icons.Outlined.BusinessCenter,
-
-            selected =
-                false,
-
-            onClick =
-                onProjectsClick
+            title = "Projects",
+            icon = Icons.Outlined.BusinessCenter,
+            selected = false,
+            badgeCount = NavBadgeState.ongoingProjectsCount,
+            onClick = onProjectsClick
         )
 
-
         MessagesNavigationItem(
-
-            title =
-                "Messages",
-
-            icon =
-                Icons.Outlined.ChatBubbleOutline,
-
-            selected =
-                true,
-
-            onClick =
-                onMessagesClick
+            title = "Messages",
+            icon = Icons.Outlined.ChatBubbleOutline,
+            selected = true,
+            badgeCount = NavBadgeState.unreadMessagesCount,
+            onClick = onMessagesClick
         )
 
-
         MessagesNavigationItem(
-
-            title =
-                "Tasks",
-
-            icon =
-                Icons.Outlined.TaskAlt,
-
-            selected =
-                false,
-
-            onClick =
-                onTasksClick
+            title = "Tasks",
+            icon = Icons.Outlined.TaskAlt,
+            selected = false,
+            badgeCount = NavBadgeState.ongoingTasksCount,
+            onClick = onTasksClick
         )
 
-
         MessagesNavigationItem(
-
-            title =
-                "Profile",
-
-            icon =
-                Icons.Outlined.Person,
-
-            selected =
-                false,
-
-            onClick =
-                onProfileClick
+            title = "Profile",
+            icon = Icons.Outlined.Person,
+            selected = false,
+            badgeCount = 0,
+            onClick = onProfileClick
         )
     }
 }
@@ -1800,6 +1793,8 @@ private fun RowScope.MessagesNavigationItem(
 
     selected: Boolean,
 
+    badgeCount: Int = 0,
+
     onClick: () -> Unit
 
 ) {
@@ -1814,18 +1809,35 @@ private fun RowScope.MessagesNavigationItem(
 
         icon = {
 
-            Icon(
-                imageVector =
-                    icon,
+            BadgedBox(
+                badge = {
+                    if (badgeCount > 0) {
+                        Badge(
+                            containerColor = MessageOrange,
+                            contentColor = Color.White
+                        ) {
+                            Text(
+                                text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            ) {
+                Icon(
+                    imageVector =
+                        icon,
 
-                contentDescription =
-                    title,
+                    contentDescription =
+                        title,
 
-                modifier =
-                    Modifier.size(
-                        21.dp
-                    )
-            )
+                    modifier =
+                        Modifier.size(
+                            21.dp
+                        )
+                )
+            }
         },
 
         label = {
@@ -1835,7 +1847,11 @@ private fun RowScope.MessagesNavigationItem(
                     title,
 
                 fontSize =
-                    9.sp
+                    9.sp,
+
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
         },
 
@@ -1913,6 +1929,7 @@ private fun CreateGroupDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 440.dp)
+                    .verticalScroll(rememberScrollState())
             ) {
                 // 1. Group Name Field
                 OutlinedTextField(

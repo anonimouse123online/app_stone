@@ -421,19 +421,20 @@ class AiPipeline(
                 mutableListOf<String>()
 
             val completedSubtasks =
-                subtasks.filter { it.completed }
+                subtasks.filter { it.completed || (it.progress ?: 0) >= 100 }
 
             completedSubtasks.forEach {
                 workProgressList.add("${it.title.trim()}: 100% Completed")
             }
 
-            annotations.forEach { ann ->
-                val prog = ann.progress ?: 100
-                val label = ann.label.trim()
-                if (label.isNotBlank() && workProgressList.none { it.startsWith(label, ignoreCase = true) }) {
-                    workProgressList.add("$label: $prog% Completed")
+            annotations
+                .filter { it.stage.contains("completed", ignoreCase = true) || (it.progress ?: 0) >= 100 }
+                .forEach { ann ->
+                    val label = ann.label.trim()
+                    if (label.isNotBlank() && workProgressList.none { it.startsWith(label, ignoreCase = true) }) {
+                        workProgressList.add("$label: 100% Completed")
+                    }
                 }
-            }
 
             if (workProgressList.isEmpty()) {
                 val prog = if (currentProgress > 0) currentProgress else 100
@@ -448,18 +449,23 @@ class AiPipeline(
                 mutableListOf<String>()
 
             val pendingSubtasks =
-                subtasks.filter { !it.completed }
+                subtasks.filter { !it.completed && (it.progress ?: 0) < 100 }
 
-            pendingSubtasks.forEach {
-                ongoingList.add(it.title.trim())
+            pendingSubtasks.forEach { sub ->
+                val matchingAnn = annotations.firstOrNull { ann ->
+                    ann.label.trim().equals(sub.title.trim(), ignoreCase = true) && ann.progress != null
+                }
+                val prog = matchingAnn?.progress ?: sub.progress ?: sub.displayedProgress
+                ongoingList.add("${sub.title.trim()}: $prog% Ongoing")
             }
 
             annotations
                 .filter { it.stage.contains("ongoing", ignoreCase = true) || it.stage.contains("progress", ignoreCase = true) }
                 .forEach { ann ->
                     val label = ann.label.trim()
-                    if (label.isNotBlank() && ongoingList.none { it.equals(label, ignoreCase = true) }) {
-                        ongoingList.add(label)
+                    if (label.isNotBlank() && ongoingList.none { it.startsWith(label, ignoreCase = true) }) {
+                        val prog = ann.progress ?: 50
+                        ongoingList.add("$label: $prog% Ongoing")
                     }
                 }
 
