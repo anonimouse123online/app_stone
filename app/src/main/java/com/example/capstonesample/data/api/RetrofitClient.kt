@@ -126,17 +126,17 @@ object RetrofitClient {
             }
 
             .connectTimeout(
-                15,
+                30,
                 TimeUnit.SECONDS
             )
 
             .readTimeout(
-                30,
+                120,
                 TimeUnit.SECONDS
             )
 
             .writeTimeout(
-                30,
+                120,
                 TimeUnit.SECONDS
             )
 
