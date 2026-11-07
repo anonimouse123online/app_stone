@@ -63,6 +63,10 @@ fun isTaskOverdue(dueDate: String?): Boolean {
 }
 
 fun workStatusLabel(status: String?, dueDate: String? = null, progress: Int? = null): String {
+    val norm = status?.trim()?.lowercase(Locale.ROOT)
+    if (norm == "locked") {
+        return "Locked"
+    }
     if (isFinishedWorkStatus(status, progress)) {
         return when (status?.trim()?.lowercase(Locale.ROOT)) {
             "completed" -> "Completed"

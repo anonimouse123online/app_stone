@@ -78,8 +78,8 @@ object NavBadgeState {
         if (isCompletedTask(status, progress, subtasks)) return false
 
         val s = status?.trim()?.lowercase(Locale.ROOT) ?: ""
-        // RULE 2: Never count cancelled or archived tasks
-        if (s in setOf("cancelled", "canceled", "archived", "rejected")) return false
+        // RULE 2: Never count cancelled, archived, or locked tasks
+        if (s in setOf("cancelled", "canceled", "archived", "rejected", "locked")) return false
 
         // RULE 3: Active open task (pending, ongoing, in progress, delayed, to do, ready)
         return true

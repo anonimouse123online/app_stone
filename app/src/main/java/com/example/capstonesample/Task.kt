@@ -2133,6 +2133,8 @@ private fun WorkStatusBadge(
             Triple(Color(0xFFFFE1E1), TaskDetailRed, Color(0xFFFFCDD2))
         lower in setOf("ongoing", "in progress", "in-progress") ->
             Triple(Color(0xFFFFE5D8), TaskDetailOrange, Color(0xFFFFCCBC))
+        lower == "locked" ->
+            Triple(Color(0xFFF1F5F9), Color(0xFF64748B), Color(0xFFCBD5E1))
         else ->
             Triple(Color(0xFFF1F5F9), Color(0xFF475569), Color(0xFFE2E8F0))
     }
