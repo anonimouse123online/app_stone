@@ -13,9 +13,11 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.filled.Lock
 
 import androidx.compose.material3.*
 
@@ -61,6 +63,8 @@ data class SiteTask(
     val assigneeColor: Color,
     val indicatorColor: Color,
     val overdue: Boolean = false,
+    val isExtended: Boolean = false,
+    val originalDueDate: String? = null,
     val subtasks: List<SubtaskItem> = emptyList(),
     val projectLocation: String? = null,
     val materialsRequired: String? = null,
@@ -210,6 +214,12 @@ fun TasksScreen(
 
     var selectedTask by remember {
 
+        mutableStateOf<SiteTask?>(
+            null
+        )
+    }
+
+    var lockedTaskPrompt by remember {
         mutableStateOf<SiteTask?>(
             null
         )
@@ -805,6 +815,14 @@ fun TasksScreen(
                         isTaskOverdue(task.dueDate)
                     ),
 
+                isExtended =
+                    !task.originalDueDate.isNullOrBlank() &&
+                    !task.dueDate.isNullOrBlank() &&
+                    task.dueDate > task.originalDueDate,
+
+                originalDueDate =
+                    task.originalDueDate,
+
                 subtasks =
                     task.subtasks ?: emptyList(),
 
@@ -926,7 +944,7 @@ fun TasksScreen(
 
 
     if (
-        openedTask != null
+        openedTask != null && !openedTask.status.trim().equals("locked", ignoreCase = true)
     ) {
 
         // ========================================================
@@ -1725,26 +1743,13 @@ fun TasksScreen(
                                     task,
 
                                 onClick = {
-
-                                    // =========================================
-                                    // OPEN TASK DETAILS
-                                    // =========================================
-
-                                    selectedTask =
-                                        task
-
-
-                                    /*
-                                     * Keep this callback for compatibility
-                                     * with your existing MainActivity /
-                                     * navigation.
-                                     *
-                                     * If you do not need it later,
-                                     * you can remove onTaskClick completely.
-                                     */
-                                    onTaskClick(
-                                        task
-                                    )
+                                    val isLocked = task.status.trim().equals("locked", ignoreCase = true)
+                                    if (isLocked) {
+                                        lockedTaskPrompt = task
+                                    } else {
+                                        selectedTask = task
+                                        onTaskClick(task)
+                                    }
                                 }
                             )
                         }
@@ -1764,6 +1769,89 @@ fun TasksScreen(
                 }
             }
         }
+    }
+
+    // ========================================================
+    // LOCKED TASK PROMPT DIALOG
+    // ========================================================
+    if (lockedTaskPrompt != null) {
+        val lockedTask = lockedTaskPrompt!!
+        AlertDialog(
+            onDismissRequest = { lockedTaskPrompt = null },
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .background(Color(0xFFFEF2F2), CircleShape)
+                        .border(1.5.dp, Color(0xFFFEE2E2), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = "Locked Task",
+                        tint = Color(0xFFEF4444),
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Turnover Task is Locked",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = TextSlate900,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "\"${lockedTask.title}\"",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = TaskOrange,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "This Turnover task cannot be opened while it is locked.",
+                        fontSize = 13.sp,
+                        color = TextSlate700,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "It will automatically unlock to \"Ongoing\" once all other tasks of this project are completed.",
+                        fontSize = 12.sp,
+                        color = TextSlate500,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 17.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { lockedTaskPrompt = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = TaskOrange),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Understood",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color.White
+                    )
+                }
+            },
+            containerColor = Color.White,
+            shape = RoundedCornerShape(20.dp)
+        )
     }
 }
 
@@ -1981,7 +2069,13 @@ private fun TaskListCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.width(8.dp))
-                TaskStatusBadge(status = task.status)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TaskStatusBadge(status = task.status)
+                    if (task.isExtended) {
+                        Spacer(Modifier.width(6.dp))
+                        TaskStatusBadge(status = "Extended")
+                    }
+                }
             }
 
             Spacer(Modifier.height(12.dp))
@@ -2098,11 +2192,12 @@ private fun TaskListCard(
                     fontWeight = if (task.overdue) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (task.overdue) TaskRed else TextSlate500
                 )
+                val isLocked = task.status.trim().equals("locked", ignoreCase = true)
                 Icon(
-                    imageVector = Icons.Outlined.ChevronRight,
-                    contentDescription = "Open Task",
+                    imageVector = if (isLocked) Icons.Filled.Lock else Icons.Outlined.ChevronRight,
+                    contentDescription = if (isLocked) "Locked Task" else "Open Task",
                     modifier = Modifier.size(18.dp),
-                    tint = TaskOrange
+                    tint = if (isLocked) TextSlate400 else TaskOrange
                 )
             }
         }
@@ -2211,6 +2306,12 @@ private fun TaskStatusBadge(
                     0xFFFFE5D8
                 )
 
+            "extended" ->
+
+                Color(
+                    0xFFEFF6FF
+                )
+
 
             else ->
 
@@ -2245,6 +2346,10 @@ private fun TaskStatusBadge(
             "ongoing" ->
 
                 TaskOrange
+
+            "extended" ->
+
+                Color(0xFF1D4ED8)
 
 
             else ->

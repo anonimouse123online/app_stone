@@ -112,7 +112,7 @@ fun ChatScreen(
         mutableStateOf<String?>(null)
     }
 
-    var showCreateGroupDialog by remember {
+    var showNewChatDialog by remember {
         mutableStateOf(false)
     }
 
@@ -125,6 +125,10 @@ fun ChatScreen(
     }
 
     var isCreatingGroup by remember {
+        mutableStateOf(false)
+    }
+
+    var isStartingDirectChat by remember {
         mutableStateOf(false)
     }
 
@@ -429,7 +433,7 @@ fun ChatScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
-                    showCreateGroupDialog = true
+                    showNewChatDialog = true
                     scope.launch {
                         try {
                             isLoadingMembers = true
@@ -445,13 +449,13 @@ fun ChatScreen(
                 },
                 icon = {
                     Icon(
-                        imageVector = Icons.Outlined.GroupAdd,
-                        contentDescription = "New Group"
+                        imageVector = Icons.Outlined.ChatBubbleOutline,
+                        contentDescription = "New Message"
                     )
                 },
                 text = {
                     Text(
-                        text = "New Group",
+                        text = "New Message",
                         fontWeight = FontWeight.Bold
                     )
                 },
@@ -462,8 +466,8 @@ fun ChatScreen(
 
     ) { padding ->
 
-        if (showCreateGroupDialog) {
-            CreateGroupDialog(
+        if (showNewChatDialog) {
+            NewChatDialog(
                 groupName = groupNameInput,
                 onGroupNameChange = { groupNameInput = it },
                 availableMembers = availableGroupMembers,
@@ -476,13 +480,58 @@ fun ChatScreen(
                     }
                 },
                 isLoading = isLoadingMembers,
-                isCreating = isCreatingGroup,
+                isCreatingGroup = isCreatingGroup,
+                isStartingDirectChat = isStartingDirectChat,
+                onStartDirectChat = { user ->
+                    scope.launch {
+                        try {
+                            isStartingDirectChat = true
+                            errorMessage = null
+                            val response = RetrofitClient.api.createConversation(
+                                CreateConversationRequest(
+                                    receiverId = user.id,
+                                    isGroup = false
+                                )
+                            )
+                            if (response.isSuccessful && response.body()?.success == true) {
+                                val newConvId = response.body()?.conversationId ?: 0
+                                val partnerName = user.fullName ?: user.email ?: "User"
+                                val newChat = ChatUser(
+                                    conversationId = newConvId,
+                                    userId = user.id,
+                                    name = partnerName,
+                                    lastMessage = "Start a conversation",
+                                    time = "",
+                                    unreadCount = 0,
+                                    isGroup = false,
+                                    memberCount = 2,
+                                    avatarColor = Color(0xFFDDEBFF),
+                                    avatarTextColor = Color(0xFF2962CC)
+                                )
+                                if (chatList.none { it.conversationId == newChat.conversationId }) {
+                                    chatList = listOf(newChat) + chatList
+                                }
+                                showNewChatDialog = false
+                                groupNameInput = ""
+                                selectedUserIdsForGroup = emptySet()
+                                refreshConversations()
+                                selectedChat = newChat
+                            } else {
+                                errorMessage = response.body()?.message ?: "Unable to start conversation."
+                            }
+                        } catch (e: Exception) {
+                            errorMessage = e.message ?: "Failed to start conversation."
+                        } finally {
+                            isStartingDirectChat = false
+                        }
+                    }
+                },
                 onDismiss = {
-                    showCreateGroupDialog = false
+                    showNewChatDialog = false
                     groupNameInput = ""
                     selectedUserIdsForGroup = emptySet()
                 },
-                onCreate = {
+                onCreateGroup = {
                     scope.launch {
                         try {
                             isCreatingGroup = true
@@ -498,7 +547,7 @@ fun ChatScreen(
                                 val newConvId = response.body()?.conversationId ?: 0
                                 val createdGroupName = groupNameInput.trim()
                                 val count = selectedUserIdsForGroup.size + 1
-                                showCreateGroupDialog = false
+                                showNewChatDialog = false
                                 groupNameInput = ""
                                 selectedUserIdsForGroup = emptySet()
                                 refreshConversations()
@@ -1880,21 +1929,24 @@ private fun RowScope.MessagesNavigationItem(
 }
 
 // ============================================================
-// CREATE GROUP DIALOG
+// NEW CHAT / MESSAGE DIALOG (DIRECT 1-ON-1 OR GROUP)
 // ============================================================
 
 @Composable
-private fun CreateGroupDialog(
+private fun NewChatDialog(
     groupName: String,
     onGroupNameChange: (String) -> Unit,
     availableMembers: List<UserSearchDto>,
     selectedIds: Set<String>,
     onToggleMember: (String) -> Unit,
     isLoading: Boolean,
-    isCreating: Boolean,
+    isCreatingGroup: Boolean,
+    isStartingDirectChat: Boolean,
+    onStartDirectChat: (UserSearchDto) -> Unit,
     onDismiss: () -> Unit,
-    onCreate: () -> Unit
+    onCreateGroup: () -> Unit
 ) {
+    var activeTab by remember { mutableStateOf("direct") } // "direct" or "group"
     var searchFilter by remember { mutableStateOf("") }
     val filteredMembers = remember(availableMembers, searchFilter) {
         if (searchFilter.isBlank()) availableMembers
@@ -1910,95 +1962,196 @@ private fun CreateGroupDialog(
         availableMembers.filter { selectedIds.contains(it.id) }
     }
 
+    val isBusy = isCreatingGroup || isStartingDirectChat
+
     AlertDialog(
-        onDismissRequest = { if (!isCreating) onDismiss() },
+        onDismissRequest = { if (!isBusy) onDismiss() },
         title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Outlined.GroupAdd,
-                    contentDescription = null,
-                    tint = MessageOrange,
-                    modifier = Modifier.size(24.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(text = "New Group Chat", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .background(Color(0xFFFFEAD6), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = if (activeTab == "direct") Icons.Outlined.ChatBubbleOutline else Icons.Outlined.GroupAdd,
+                            contentDescription = null,
+                            tint = MessageOrange,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = if (activeTab == "direct") "New Message" else "New Group Chat",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 17.sp,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = if (activeTab == "direct") "Start a 1-on-1 direct chat" else "Create a multi-member group",
+                            fontSize = 11.5.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = onDismiss,
+                    enabled = !isBusy,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(Icons.Outlined.Close, contentDescription = "Close", tint = Color.Gray, modifier = Modifier.size(18.dp))
+                }
             }
         },
         text = {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 440.dp)
-                    .verticalScroll(rememberScrollState())
+                    .heightIn(max = 460.dp)
             ) {
-                // 1. Group Name Field
-                OutlinedTextField(
-                    value = groupName,
-                    onValueChange = onGroupNameChange,
-                    label = { Text("Group Name") },
-                    placeholder = { Text("e.g. Project Site Team") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // 2. Selected Members Preview
-                if (selectedMembersList.isNotEmpty()) {
-                    Text(
-                        text = "Added to group (${selectedMembersList.size})",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 12.sp,
-                        color = MessageOrange
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                // Segmented tabs: Direct (1-on-1) vs Group
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFF1F5F9), RoundedCornerShape(10.dp))
+                        .padding(3.dp)
+                ) {
+                    Box(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp)
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (activeTab == "direct") Color.White else Color.Transparent)
+                            .clickable { if (!isBusy) activeTab = "direct" }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        items(selectedMembersList, key = { it.id }) { member ->
-                            Surface(
-                                shape = RoundedCornerShape(16.dp),
-                                color = Color(0xFFFFEAD6),
-                                border = BorderStroke(1.dp, Color(0xFFF8B595))
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Outlined.Person,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp),
+                                tint = if (activeTab == "direct") MessageOrange else Color.Gray
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = "Direct (1-on-1)",
+                                fontSize = 12.sp,
+                                fontWeight = if (activeTab == "direct") FontWeight.Bold else FontWeight.Medium,
+                                color = if (activeTab == "direct") Color(0xFF0F172A) else Color.Gray
+                            )
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(if (activeTab == "group") Color.White else Color.Transparent)
+                            .clickable { if (!isBusy) activeTab = "group" }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Outlined.Group,
+                                contentDescription = null,
+                                modifier = Modifier.size(15.dp),
+                                tint = if (activeTab == "group") MessageOrange else Color.Gray
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = "Group Chat",
+                                fontSize = 12.sp,
+                                fontWeight = if (activeTab == "group") FontWeight.Bold else FontWeight.Medium,
+                                color = if (activeTab == "group") Color(0xFF0F172A) else Color.Gray
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (activeTab == "group") {
+                    // Group Name field
+                    OutlinedTextField(
+                        value = groupName,
+                        onValueChange = onGroupNameChange,
+                        label = { Text("Group Name") },
+                        placeholder = { Text("e.g. Project Site Team") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (selectedMembersList.isNotEmpty()) {
+                        Text(
+                            text = "Added to group (${selectedMembersList.size})",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            color = MessageOrange
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp)
+                        ) {
+                            items(selectedMembersList, key = { it.id }) { member ->
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = Color(0xFFFFEAD6),
+                                    border = BorderStroke(1.dp, Color(0xFFF8B595))
                                 ) {
-                                    Text(
-                                        text = member.fullName ?: member.email ?: "User",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = Color(0xFF9E3710)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    IconButton(
-                                        onClick = { onToggleMember(member.id) },
-                                        modifier = Modifier.size(18.dp)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(start = 8.dp, end = 4.dp, top = 3.dp, bottom = 3.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Outlined.Close,
-                                            contentDescription = "Remove",
-                                            tint = Color(0xFF9E3710),
-                                            modifier = Modifier.size(12.dp)
+                                        Text(
+                                            text = member.fullName ?: member.email ?: "User",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = Color(0xFF9E3710)
                                         )
+                                        Spacer(modifier = Modifier.width(3.dp))
+                                        IconButton(
+                                            onClick = { onToggleMember(member.id) },
+                                            modifier = Modifier.size(16.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.Close,
+                                                contentDescription = "Remove",
+                                                tint = Color(0xFF9E3710),
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
                         }
+                        Spacer(modifier = Modifier.height(6.dp))
                     }
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // 3. Search members in list
+                // Search field
                 OutlinedTextField(
                     value = searchFilter,
                     onValueChange = { searchFilter = it },
-                    placeholder = { Text("Filter members...", fontSize = 12.sp) },
+                    placeholder = {
+                        Text(
+                            text = if (activeTab == "direct") "Search colleague by name or role..." else "Filter members...",
+                            fontSize = 12.sp
+                        )
+                    },
                     leadingIcon = {
                         Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(18.dp))
                     },
@@ -2009,22 +2162,21 @@ private fun CreateGroupDialog(
                     shape = RoundedCornerShape(10.dp)
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // 4. List of available colleagues
                 Text(
-                    text = "Project Colleagues & Admins",
+                    text = if (activeTab == "direct") "Tap a colleague to message:" else "Select group members:",
                     fontSize = 12.sp,
                     color = Color.Gray,
                     fontWeight = FontWeight.Medium
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
                 if (isLoading) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(100.dp),
+                            .height(120.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         CircularProgressIndicator(color = MessageOrange, modifier = Modifier.size(24.dp))
@@ -2033,44 +2185,57 @@ private fun CreateGroupDialog(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(80.dp),
+                            .height(100.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("No members available to add.", fontSize = 12.sp, color = Color.Gray)
+                        Text(
+                            text = if (searchFilter.isNotBlank()) "No users matching \"$searchFilter\"" else "No colleagues found.",
+                            fontSize = 12.5.sp,
+                            color = Color.Gray
+                        )
                     }
                 } else {
                     LazyColumn(
                         modifier = Modifier
+                            .fillMaxWidth()
                             .weight(1f, fill = false)
-                            .heightIn(max = 220.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                            .heightIn(max = 260.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(filteredMembers, key = { it.id }) { user ->
                             val isSelected = selectedIds.contains(user.id)
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) Color(0xFFFFF4EC) else Color(0xFFF9F9F9),
+                                color = if (activeTab == "group" && isSelected) Color(0xFFFFF4EC) else Color(0xFFF8FAFC),
+                                border = BorderStroke(1.dp, if (activeTab == "group" && isSelected) Color(0xFFFED7AA) else Color(0xFFE2E8F0)),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { onToggleMember(user.id) }
+                                    .clickable(enabled = !isBusy) {
+                                        if (activeTab == "direct") {
+                                            onStartDirectChat(user)
+                                        } else {
+                                            onToggleMember(user.id)
+                                        }
+                                    }
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    // Avatar
                                     Box(
                                         modifier = Modifier
-                                            .size(32.dp)
+                                            .size(34.dp)
                                             .background(
-                                                if (isSelected) Color(0xFFF15A24) else Color(0xFFDDEBFF),
+                                                if (activeTab == "group" && isSelected) Color(0xFFF15A24) else Color(0xFFDDEBFF),
                                                 CircleShape
                                             ),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Text(
                                             text = (user.fullName ?: user.email ?: "U").take(1).uppercase(),
-                                            color = if (isSelected) Color.White else Color(0xFF2962CC),
-                                            fontSize = 12.sp,
+                                            color = if (activeTab == "group" && isSelected) Color.White else Color(0xFF2962CC),
+                                            fontSize = 13.sp,
                                             fontWeight = FontWeight.Bold
                                         )
                                     }
@@ -2080,28 +2245,53 @@ private fun CreateGroupDialog(
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = user.fullName ?: user.email ?: "User",
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 13.sp
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = Color(0xFF0F172A)
                                         )
                                         val sub = if (!user.sharedProjects.isNullOrEmpty()) {
                                             user.sharedProjects.joinToString(", ")
                                         } else {
-                                            user.role ?: user.email ?: ""
+                                            user.role?.replaceFirstChar { it.uppercase() } ?: user.email ?: ""
                                         }
                                         Text(
                                             text = sub,
-                                            fontSize = 10.sp,
-                                            color = Color.Gray,
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF64748B),
                                             maxLines = 1,
                                             overflow = TextOverflow.Ellipsis
                                         )
                                     }
 
-                                    Checkbox(
-                                        checked = isSelected,
-                                        onCheckedChange = { onToggleMember(user.id) },
-                                        colors = CheckboxDefaults.colors(checkedColor = MessageOrange)
-                                    )
+                                    if (activeTab == "direct") {
+                                        Box(
+                                            modifier = Modifier
+                                                .background(Color(0xFFFFF7ED), RoundedCornerShape(8.dp))
+                                                .padding(horizontal = 9.dp, vertical = 5.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.Outlined.ChatBubbleOutline,
+                                                    contentDescription = "Chat",
+                                                    tint = MessageOrange,
+                                                    modifier = Modifier.size(13.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = "Chat",
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MessageOrange
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        Checkbox(
+                                            checked = isSelected,
+                                            onCheckedChange = { onToggleMember(user.id) },
+                                            colors = CheckboxDefaults.colors(checkedColor = MessageOrange)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -2110,22 +2300,27 @@ private fun CreateGroupDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = onCreate,
-                enabled = groupName.isNotBlank() && selectedIds.isNotEmpty() && !isCreating,
-                colors = ButtonDefaults.buttonColors(containerColor = MessageOrange)
-            ) {
-                if (isCreating) {
-                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                } else {
-                    Text("Create (${selectedIds.size})")
+            if (activeTab == "group") {
+                Button(
+                    onClick = onCreateGroup,
+                    enabled = groupName.isNotBlank() && selectedIds.isNotEmpty() && !isBusy,
+                    colors = ButtonDefaults.buttonColors(containerColor = MessageOrange),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    if (isCreatingGroup) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Create Group (${selectedIds.size})", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !isCreating) {
-                Text("Cancel", color = Color.Gray)
+            TextButton(onClick = onDismiss, enabled = !isBusy) {
+                Text("Cancel", color = Color.Gray, fontWeight = FontWeight.SemiBold)
             }
-        }
+        },
+        shape = RoundedCornerShape(18.dp),
+        containerColor = Color.White
     )
 }

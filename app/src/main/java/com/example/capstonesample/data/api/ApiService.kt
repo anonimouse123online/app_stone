@@ -446,6 +446,18 @@ data class TaskResponse(
     )
     val dueDate: String? = null,
 
+    @SerializedName(
+        value = "original_due_date",
+        alternate = ["originalDueDate"]
+    )
+    val originalDueDate: String? = null,
+
+    @SerializedName(
+        value = "is_extended",
+        alternate = ["isExtended"]
+    )
+    val isExtended: Boolean? = null,
+
     val phase: String? = null,
 
     val priority: String? = null,
