@@ -336,6 +336,7 @@ fun ProjectsScreen(
                                     project
                                 )
                             }
+                        com.example.capstonesample.sync.OfflineSyncManager.cacheProjects(context, result.data)
                         NavBadgeState.ongoingProjectsCount = projects.count { NavBadgeState.isOngoingProject(it.status) }
                         NavBadgeState.refresh(context, token)
 
@@ -389,6 +390,21 @@ fun ProjectsScreen(
             ) {
 
                 e.printStackTrace()
+
+                val isNetError = !com.example.capstonesample.network.NetworkMonitor.isInternetAvailable(context) ||
+                        e is java.net.ConnectException ||
+                        e is java.net.UnknownHostException ||
+                        e is java.net.SocketTimeoutException ||
+                        e.message?.contains("Failed to connect", ignoreCase = true) == true
+
+                if (isNetError) {
+                    val cached = com.example.capstonesample.sync.OfflineSyncManager.getCachedProjects(context)
+                    if (cached.isNotEmpty()) {
+                        projects = cached.map { convertProject(it) }
+                        NavBadgeState.ongoingProjectsCount = projects.count { NavBadgeState.isOngoingProject(it.status) }
+                        println("📡 Restored ${projects.size} cached projects in ProjectsScreen")
+                    }
+                }
 
                 println(
                     "Unable to load projects: ${e.message}"

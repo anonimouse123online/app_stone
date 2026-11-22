@@ -112,6 +112,10 @@ fun ChatScreen(
         mutableStateOf<String?>(null)
     }
 
+    var isOffline by remember {
+        mutableStateOf(false)
+    }
+
     var showNewChatDialog by remember {
         mutableStateOf(false)
     }
@@ -316,9 +320,19 @@ fun ChatScreen(
 
         } catch (e: Exception) {
 
-            errorMessage =
-                e.message
-                    ?: "Unable to connect to server."
+            val isNetError = !com.example.capstonesample.network.NetworkMonitor.isInternetAvailable(context) ||
+                    e is java.net.ConnectException ||
+                    e is java.net.UnknownHostException ||
+                    e is java.net.SocketTimeoutException ||
+                    e.message?.contains("Failed to connect", ignoreCase = true) == true
+
+            if (isNetError) {
+                isOffline = true
+                errorMessage = "Messaging requires an active internet connection.\nOffline sync applies to field tasks and time logs."
+            } else {
+                isOffline = false
+                errorMessage = e.message ?: "Unable to connect to server."
+            }
 
             e.printStackTrace()
 
@@ -616,80 +630,42 @@ fun ChatScreen(
                 )
 
                 OutlinedTextField(
-
-                    value =
-                        searchQuery,
-
+                    value = searchQuery,
                     onValueChange = {
-
-                        searchQuery =
-                            it
-
-                        errorMessage =
-                            null
+                        searchQuery = it
+                        errorMessage = null
                     },
-
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
-
                     placeholder = {
-
                         Text(
-                            text =
-                                "Search users or conversations...",
+                            text = "Search users or conversations...",
                             fontSize = 13.sp,
-                            color = MessageGray
+                            color = Color(0xFF64748B)
                         )
                     },
-
                     leadingIcon = {
-
                         Icon(
-                            imageVector =
-                                Icons.Outlined.Search,
-
-                            contentDescription =
-                                "Search",
-
-                            tint =
-                                MessageGray,
-
-                            modifier =
-                                Modifier.size(20.dp)
+                            imageVector = Icons.Outlined.Search,
+                            contentDescription = "Search",
+                            tint = Color(0xFF475569),
+                            modifier = Modifier.size(20.dp)
                         )
                     },
-
-                    singleLine =
-                        true,
-
-                    shape =
-                        RoundedCornerShape(12.dp),
-
-                    colors =
-                        OutlinedTextFieldDefaults.colors(
-
-                            focusedContainerColor =
-                                SearchBackground,
-
-                            unfocusedContainerColor =
-                                SearchBackground,
-
-                            focusedBorderColor =
-                                MessageOrange,
-
-                            unfocusedBorderColor =
-                                CardBorderStroke,
-
-                            cursorColor =
-                                MessageOrange,
-
-                            focusedTextColor =
-                                Color.Black,
-
-                            unfocusedTextColor =
-                                Color.Black
-                        )
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color(0xFFF8FAFC),
+                        focusedBorderColor = MessageOrange,
+                        unfocusedBorderColor = Color(0xFF64748B),
+                        cursorColor = MessageOrange,
+                        focusedTextColor = Color(0xFF0F172A),
+                        unfocusedTextColor = Color(0xFF0F172A),
+                        focusedPlaceholderColor = Color(0xFF64748B),
+                        unfocusedPlaceholderColor = Color(0xFF64748B)
+                    )
                 )
             }
 
@@ -755,7 +731,7 @@ fun ChatScreen(
 
                         Text(
                             text =
-                                "Unable to load messages",
+                                if (isOffline) "Offline Mode" else "Unable to load messages",
                             fontWeight =
                                 FontWeight.Bold,
                             fontSize =
@@ -773,7 +749,9 @@ fun ChatScreen(
                             color =
                                 MessageGray,
                             fontSize =
-                                12.sp
+                                12.sp,
+                            textAlign =
+                                androidx.compose.ui.text.style.TextAlign.Center
                         )
                     }
                 }
@@ -2083,11 +2061,24 @@ private fun NewChatDialog(
                     OutlinedTextField(
                         value = groupName,
                         onValueChange = onGroupNameChange,
-                        label = { Text("Group Name") },
+                        label = { Text("Group Name", fontWeight = FontWeight.SemiBold) },
                         placeholder = { Text("e.g. Project Site Team") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color(0xFFF8FAFC),
+                            focusedBorderColor = MessageOrange,
+                            unfocusedBorderColor = Color(0xFF64748B),
+                            cursorColor = MessageOrange,
+                            focusedTextColor = Color(0xFF0F172A),
+                            unfocusedTextColor = Color(0xFF0F172A),
+                            focusedPlaceholderColor = Color(0xFF64748B),
+                            unfocusedPlaceholderColor = Color(0xFF64748B),
+                            focusedLabelColor = MessageOrange,
+                            unfocusedLabelColor = Color(0xFF334155)
+                        )
                     )
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -2149,17 +2140,29 @@ private fun NewChatDialog(
                     placeholder = {
                         Text(
                             text = if (activeTab == "direct") "Search colleague by name or role..." else "Filter members...",
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            color = Color(0xFF64748B)
                         )
                     },
                     leadingIcon = {
-                        Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Outlined.Search, contentDescription = null, tint = Color(0xFF475569), modifier = Modifier.size(18.dp))
                     },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.White,
+                        unfocusedContainerColor = Color(0xFFF8FAFC),
+                        focusedBorderColor = MessageOrange,
+                        unfocusedBorderColor = Color(0xFF64748B),
+                        cursorColor = MessageOrange,
+                        focusedTextColor = Color(0xFF0F172A),
+                        unfocusedTextColor = Color(0xFF0F172A),
+                        focusedPlaceholderColor = Color(0xFF64748B),
+                        unfocusedPlaceholderColor = Color(0xFF64748B)
+                    )
                 )
 
                 Spacer(modifier = Modifier.height(10.dp))

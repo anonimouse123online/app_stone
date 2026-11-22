@@ -34,6 +34,9 @@ import com.example.capstonesample.data.model.VerifyResetCodeRequest
 import com.example.capstonesample.data.model.VerifyResetCodeResponse
 import com.example.capstonesample.data.model.ResetPasswordRequest
 import com.example.capstonesample.data.model.ResetPasswordResponse
+import com.example.capstonesample.data.model.VerifyGeofenceRequest
+import com.example.capstonesample.data.model.VerifyGeofenceResponse
+import com.example.capstonesample.data.model.ProjectGeofenceResponse
 
 
 
@@ -263,6 +266,17 @@ interface ApiService {
         code: String
 
     ): Response<SingleProjectResponse>
+
+    @GET("projects/{code}/geofence")
+    suspend fun getProjectGeofence(
+        @Path("code") code: String
+    ): Response<ProjectGeofenceResponse>
+
+    @POST("projects/{code}/geofence/verify")
+    suspend fun verifyGeofence(
+        @Path("code") code: String,
+        @Body request: VerifyGeofenceRequest
+    ): Response<VerifyGeofenceResponse>
 
     @GET("users/search")
     suspend fun searchUsers(

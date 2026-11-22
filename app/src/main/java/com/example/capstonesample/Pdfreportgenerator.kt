@@ -87,11 +87,34 @@ object PdfReportGenerator {
             } else if (rawLine.equals("Manpower", ignoreCase = true) ||
                        rawLine.equals("Work Progress", ignoreCase = true) ||
                        rawLine.equals("Ongoing Scope of works", ignoreCase = true) ||
-                       rawLine.equals("Ongoing Scope of work", ignoreCase = true)) {
+                       rawLine.equals("Ongoing Scope of work", ignoreCase = true) ||
+                       rawLine.equals("Site Notes", ignoreCase = true) ||
+                       rawLine.equals("Site Observations", ignoreCase = true) ||
+                       rawLine.equals("Field Notes", ignoreCase = true)) {
                 checkPageBreak(32f)
                 y += 10f
                 canvas.drawText(rawLine, marginLeft, y, sectionHeaderPaint)
                 y += 20f
+            } else if (rawLine.startsWith("Site Notes:", ignoreCase = true) ||
+                       rawLine.startsWith("Site Observations:", ignoreCase = true) ||
+                       rawLine.startsWith("Field Notes:", ignoreCase = true)) {
+                checkPageBreak(32f)
+                y += 10f
+                val headerName = if (rawLine.startsWith("Site Observations:", ignoreCase = true)) "Site Observations"
+                                 else if (rawLine.startsWith("Field Notes:", ignoreCase = true)) "Field Notes"
+                                 else "Site Notes"
+                canvas.drawText(headerName, marginLeft, y, sectionHeaderPaint)
+                y += 20f
+                val noteBody = rawLine.substring(rawLine.indexOf(':') + 1).trim()
+                if (noteBody.isNotBlank()) {
+                    checkPageBreak(18f)
+                    val wrapped = wrapText(noteBody, bodyPaint, maxWidth)
+                    for (wLine in wrapped) {
+                        checkPageBreak(18f)
+                        canvas.drawText(wLine, marginLeft, y, bodyPaint)
+                        y += 16f
+                    }
+                }
             } else if (rawLine.startsWith("Date:", ignoreCase = true) ||
                        rawLine.startsWith("Project Name:", ignoreCase = true) ||
                        rawLine.startsWith("Location:", ignoreCase = true)) {

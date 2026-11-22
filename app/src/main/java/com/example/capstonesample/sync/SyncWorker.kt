@@ -54,30 +54,44 @@ class SyncWorker(
 
 
             // ================================================
-            // TODO:
-            // SYNC PENDING TASKS
+            // SYNC PENDING OFFLINE TASKS
             // ================================================
 
-            /*
-            val pendingTasks =
-                taskDao.getPendingSyncTasks()
+            val taskDao = database.taskDao()
+            val unsyncedTasks = taskDao.getUnsyncedTasks()
 
-            for (task in pendingTasks) {
+            for (task in unsyncedTasks) {
+                try {
+                    val statusToSync = task.status
+                    if (!statusToSync.isNullOrBlank()) {
+                        val response = RetrofitClient.api.updateTaskWorkStatus(
+                            taskId = task.id,
+                            request = com.example.capstonesample.data.model.UpdateTaskWorkStatusRequest(
+                                status = statusToSync
+                            )
+                        )
 
-                val response =
-                    RetrofitClient.api.uploadTask(
-                        ...
-                    )
-
-                if (response.isSuccessful) {
-
-                    taskDao.markSynced(
-                        task.id
-                    )
+                        if (response.isSuccessful && response.body()?.success == true) {
+                            taskDao.markTaskSynced(task.id)
+                        } else if (response.code() == 409) {
+                            // Conflict resolution: Server has newer status/state, accept server state
+                            taskDao.markTaskSynced(task.id)
+                        }
+                    }
+                } catch (taskErr: Exception) {
+                    android.util.Log.e("SYNC_WORKER", "Failed to sync task ${task.id}", taskErr)
                 }
             }
-            */
 
+
+            // ================================================
+            // SYNC PENDING OFFLINE TIME LOGS & DIARY ENTRIES
+            // ================================================
+            try {
+                OfflineSyncManager.syncPendingTimeLogs(applicationContext)
+            } catch (timeLogErr: Exception) {
+                android.util.Log.e("SYNC_WORKER", "Failed to sync offline time logs", timeLogErr)
+            }
 
             // ================================================
             // EVERYTHING SUCCESSFUL

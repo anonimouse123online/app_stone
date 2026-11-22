@@ -132,7 +132,8 @@ class AiPipeline(
         subtasks: List<SubtaskItem> = emptyList(),
         assignee: String = "",
         currentProgress: Int = 0,
-        manpower: String = ""
+        manpower: String = "",
+        engineerNotes: String = ""
     ): AiAnalysisResult =
         withContext(
             Dispatchers.Default
@@ -471,6 +472,12 @@ class AiPipeline(
 
             if (ongoingList.isEmpty() && pendingSubtasks.isEmpty()) {
                 ongoingList.add("General Site Finishing & Testing")
+            }
+
+            if (engineerNotes.isNotBlank()) {
+                ongoingList.add("")
+                ongoingList.add("Site Notes")
+                ongoingList.add(engineerNotes.trim())
             }
 
             val ongoingScopeText =

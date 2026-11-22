@@ -32,6 +32,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.capstonesample.ui.theme.*
 
+import androidx.compose.ui.platform.LocalContext
+import com.example.capstonesample.data.local.AppDatabase
+import com.example.capstonesample.data.local.toTaskResponse
+import com.example.capstonesample.data.local.toTaskEntity
+import com.example.capstonesample.network.NetworkMonitor
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.api.TaskResponse
 import com.example.capstonesample.data.api.SubtaskItem
@@ -204,6 +209,13 @@ fun TasksScreen(
     val scope =
         rememberCoroutineScope()
 
+    val context =
+        LocalContext.current
+
+    var isOfflineMode by remember {
+        mutableStateOf(false)
+    }
+
 
     // ============================================================
     // SELECTED TASK
@@ -358,6 +370,27 @@ fun TasksScreen(
             taskError =
                 null
 
+            if (!NetworkMonitor.isInternetAvailable(context)) {
+                try {
+                    val db = AppDatabase.getDatabase(context)
+                    val cached = db.taskDao().getAllTasksList()
+                    if (cached.isNotEmpty()) {
+                        serverTasks = cached.map { it.toTaskResponse() }
+                        isOfflineMode = true
+                        taskError = null
+                        println("📡 Loaded ${serverTasks.size} tasks from local Room cache (Offline)")
+                    } else {
+                        isOfflineMode = true
+                        taskError = "Offline Mode: No cached tasks saved on device. Reconnect once to synchronize."
+                    }
+                } catch (_: Exception) {
+                    isOfflineMode = true
+                    taskError = "Offline Mode: Unable to access local database."
+                }
+                isRefreshing = false
+                return@launch
+            }
+
 
             try {
 
@@ -447,6 +480,14 @@ fun TasksScreen(
 
                         serverTasks =
                             result.data
+
+                        isOfflineMode = false
+                        try {
+                            val db = AppDatabase.getDatabase(context)
+                            val entities = serverTasks.map { it.toTaskEntity() }
+                            db.taskDao().deleteAllTasks()
+                            db.taskDao().insertTasks(entities)
+                        } catch (_: Exception) {}
 
                         NavBadgeState.ongoingTasksCount = serverTasks.count {
                             NavBadgeState.isOngoingTask(it.status, it.dueDate, it.progress, it.subtasks)
@@ -598,15 +639,37 @@ fun TasksScreen(
 
                 e.printStackTrace()
 
-
                 println(
                     "❌ TASK EXCEPTION = ${e.message}"
                 )
 
+                val isNetError = !NetworkMonitor.isInternetAvailable(context) ||
+                        e is java.net.ConnectException ||
+                        e is java.net.UnknownHostException ||
+                        e is java.net.SocketTimeoutException ||
+                        e.message?.contains("Failed to connect", ignoreCase = true) == true
 
-                taskError =
-                    e.message
-                        ?: "Unable to connect to the SitePulse server."
+                if (isNetError) {
+                    try {
+                        val db = AppDatabase.getDatabase(context)
+                        val cached = db.taskDao().getAllTasksList()
+                        if (cached.isNotEmpty()) {
+                            serverTasks = cached.map { it.toTaskResponse() }
+                            isOfflineMode = true
+                            taskError = null
+                        } else {
+                            isOfflineMode = true
+                            taskError = "Offline Mode: Unable to connect and no cached tasks stored."
+                        }
+                    } catch (_: Exception) {
+                        isOfflineMode = true
+                        taskError = "Offline Mode: Connection unavailable."
+                    }
+                } else {
+                    taskError =
+                        e.message
+                            ?: "Unable to connect to the SitePulse server."
+                }
 
 
             } finally {
@@ -1413,11 +1476,45 @@ fun TasksScreen(
 
 
                     // =================================================
-                    // ERROR MESSAGE
+                    // OFFLINE MODE BANNER & ERROR MESSAGE
                     // =================================================
 
+                    if (isOfflineMode) {
+                        Spacer(
+                            modifier = Modifier.height(10.dp)
+                        )
+
+                        Surface(
+                            color = Color(0xFFF1F5F9),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("📡", fontSize = 14.sp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        "Offline Mode (Cached Tasks)",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF1E293B)
+                                    )
+                                    Text(
+                                        "Showing tasks saved on this device.",
+                                        fontSize = 10.sp,
+                                        color = Color(0xFF64748B)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     if (
-                        taskError != null
+                        taskError != null && !isOfflineMode
                     ) {
 
                         Spacer(

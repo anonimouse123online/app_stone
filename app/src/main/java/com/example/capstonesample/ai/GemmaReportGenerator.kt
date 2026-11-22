@@ -271,6 +271,7 @@ class GemmaReportGenerator(
             appendLine("Ongoing Scope of works")
             appendLine("List remaining or ongoing work items line by line in this format:")
             appendLine("[Item]: [Progress]% Ongoing")
+            appendLine("If Site Notes are present, include them as a separate section titled 'Site Notes' at the end.")
             appendLine("6. Do NOT use markdown symbols such as ** or #.")
             appendLine("7. Do NOT include greetings, intro remarks, conversational text, or disclaimers.")
             appendLine("8. Every section MUST be separated by a blank line.")

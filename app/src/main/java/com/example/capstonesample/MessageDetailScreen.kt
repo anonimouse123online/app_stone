@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -296,7 +297,8 @@ fun MessageDetailScreen(
         bottomBar = {
             Surface(
                 color = Color.White,
-                shadowElevation = 5.dp,
+                shadowElevation = 8.dp,
+                border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -325,10 +327,27 @@ fun MessageDetailScreen(
                         value = messageText,
                         onValueChange = { messageText = it },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text("Type a message...", fontSize = 13.sp) },
+                        placeholder = {
+                            Text(
+                                text = "Type a message...",
+                                fontSize = 13.sp,
+                                color = Color(0xFF64748B)
+                            )
+                        },
                         shape = RoundedCornerShape(22.dp),
                         maxLines = 4,
-                        enabled = !isSending
+                        enabled = !isSending,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color(0xFFF8FAFC),
+                            focusedBorderColor = Color(0xFFF15A24),
+                            unfocusedBorderColor = Color(0xFF64748B),
+                            cursorColor = Color(0xFFF15A24),
+                            focusedTextColor = Color(0xFF0F172A),
+                            unfocusedTextColor = Color(0xFF0F172A),
+                            focusedPlaceholderColor = Color(0xFF64748B),
+                            unfocusedPlaceholderColor = Color(0xFF64748B)
+                        )
                     )
 
                     Spacer(modifier = Modifier.width(6.dp))

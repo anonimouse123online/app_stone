@@ -340,6 +340,7 @@ fun TaskDetailScreen(
 
     // Manpower deployment inputs (starts empty so nothing is displayed until added)
     var manpowerList by remember { mutableStateOf<List<ManpowerItem>>(emptyList()) }
+    var engineerDailyNotes by remember(task.id) { mutableStateOf("") }
 
     fun applyTaskUpdate(response: Response<TaskUpdateResponse>) {
         val body = response.body()
@@ -377,7 +378,15 @@ fun TaskDetailScreen(
                 }
                 applyTaskUpdate(response)
             } catch (e: Exception) {
-                workStatusError = e.message ?: "Unable to save work status."
+                try {
+                    val db = com.example.capstonesample.data.local.AppDatabase.getDatabase(context)
+                    db.taskDao().markTaskUnsynced(task.id)
+                    com.example.capstonesample.sync.SyncManager.requestImmediateSync(context)
+                    currentStatus = status
+                    workStatusError = "Offline: Stored locally in device cache. Will automatically sync once connection is restored."
+                } catch (_: Exception) {
+                    workStatusError = e.message ?: "Unable to save work status."
+                }
             } finally {
                 if (subtaskId == null) isSavingTaskStatus = false
                 else {
@@ -901,6 +910,13 @@ fun TaskDetailScreen(
 
                 onSubtaskProgressUpdate = { label, stage, progress ->
                     updateSubtaskProgressFromEvidence(label, stage, progress)
+                },
+
+                dailyNotes =
+                    engineerDailyNotes,
+
+                onDailyNotesChange = {
+                    engineerDailyNotes = it
                 }
             )
 
@@ -1111,7 +1127,10 @@ fun TaskDetailScreen(
                                                     currentProgress,
 
                                                 manpower =
-                                                    inputtedManpower
+                                                    inputtedManpower,
+
+                                                engineerNotes =
+                                                    engineerDailyNotes
                                             )
 
                                         // A newer selection/task must never receive this result.
@@ -1258,6 +1277,29 @@ fun TaskDetailScreen(
 
                                 val projectCode = task.projectCode
                                     ?: throw IllegalStateException("Project code is missing for this task.")
+
+                                // GEOFENCE VERIFICATION CHECK
+                                val geofenceRes = try {
+                                    RetrofitClient.api.getProjectGeofence(projectCode)
+                                } catch (_: Exception) { null }
+
+                                val gfData = geofenceRes?.body()?.data
+                                if (gfData?.geofenceEnabled == true && gfData.geofenceLatitude != null && gfData.geofenceLongitude != null) {
+                                    val lastLoc = com.example.capstonesample.security.GeofenceHelper.getLastKnownLocation(context)
+                                    if (lastLoc != null) {
+                                        val dist = com.example.capstonesample.security.GeofenceHelper.calculateDistance(
+                                            lastLoc.latitude, lastLoc.longitude,
+                                            gfData.geofenceLatitude, gfData.geofenceLongitude
+                                        )
+                                        val radius = (gfData.geofenceRadius ?: 200.0).toFloat()
+                                        if (dist > radius) {
+                                            val exceed = (dist - radius).toInt()
+                                            throw IllegalStateException(
+                                                "🚫 Geofence Restriction: You are ${dist.toInt()}m from site ($exceed m outside the ${radius.toInt()}m boundary). Field reports can only be submitted within the verified site perimeter."
+                                            )
+                                        }
+                                    }
+                                }
 
                                 val reportImages = mutableListOf<AiReportImage>()
 
@@ -2365,7 +2407,11 @@ private fun FieldEvidenceCard(
 
     subtasks: List<SubtaskItem> = emptyList(),
 
-    onSubtaskProgressUpdate: ((label: String, stage: String, progress: Int?) -> Unit)? = null
+    onSubtaskProgressUpdate: ((label: String, stage: String, progress: Int?) -> Unit)? = null,
+
+    dailyNotes: String = "",
+
+    onDailyNotesChange: (String) -> Unit = {}
 
 ) {
 
@@ -4389,6 +4435,58 @@ private fun FieldEvidenceCard(
                 fontSize = 11.sp,
                 lineHeight = 15.sp,
                 color = TaskDetailGray
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color(0xFFE2E8F0))
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text(
+                text = "Daily Site Observations / Field Notes",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF0F172A)
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            OutlinedTextField(
+                value = dailyNotes,
+                onValueChange = onDailyNotesChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text(
+                        text = "e.g., Completed formwork for 2nd floor beams. Rebar tying 80% finished. Concrete pouring scheduled tomorrow morning.",
+                        fontSize = 11.sp,
+                        color = Color(0xFF94A3B8),
+                        lineHeight = 15.sp
+                    )
+                },
+                minLines = 3,
+                maxLines = 6,
+                shape = RoundedCornerShape(10.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color(0xFFF8FAFC),
+                    unfocusedContainerColor = Color(0xFFF8FAFC),
+                    focusedBorderColor = TaskDetailOrange,
+                    unfocusedBorderColor = Color(0xFF64748B),
+                    focusedTextColor = Color(0xFF0F172A),
+                    unfocusedTextColor = Color(0xFF0F172A)
+                )
+            )
+
+            Text(
+                text = "These notes will appear under the Site Notes section in the official Daily Site Report.",
+                fontSize = 10.sp,
+                color = TaskDetailGray,
+                modifier = Modifier.padding(top = 4.dp)
             )
         }
     }
