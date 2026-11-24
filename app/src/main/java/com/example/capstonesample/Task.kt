@@ -4805,36 +4805,34 @@ private fun AddFieldAnnotationDialog(
 
 
                     DropdownMenu(
-
-                        expanded =
-                            labelMenuExpanded,
-
-                        onDismissRequest = {
-                            labelMenuExpanded =
-                                false
-                        }
-
+                        expanded = labelMenuExpanded,
+                        onDismissRequest = { labelMenuExpanded = false },
+                        containerColor = Color.White,
+                        shadowElevation = 8.dp,
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.background(Color.White, RoundedCornerShape(12.dp))
                     ) {
-
-                        workLabels
-                            .forEach { label ->
-
-                                DropdownMenuItem(
-
-                                    text = {
-                                        Text(
-                                            text =
-                                                label
-                                        )
-                                    },
-
-                                    onClick = {
-
-                                        selectedLabel =
-                                            label
-
-                                        labelMenuExpanded =
-                                            false
+                        workLabels.forEach { label ->
+                            val isSelected = label == selectedLabel
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = label,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                        color = if (isSelected) TaskDetailOrange else Color(0xFF0F172A)
+                                    )
+                                },
+                                colors = MenuDefaults.itemColors(
+                                    textColor = Color(0xFF0F172A)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(if (isSelected) Color(0xFFFFF7ED) else Color.White),
+                                onClick = {
+                                    selectedLabel = label
+                                    labelMenuExpanded = false
 
                                         val matching =
                                             subtasks.firstOrNull { it.title.trim().equals(label, ignoreCase = true) }
@@ -4914,39 +4912,37 @@ private fun AddFieldAnnotationDialog(
 
 
                     DropdownMenu(
-
-                        expanded =
-                            stageMenuExpanded,
-
-                        onDismissRequest = {
-                            stageMenuExpanded =
-                                false
-                        }
-
+                        expanded = stageMenuExpanded,
+                        onDismissRequest = { stageMenuExpanded = false },
+                        containerColor = Color.White,
+                        shadowElevation = 8.dp,
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.background(Color.White, RoundedCornerShape(12.dp))
                     ) {
-
-                        workStages
-                            .forEach { stage ->
-
-                                DropdownMenuItem(
-
-                                    text = {
-                                        Text(
-                                            text =
-                                                stage
-                                        )
-                                    },
-
-                                    onClick = {
-
-                                        selectedStage =
-                                            stage
-
-                                        stageMenuExpanded =
-                                            false
-                                    }
-                                )
-                            }
+                        workStages.forEach { stage ->
+                            val isSelected = stage == selectedStage
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = stage,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                        color = if (isSelected) TaskDetailOrange else Color(0xFF0F172A)
+                                    )
+                                },
+                                colors = MenuDefaults.itemColors(
+                                    textColor = Color(0xFF0F172A)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(if (isSelected) Color(0xFFFFF7ED) else Color.White),
+                                onClick = {
+                                    selectedStage = stage
+                                    stageMenuExpanded = false
+                                }
+                            )
+                        }
                     }
                 }
 

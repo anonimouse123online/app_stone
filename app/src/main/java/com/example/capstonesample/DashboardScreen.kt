@@ -3006,17 +3006,45 @@ private fun TimeInDialog(
                             DropdownMenu(
                                 expanded = projectMenuExpanded,
                                 onDismissRequest = { projectMenuExpanded = false },
-                                modifier = Modifier.fillMaxWidth(0.75f)
+                                containerColor = Color.White,
+                                shadowElevation = 8.dp,
+                                border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth(0.85f)
+                                    .background(Color.White, RoundedCornerShape(12.dp))
                             ) {
                                 projects.forEach { proj ->
+                                    val isSelected = proj == selectedProject
                                     DropdownMenuItem(
                                         text = {
-                                            Text(
-                                                text = proj,
-                                                fontWeight = if (proj == selectedProject) FontWeight.Bold else FontWeight.Normal,
-                                                color = if (proj == selectedProject) SitePulseOrange else Color.Black
-                                            )
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(
+                                                    text = proj,
+                                                    fontSize = 14.sp,
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                                    color = if (isSelected) SitePulseOrange else Color(0xFF0F172A)
+                                                )
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Outlined.Check,
+                                                        contentDescription = "Selected",
+                                                        tint = SitePulseOrange,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
                                         },
+                                        colors = MenuDefaults.itemColors(
+                                            textColor = Color(0xFF0F172A)
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(if (isSelected) Color(0xFFFFF7ED) else Color.White),
                                         onClick = {
                                             selectedProject = proj
                                             projectMenuExpanded = false
@@ -3526,17 +3554,45 @@ private fun LogTimeDialog(
                                 DropdownMenu(
                                     expanded = projectMenuExpanded,
                                     onDismissRequest = { projectMenuExpanded = false },
-                                    modifier = Modifier.fillMaxWidth(0.75f)
+                                    containerColor = Color.White,
+                                    shadowElevation = 8.dp,
+                                    border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.85f)
+                                        .background(Color.White, RoundedCornerShape(12.dp))
                                 ) {
                                     projects.forEach { proj ->
+                                        val isSelected = proj == selectedProject
                                         DropdownMenuItem(
                                             text = {
-                                                Text(
-                                                    text = proj,
-                                                    fontWeight = if (proj == selectedProject) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (proj == selectedProject) SitePulseOrange else Color.Black
-                                                )
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Text(
+                                                        text = proj,
+                                                        fontSize = 14.sp,
+                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                                        color = if (isSelected) SitePulseOrange else Color(0xFF0F172A)
+                                                    )
+                                                    if (isSelected) {
+                                                        Icon(
+                                                            imageVector = Icons.Outlined.Check,
+                                                            contentDescription = "Selected",
+                                                            tint = SitePulseOrange,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    }
+                                                }
                                             },
+                                            colors = MenuDefaults.itemColors(
+                                                textColor = Color(0xFF0F172A)
+                                            ),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(if (isSelected) Color(0xFFFFF7ED) else Color.White),
                                             onClick = {
                                                 selectedProject = proj
                                                 projectMenuExpanded = false
