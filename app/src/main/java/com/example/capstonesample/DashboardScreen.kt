@@ -266,6 +266,32 @@ fun DashboardScreen(
     var showTimeInDialog by remember { mutableStateOf(false) }
     var showLogTimeDialog by remember { mutableStateOf(false) }
 
+    val pendingOfflineLogsCount = remember { mutableStateOf(com.example.capstonesample.sync.OfflineSyncManager.getPendingCount(context)) }
+    var isSyncingOfflineLogs by remember { mutableStateOf(false) }
+
+    fun triggerSyncPendingLogs() {
+        if (!NetworkMonitor.isInternetAvailable(context)) {
+            Toast.makeText(context, "Cannot sync: No internet connection.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        coroutineScope.launch {
+            isSyncingOfflineLogs = true
+            try {
+                val synced = com.example.capstonesample.sync.OfflineSyncManager.syncPendingTimeLogs(context)
+                pendingOfflineLogsCount.value = com.example.capstonesample.sync.OfflineSyncManager.getPendingCount(context)
+                if (synced > 0) {
+                    Toast.makeText(context, "✅ Synced $synced offline time log(s) to server!", Toast.LENGTH_LONG).show()
+                } else if (pendingOfflineLogsCount.value > 0) {
+                    Toast.makeText(context, "Logs queued on device. Please sign in online to complete sync.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("DASH_SYNC", "Error syncing offline logs", e)
+            } finally {
+                isSyncingOfflineLogs = false
+            }
+        }
+    }
+
 
     fun loadNotifications() {
 
@@ -566,6 +592,7 @@ fun DashboardScreen(
             return
         }
 
+        val isDeviceOffline = isOfflineDashboard || !NetworkMonitor.isInternetAvailable(context)
         val location = currentLocation
         val matchingProject = projects.firstOrNull { it.name.equals(trimmedProject, ignoreCase = true) }
         val geofenceCheck = if (matchingProject?.geofenceEnabled == true && matchingProject.geofenceLatitude != null && matchingProject.geofenceLongitude != null) {
@@ -579,8 +606,8 @@ fun DashboardScreen(
             )
         } else null
 
-        // Enforce geofence boundary: cannot Time Out outside the zone unless verified exit occurred
-        if (matchingProject?.geofenceEnabled == true) {
+        // Enforce geofence boundary: cannot Time Out outside the zone unless verified exit occurred OR device is offline
+        if (matchingProject?.geofenceEnabled == true && !isDeviceOffline) {
             if (location == null) {
                 Toast.makeText(context, "Cannot Time Out: GPS location required to verify site geofence.", Toast.LENGTH_LONG).show()
                 return
@@ -665,6 +692,8 @@ fun DashboardScreen(
                         additionalNotes = "${logRequest.additionalNotes ?: ""} • [Offline Record: Queued for Sync]"
                     )
                     com.example.capstonesample.sync.OfflineSyncManager.queueTimeLog(context, authorizationToken, offlineRequest)
+                    pendingOfflineLogsCount.value = com.example.capstonesample.sync.OfflineSyncManager.getPendingCount(context)
+                    com.example.capstonesample.sync.SyncManager.requestImmediateSync(context)
                     val offlineMsg = "Offline mode: Log saved locally ($parsedHours hrs for $trimmedProject). It will sync automatically when back online."
                     logTimeMessage = offlineMsg
                     Toast.makeText(context, "💾 $offlineMsg", Toast.LENGTH_LONG).show()
@@ -702,6 +731,8 @@ fun DashboardScreen(
                         additionalNotes = "${logRequest.additionalNotes ?: ""} • [Offline Record: Queued for Sync]"
                     )
                     com.example.capstonesample.sync.OfflineSyncManager.queueTimeLog(context, authorizationToken, offlineRequest)
+                    pendingOfflineLogsCount.value = com.example.capstonesample.sync.OfflineSyncManager.getPendingCount(context)
+                    com.example.capstonesample.sync.SyncManager.requestImmediateSync(context)
                     val offlineMsg = "Network unavailable: Log queued locally ($parsedHours hrs for $trimmedProject). Will sync when online."
                     logTimeMessage = offlineMsg
                     Toast.makeText(context, "💾 $offlineMsg", Toast.LENGTH_LONG).show()
@@ -725,6 +756,17 @@ fun DashboardScreen(
 
         isLoading = true
         errorMessage = null
+
+        // Auto-sync any queued offline time logs if connected to network
+        if (NetworkMonitor.isInternetAvailable(context) && com.example.capstonesample.sync.OfflineSyncManager.hasPendingLogs(context)) {
+            launch {
+                val synced = com.example.capstonesample.sync.OfflineSyncManager.syncPendingTimeLogs(context)
+                pendingOfflineLogsCount.value = com.example.capstonesample.sync.OfflineSyncManager.getPendingCount(context)
+                if (synced > 0) {
+                    Toast.makeText(context, "✅ Synced $synced offline time log(s) to server!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
 
         try {
 
@@ -1552,6 +1594,91 @@ fun DashboardScreen(
                 )
             }
 
+
+            // =================================================
+            // OFFLINE QUEUE STATUS BANNER (IF ANY PENDING LOGS)
+            // =================================================
+            if (pendingOfflineLogsCount.value > 0) {
+                item {
+                    val isOnline = NetworkMonitor.isInternetAvailable(context)
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF6FF)),
+                        border = BorderStroke(1.dp, Color(0xFFBFDBFE))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(Color(0xFF2563EB), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.CloudUpload,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = "${pendingOfflineLogsCount.value} Offline Time Log(s) Saved",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1E40AF)
+                                    )
+                                    Text(
+                                        text = if (isOnline) "Internet connected • Ready to sync" else "Saved locally • Will auto-sync when online",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF3B82F6)
+                                    )
+                                }
+                            }
+
+                            if (isOnline) {
+                                Button(
+                                    onClick = { triggerSyncPendingLogs() },
+                                    enabled = !isSyncingOfflineLogs,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    if (isSyncingOfflineLogs) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            color = Color.White,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Syncing", fontSize = 11.sp, color = Color.White)
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Sync,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Sync Now", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             // =================================================
             // QUICK ACTIONS
@@ -3889,19 +4016,22 @@ private fun LogTimeDialog(
                             val distance = geofenceResult?.distanceMeters ?: 0f
                             val radius = matchedProject.geofenceRadius?.toInt() ?: 200
                             val hasVerifiedDeparture = currentSelectedShift.hasVerifiedExit || currentSelectedShift.currentlyOutsideGeofence || currentSelectedShift.geofenceLeftTime.isNotBlank()
+                            val isDeviceOffline = isOffline || !NetworkMonitor.isInternetAvailable(context)
 
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(10.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (currentLocation == null) Color(0xFFFFFBEB)
+                                    containerColor = if (isDeviceOffline) Color(0xFFEFF6FF)
+                                    else if (currentLocation == null) Color(0xFFFFFBEB)
                                     else if (isInside) Color(0xFFF0FDF4)
                                     else if (hasVerifiedDeparture) Color(0xFFFFFBEB)
                                     else Color(0xFFFEF2F2)
                                 ),
                                 border = BorderStroke(
                                     1.dp,
-                                    if (currentLocation == null) Color(0xFFFDE68A)
+                                    if (isDeviceOffline) Color(0xFFBFDBFE)
+                                    else if (currentLocation == null) Color(0xFFFDE68A)
                                     else if (isInside) Color(0xFFBBF7D0)
                                     else if (hasVerifiedDeparture) Color(0xFFFDE68A)
                                     else Color(0xFFFECACA)
@@ -3915,12 +4045,14 @@ private fun LogTimeDialog(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Icon(
-                                        imageVector = if (currentLocation == null) Icons.Outlined.LocationSearching
+                                        imageVector = if (isDeviceOffline) Icons.Outlined.CloudQueue
+                                        else if (currentLocation == null) Icons.Outlined.LocationSearching
                                         else if (isInside) Icons.Outlined.CheckCircle
                                         else if (hasVerifiedDeparture) Icons.Outlined.CheckCircle
                                         else Icons.Outlined.WarningAmber,
                                         contentDescription = null,
-                                        tint = if (currentLocation == null) Color(0xFFD97706)
+                                        tint = if (isDeviceOffline) Color(0xFF2563EB)
+                                        else if (currentLocation == null) Color(0xFFD97706)
                                         else if (isInside) Color(0xFF16A34A)
                                         else if (hasVerifiedDeparture) Color(0xFFD97706)
                                         else Color(0xFFDC2626),
@@ -3928,24 +4060,28 @@ private fun LogTimeDialog(
                                     )
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = if (currentLocation == null) "GEOFENCE: WAITING FOR GPS"
+                                            text = if (isDeviceOffline) "OFFLINE MODE: LOCAL LOGGING"
+                                            else if (currentLocation == null) "GEOFENCE: WAITING FOR GPS"
                                             else if (isInside) "GEOFENCE VERIFIED (ON-SITE)"
                                             else if (hasVerifiedDeparture) "GEOFENCE: DEPARTURE RECORDED"
                                             else "GEOFENCE ALERT (OUTSIDE PERIMETER)",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (currentLocation == null) Color(0xFFB45309)
+                                            color = if (isDeviceOffline) Color(0xFF1E40AF)
+                                            else if (currentLocation == null) Color(0xFFB45309)
                                             else if (isInside) Color(0xFF15803D)
                                             else if (hasVerifiedDeparture) Color(0xFFB45309)
                                             else Color(0xFFB91C1C)
                                         )
                                         Text(
-                                            text = if (currentLocation == null) "Acquiring GPS fix to verify presence within ${radius}m boundary"
+                                            text = if (isDeviceOffline) "Shift completion will be safely stored on your device with timestamp and automatically synced when back online."
+                                            else if (currentLocation == null) "Acquiring GPS fix to verify presence within ${radius}m boundary"
                                             else if (isInside) "${String.format(Locale.US, "%.1f", distance)}m from site center • Perimeter: ${radius}m"
                                             else if (hasVerifiedDeparture) "Recorded departure at ${currentSelectedShift.geofenceLeftTime.ifBlank { "earlier" }}. Off-site Time Out authorized."
                                             else "${String.format(Locale.US, "%.1f", distance)}m from site center • Outside ${radius}m boundary. Time Out locked until on-site.",
                                             fontSize = 10.sp,
-                                            color = if (currentLocation == null) Color(0xFF92400E)
+                                            color = if (isDeviceOffline) Color(0xFF2563EB)
+                                            else if (currentLocation == null) Color(0xFF92400E)
                                             else if (isInside) Color(0xFF166534)
                                             else if (hasVerifiedDeparture) Color(0xFF92400E)
                                             else Color(0xFF991B1B)
@@ -4606,9 +4742,10 @@ private fun LogTimeDialog(
                         Text("Cancel")
                     }
 
+                    val isDeviceOffline = isOffline || !NetworkMonitor.isInternetAvailable(context)
                     val hasVerifiedDeparture = currentSelectedShift.hasVerifiedExit || currentSelectedShift.currentlyOutsideGeofence || currentSelectedShift.geofenceLeftTime.isNotBlank()
                     val isOutsidePerimeter = matchedProject?.geofenceEnabled == true && (currentLocation == null || geofenceResult?.isInside != true)
-                    val isGeofenceLocked = isOutsidePerimeter && !hasVerifiedDeparture
+                    val isGeofenceLocked = isOutsidePerimeter && !hasVerifiedDeparture && !isDeviceOffline
 
                     Button(
                         onClick = {
@@ -4616,7 +4753,7 @@ private fun LogTimeDialog(
                                 localError = "Please select or enter a project name."
                                 return@Button
                             }
-                            if (matchedProject?.geofenceEnabled == true && !hasVerifiedDeparture) {
+                            if (!isDeviceOffline && matchedProject?.geofenceEnabled == true && !hasVerifiedDeparture) {
                                 if (currentLocation == null) {
                                     localError = "Cannot Time Out: Waiting for GPS location to verify site geofence."
                                     onRequestLocation()
@@ -4650,7 +4787,7 @@ private fun LogTimeDialog(
                         },
                         enabled = !isSubmitting && !isGeofenceLocked,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isGeofenceLocked) Color(0xFFEF4444) else SitePulseOrange,
+                            containerColor = if (isGeofenceLocked) Color(0xFFEF4444) else if (isDeviceOffline) Color(0xFF2563EB) else SitePulseOrange,
                             disabledContainerColor = Color(0xFFF1F5F9)
                         ),
                         shape = RoundedCornerShape(12.dp),
@@ -4680,14 +4817,14 @@ private fun LogTimeDialog(
                             )
                         } else {
                             Icon(
-                                imageVector = if (isOffline) Icons.Outlined.Save else Icons.Outlined.Check,
+                                imageVector = if (isDeviceOffline) Icons.Outlined.Save else Icons.Outlined.Check,
                                 contentDescription = null,
                                 tint = Color.White,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = if (isOffline) "Save Offline Time Out" else "Confirm Time Out",
+                                text = if (isDeviceOffline) "Save Offline Time Out" else "Confirm Time Out",
                                 color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
