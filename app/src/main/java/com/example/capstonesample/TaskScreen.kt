@@ -879,9 +879,11 @@ fun TasksScreen(
                     ),
 
                 isExtended =
-                    !task.originalDueDate.isNullOrBlank() &&
-                    !task.dueDate.isNullOrBlank() &&
-                    task.dueDate > task.originalDueDate,
+                    task.isExtended == true ||
+                    (task.isExtended == null &&
+                        !task.originalDueDate.isNullOrBlank() &&
+                        !task.dueDate.isNullOrBlank() &&
+                        task.dueDate > task.originalDueDate),
 
                 originalDueDate =
                     task.originalDueDate,
