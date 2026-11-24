@@ -5400,9 +5400,8 @@ private fun QuickActions(
                             modifier = Modifier.size(18.dp)
                         )
                         Column(modifier = Modifier.weight(1f)) {
-                            val incidentSuffix = if (activeShift.incidentsCount > 1) " (${activeShift.incidentsCount} Incidents)" else ""
                             Text(
-                                text = if (activeShift.currentlyOutsideGeofence) "ALERT: OUTSIDE GEOFENCE ZONE$incidentSuffix" else "GEOFENCE ALERT RECORDED$incidentSuffix",
+                                text = if (activeShift.currentlyOutsideGeofence) "ALERT: OUTSIDE GEOFENCE ZONE" else "GEOFENCE ALERT RECORDED",
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = if (activeShift.currentlyOutsideGeofence) Color(0xFFB91C1C) else Color(0xFFB45309)
