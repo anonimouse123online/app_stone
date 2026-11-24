@@ -1008,8 +1008,22 @@ fun DashboardScreen(
     // Uses tasks from GET /tasks
     // ========================================================
 
+    val isEngineer = resolvedUserRole.trim().equals("engineer", ignoreCase = true)
+    val currentUid = remember(token) { NavBadgeState.getUserIdFromJwt(token) }
+
+    val relevantTasks = remember(tasks, isEngineer, currentUid, resolvedUserName) {
+        if (isEngineer && (!currentUid.isNullOrBlank() || resolvedUserName.isNotBlank())) {
+            tasks.filter { task ->
+                (!currentUid.isNullOrBlank() && task.assigneeId?.equals(currentUid, ignoreCase = true) == true) ||
+                (resolvedUserName.isNotBlank() && task.assigneeName?.trim().equals(resolvedUserName.trim(), ignoreCase = true))
+            }
+        } else {
+            tasks
+        }
+    }
+
     val activities =
-        tasks
+        relevantTasks
             .take(5)
             .map { task ->
 
@@ -1071,15 +1085,15 @@ fun DashboardScreen(
 
 
     // ========================================================
-    // HEALTH CALCULATION
+    // HEALTH CALCULATION (FILTERED TO ASSIGNED TASKS FOR ENGINEER)
     // ========================================================
 
     val totalTasks =
-        tasks.size
+        relevantTasks.size
 
 
     val delayedTasks =
-        tasks.count { task ->
+        relevantTasks.count { task ->
             val label = workStatusLabel(task.status, task.dueDate)
             label.equals("Delayed", ignoreCase = true) ||
                     task.status.equals(
@@ -1098,7 +1112,7 @@ fun DashboardScreen(
 
 
     val completedTasks =
-        tasks.count { task ->
+        relevantTasks.count { task ->
 
             task.status.equals(
                 "Completed",
@@ -1116,54 +1130,26 @@ fun DashboardScreen(
                     )
         }
 
-
-    // ========================================================
-    // PROJECT STATUS
-    // ========================================================
-
-    val onTrack =
-        projects.count { project ->
-            project.status.equals(
-                "Active",
-                ignoreCase = true
-            ) ||
-                    project.status.equals(
-                        "On Track",
-                        ignoreCase = true
-                    ) ||
-                    project.status.equals(
-                        "Ongoing",
-                        ignoreCase = true
-                    ) ||
-                    project.status.equals(
-                        "Planning",
-                        ignoreCase = true
-                    )
+    val onTrackTasks =
+        relevantTasks.count { task ->
+            val label = workStatusLabel(task.status, task.dueDate)
+            (label.equals("Ongoing", ignoreCase = true) ||
+             label.equals("Pending", ignoreCase = true) ||
+             label.equals("In Progress", ignoreCase = true)) &&
+            !label.equals("Delayed", ignoreCase = true)
         }
 
 
-    val delayed =
-        projects.count { project ->
+    // ========================================================
+    // WORKLOAD STATUS (ALIGNED WITH TASKS)
+    // ========================================================
 
-            project.status.equals(
-                "Delayed",
-                ignoreCase = true
-            )
-        }
+    val onTrack = onTrackTasks
+    val delayed = delayedTasks
 
 
     // ========================================================
     // HEALTH SCORE
-    //
-    // TEMPORARY FORMULA:
-    // Every delayed / overdue / blocked task reduces health.
-    //
-    // We can improve this later using:
-    // - expected project progress
-    // - issues
-    // - delayed tasks
-    // - overdue tasks
-    // - field reports
     // ========================================================
 
     val health =
@@ -1173,13 +1159,9 @@ fun DashboardScreen(
 
         } else {
 
-            val delayedPercentage =
-                (
-                        delayedTasks.toFloat() /
-                                totalTasks.toFloat()
-                        ) * 100f
-
-            (100 - delayedPercentage.toInt())
+            val healthyTasks = (totalTasks - delayedTasks).coerceAtLeast(0)
+            ((healthyTasks.toFloat() / totalTasks.toFloat()) * 100f)
+                .toInt()
                 .coerceIn(0, 100)
         }
 
@@ -1588,6 +1570,9 @@ fun DashboardScreen(
 
                     totalTasks =
                         totalTasks,
+
+                    isEngineer =
+                        isEngineer,
 
                     onClick =
                         onTasksClick
@@ -5415,21 +5400,22 @@ private fun HealthStatusCard(
     delayedTasks: Int,
     completedTasks: Int,
     totalTasks: Int,
+    isEngineer: Boolean = false,
     onClick: () -> Unit = {}
 ) {
     val healthMessage =
         when {
             totalTasks == 0 ->
-                "No Task Data Yet"
+                if (isEngineer) "No Assigned Tasks" else "No Task Data Yet"
 
             health >= 90 ->
-                "All Sites Operational"
+                if (isEngineer) "Workload On Track" else "All Sites Operational"
 
             health >= 75 ->
-                "Minor Attention Required"
+                if (isEngineer) "Minor Attention Needed" else "Minor Attention Required"
 
             health >= 50 ->
-                "Project Attention Required"
+                if (isEngineer) "Task Attention Required" else "Project Attention Required"
 
             else ->
                 "Critical Attention Required"
@@ -5512,7 +5498,7 @@ private fun HealthStatusCard(
             ) {
                 Text(
                     text =
-                        "AGGREGATED STATUS",
+                        if (isEngineer) "MY WORKLOAD STATUS" else "AGGREGATED STATUS",
                     fontSize =
                         9.sp,
                     fontWeight =
@@ -5537,29 +5523,40 @@ private fun HealthStatusCard(
                         Modifier.height(6.dp)
                 )
 
-                val displayDelayed = if (delayed > 0) delayed else delayedTasks
-
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    StatusBadge(
-                        text =
-                            "● $onTrack On Track",
-                        background =
-                            Color(0xFFE1F5E7),
-                        textColor =
-                            Green
-                    )
+                    if (onTrack > 0 || delayed == 0) {
+                        StatusBadge(
+                            text =
+                                "● $onTrack On Track",
+                            background =
+                                if (onTrack > 0) Color(0xFFE1F5E7) else Color(0xFFF1F3F5),
+                            textColor =
+                                if (onTrack > 0) Green else TextGray
+                        )
+                    }
 
                     StatusBadge(
                         text =
-                            "● $displayDelayed Delayed",
+                            "● $delayedTasks Delayed",
                         background =
-                            if (displayDelayed > 0) Color(0xFFFFEED7) else Color(0xFFF1F3F5),
+                            if (delayedTasks > 0) Color(0xFFFFEED7) else Color(0xFFF1F3F5),
                         textColor =
-                            if (displayDelayed > 0) Color(0xFFFF8A00) else TextGray
+                            if (delayedTasks > 0) Color(0xFFFF8A00) else TextGray
                     )
+
+                    if (completedTasks > 0) {
+                        StatusBadge(
+                            text =
+                                "● $completedTasks Completed",
+                            background =
+                                Color(0xFFE0F2FE),
+                            textColor =
+                                Color(0xFF0284C7)
+                        )
+                    }
                 }
 
                 Spacer(
