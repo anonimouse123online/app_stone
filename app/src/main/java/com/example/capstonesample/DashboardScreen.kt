@@ -1378,48 +1378,94 @@ fun DashboardScreen(
                         }
                     )
 
-                    val activeGeofenceProject = remember(projects) {
-                        projects.firstOrNull { it.geofenceEnabled == true && it.geofenceLatitude != null && it.geofenceLongitude != null }
+                    val geofencedProjects = remember(projects) {
+                        projects.filter { it.geofenceEnabled == true && it.geofenceLatitude != null && it.geofenceLongitude != null }
                     }
 
-                    if (activeGeofenceProject != null) {
-                        val gfResult = remember(currentLocation, activeGeofenceProject) {
-                            com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
+                    val evaluatedGeofences = remember(currentLocation, geofencedProjects) {
+                        geofencedProjects.map { proj ->
+                            val gf = com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
                                 userLat = currentLocation?.latitude,
                                 userLng = currentLocation?.longitude,
-                                fenceLat = activeGeofenceProject.geofenceLatitude,
-                                fenceLng = activeGeofenceProject.geofenceLongitude,
-                                radiusMeters = activeGeofenceProject.geofenceRadius,
-                                enabled = activeGeofenceProject.geofenceEnabled
+                                fenceLat = proj.geofenceLatitude,
+                                fenceLng = proj.geofenceLongitude,
+                                radiusMeters = proj.geofenceRadius,
+                                enabled = proj.geofenceEnabled
                             )
-                        }
+                            Pair(proj, gf)
+                        }.sortedWith(
+                            compareByDescending<Pair<DashboardProjectUi, com.example.capstonesample.security.GeofenceCheckResult>> { it.second.isInside }
+                                .thenBy { it.second.distanceMeters ?: Float.MAX_VALUE }
+                        )
+                    }
 
+                    if (evaluatedGeofences.isNotEmpty()) {
                         Spacer(modifier = Modifier.height(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (gfResult.isInside) Color(0xFFECFDF5) else Color(0xFFFEF2F2),
-                            border = BorderStroke(1.dp, if (gfResult.isInside) Color(0xFFA7F3D0) else Color(0xFFFECACA)),
-                            modifier = Modifier.fillMaxWidth()
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(if (gfResult.isInside) Color(0xFF10B981) else Color(0xFFEF4444))
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = if (gfResult.isInside) "GEOFENCE VERIFIED: ${gfResult.message}" else "GEOFENCE ALERT: ${gfResult.message}",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (gfResult.isInside) Color(0xFF065F46) else Color(0xFF991B1B),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                            evaluatedGeofences.forEach { (proj, gfResult) ->
+                                val isInside = gfResult.isInside
+                                val distance = gfResult.distanceMeters
+                                val radius = proj.geofenceRadius?.toInt() ?: 200
+
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isInside) Color(0xFFECFDF5) else Color(0xFFF8FAFC),
+                                    border = BorderStroke(1.dp, if (isInside) Color(0xFFA7F3D0) else Color(0xFFE2E8F0)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (isInside) Color(0xFF10B981) else Color(0xFF94A3B8))
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = proj.name,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF0F172A),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = if (isInside) " • On-Site" else " • Outside",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (isInside) Color(0xFF059669) else Color(0xFF64748B)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = if (currentLocation == null) {
+                                                "Acquiring GPS…"
+                                            } else if (distance != null) {
+                                                if (distance >= 1000f) {
+                                                    "${String.format(Locale.US, "%.1f", distance / 1000f)}km away"
+                                                } else {
+                                                    "${distance.toInt()}m / ${radius}m"
+                                                }
+                                            } else "Locating…",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (isInside) Color(0xFF047857) else Color(0xFF64748B)
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -1599,6 +1645,7 @@ fun DashboardScreen(
                 items(projects.take(2), key = { "proj-${it.name}" }) { project ->
                     ProjectCard(
                         project = project,
+                        currentLocation = currentLocation,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -1627,6 +1674,9 @@ fun DashboardScreen(
 
                                     project =
                                         project,
+
+                                    currentLocation =
+                                        currentLocation,
 
                                     modifier =
                                         Modifier.weight(1f)
@@ -2804,7 +2854,21 @@ private fun TimeInDialog(
     onConfirmTimeIn: (projectName: String) -> Unit
 ) {
     val projects = remember(projectsList) { projectsList.map { it.name }.filter { it.isNotBlank() } }
-    var selectedProject by remember { mutableStateOf(projects.firstOrNull() ?: "") }
+    val initialProject = remember(projectsList, currentLocation) {
+        val insideProject = projectsList.firstOrNull { p ->
+            p.geofenceEnabled == true && p.geofenceLatitude != null && p.geofenceLongitude != null &&
+            com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
+                userLat = currentLocation?.latitude,
+                userLng = currentLocation?.longitude,
+                fenceLat = p.geofenceLatitude,
+                fenceLng = p.geofenceLongitude,
+                radiusMeters = p.geofenceRadius,
+                enabled = p.geofenceEnabled
+            ).isInside
+        }
+        insideProject?.name?.takeIf { it.isNotBlank() } ?: projects.firstOrNull() ?: ""
+    }
+    var selectedProject by remember { mutableStateOf(initialProject) }
     var customProject by remember { mutableStateOf("") }
     var isCustomProject by remember { mutableStateOf(projects.isEmpty()) }
     var projectMenuExpanded by remember { mutableStateOf(false) }
@@ -5521,11 +5585,9 @@ private fun QuickActionButton(
 
 @Composable
 private fun ProjectCard(
-
     project: DashboardProjectUi,
-
+    currentLocation: DashboardLocationUi? = null,
     modifier: Modifier = Modifier
-
 ) {
 
     val isActive =
@@ -5609,6 +5671,45 @@ private fun ProjectCard(
                             Color(0xFFFF8A00)
                         }
                 )
+
+                if (project.geofenceEnabled == true && project.geofenceLatitude != null && project.geofenceLongitude != null) {
+                    val gfCheck = remember(currentLocation, project) {
+                        com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
+                            userLat = currentLocation?.latitude,
+                            userLng = currentLocation?.longitude,
+                            fenceLat = project.geofenceLatitude,
+                            fenceLng = project.geofenceLongitude,
+                            radiusMeters = project.geofenceRadius,
+                            enabled = project.geofenceEnabled
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (gfCheck.isInside) Color(0xFFDCFCE7) else Color(0xFFF1F5F9),
+                        border = BorderStroke(0.5.dp, if (gfCheck.isInside) Color(0xFF86EFAC) else Color(0xFFCBD5E1))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .clip(CircleShape)
+                                    .background(if (gfCheck.isInside) Color(0xFF16A34A) else Color(0xFF94A3B8))
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = if (gfCheck.isInside) "On-Site" else "Geofenced",
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (gfCheck.isInside) Color(0xFF15803D) else Color(0xFF475569)
+                            )
+                        }
+                    }
+                }
             }
 
 
