@@ -72,10 +72,14 @@ import com.example.capstonesample.network.NetworkMonitor
 import java.time.OffsetDateTime
 import java.time.Duration
 
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 
 // ============================================================
@@ -250,11 +254,14 @@ fun DashboardScreen(
     val configuration = LocalConfiguration.current
     val isSmallScreen = configuration.screenWidthDp < 360
 
-    val activeShift = remember { mutableStateOf(TimeTrackingManager.getActiveShift(context)) }
-    var isTimedIn by remember { mutableStateOf(activeShift.value.isTimedIn) }
+    val activeShifts = remember { mutableStateOf(TimeTrackingManager.getActiveShifts(context)) }
+    val activeShift = remember { mutableStateOf(activeShifts.value.firstOrNull() ?: TimeTrackingManager.getActiveShift(context)) }
+    var isTimedIn by remember { mutableStateOf(activeShifts.value.isNotEmpty()) }
+    var targetShiftForTimeOut by remember { mutableStateOf<TimeTrackingManager.ActiveShift?>(null) }
     var elapsedDuration by remember {
-        val initialDiff = (System.currentTimeMillis() - activeShift.value.timeInMs).coerceAtLeast(0L)
-        mutableStateOf(if (activeShift.value.isTimedIn) TimeTrackingManager.formatDuration(initialDiff) else "00h 00m 00s")
+        val first = activeShifts.value.firstOrNull()
+        val initialDiff = if (first != null && first.timeInMs > 0L) (System.currentTimeMillis() - first.timeInMs).coerceAtLeast(0L) else 0L
+        mutableStateOf(if (first != null && first.isTimedIn) TimeTrackingManager.formatDuration(initialDiff) else "00h 00m 00s")
     }
     var showTimeInDialog by remember { mutableStateOf(false) }
     var showLogTimeDialog by remember { mutableStateOf(false) }
@@ -492,11 +499,14 @@ fun DashboardScreen(
         }
     }
 
-    LaunchedEffect(isTimedIn, activeShift.value.timeInMs) {
+    LaunchedEffect(isTimedIn, activeShifts.value) {
         var tick = 0
-        while (isTimedIn && activeShift.value.timeInMs > 0L) {
-            val now = System.currentTimeMillis()
-            elapsedDuration = TimeTrackingManager.formatDuration(now - activeShift.value.timeInMs)
+        while (isTimedIn && activeShifts.value.isNotEmpty()) {
+            val first = activeShifts.value.firstOrNull()
+            if (first != null && first.timeInMs > 0L) {
+                val now = System.currentTimeMillis()
+                elapsedDuration = TimeTrackingManager.formatDuration(now - first.timeInMs)
+            }
             tick++
             if (tick % 30 == 0) {
                 requestLocation()
@@ -505,23 +515,31 @@ fun DashboardScreen(
         }
     }
 
-    LaunchedEffect(currentLocation, isTimedIn) {
+    LaunchedEffect(currentLocation, activeShifts.value) {
         val currLoc = currentLocation
-        if (isTimedIn && currLoc != null) {
-            val projName = activeShift.value.projectName
-            val matchingProj = projects.firstOrNull { it.name.equals(projName.trim(), ignoreCase = true) }
-            if (matchingProj?.geofenceEnabled == true && matchingProj.geofenceLatitude != null && matchingProj.geofenceLongitude != null) {
-                val check = com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
-                    userLat = currLoc.latitude,
-                    userLng = currLoc.longitude,
-                    fenceLat = matchingProj.geofenceLatitude,
-                    fenceLng = matchingProj.geofenceLongitude,
-                    radiusMeters = matchingProj.geofenceRadius,
-                    enabled = matchingProj.geofenceEnabled
-                )
-                val updatedShift = TimeTrackingManager.recordGeofenceEvent(context, check.isInside)
-                activeShift.value = updatedShift
+        val shifts = activeShifts.value
+        if (shifts.isNotEmpty() && currLoc != null) {
+            for (shift in shifts) {
+                val projName = shift.projectName
+                val matchingProj = projects.firstOrNull { it.name.equals(projName.trim(), ignoreCase = true) }
+                if (matchingProj?.geofenceEnabled == true && matchingProj.geofenceLatitude != null && matchingProj.geofenceLongitude != null) {
+                    val check = com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
+                        userLat = currLoc.latitude,
+                        userLng = currLoc.longitude,
+                        fenceLat = matchingProj.geofenceLatitude,
+                        fenceLng = matchingProj.geofenceLongitude,
+                        radiusMeters = matchingProj.geofenceRadius,
+                        enabled = matchingProj.geofenceEnabled
+                    )
+                    TimeTrackingManager.recordGeofenceEvent(context, projName, check.isInside)
+                }
             }
+            val refreshed = TimeTrackingManager.getActiveShifts(context)
+            activeShifts.value = refreshed
+            if (refreshed.isNotEmpty()) {
+                activeShift.value = refreshed.first()
+            }
+            isTimedIn = refreshed.isNotEmpty()
         }
     }
 
@@ -561,17 +579,21 @@ fun DashboardScreen(
             )
         } else null
 
-        // Enforce strict geofence boundary: cannot Time Out outside the zone
+        // Enforce geofence boundary: cannot Time Out outside the zone unless verified exit occurred
         if (matchingProject?.geofenceEnabled == true) {
             if (location == null) {
                 Toast.makeText(context, "Cannot Time Out: GPS location required to verify site geofence.", Toast.LENGTH_LONG).show()
                 return
             }
             if (geofenceCheck?.isInside != true) {
-                val dist = geofenceCheck?.distanceMeters?.toInt() ?: 0
-                val rad = matchingProject.geofenceRadius?.toInt() ?: 200
-                Toast.makeText(context, "Cannot Time Out: Outside site geofence (${dist}m from center, limit: ${rad}m).", Toast.LENGTH_LONG).show()
-                return
+                val shiftForProject = TimeTrackingManager.getActiveShift(context, trimmedProject)
+                val hasVerifiedExit = shiftForProject.isTimedIn && (shiftForProject.currentlyOutsideGeofence || shiftForProject.geofenceLeftTime.isNotBlank())
+                if (!hasVerifiedExit) {
+                    val dist = geofenceCheck?.distanceMeters?.toInt() ?: 0
+                    val rad = matchingProject.geofenceRadius?.toInt() ?: 200
+                    Toast.makeText(context, "Cannot Time Out: Outside site geofence (${dist}m from center, limit: ${rad}m).", Toast.LENGTH_LONG).show()
+                    return
+                }
             }
         }
 
@@ -593,7 +615,7 @@ fun DashboardScreen(
             "[Time In: ${timeIn.trim()}]"
         } else ""
 
-        val geofenceAlertTag = TimeTrackingManager.getGeofenceAlertTag(context) ?: ""
+        val geofenceAlertTag = TimeTrackingManager.getGeofenceAlertTag(context, trimmedProject) ?: ""
         val durationTag = if (hours.isNotBlank()) "[Duration: ${hours.trim()}]" else ""
 
         val finalNotes = listOf(timeTag, durationTag, geofenceAlertTag, additionalNotes.trim(), locationNote)
@@ -1537,9 +1559,7 @@ fun DashboardScreen(
 
             item {
                 QuickActions(
-                    isTimedIn = isTimedIn,
-                    activeShift = activeShift.value,
-                    elapsedDuration = elapsedDuration,
+                    activeShifts = activeShifts.value,
                     isLoggingTime = isLoggingTime,
                     onTimeInClick = {
                         if (currentLocation == null) {
@@ -1551,23 +1571,14 @@ fun DashboardScreen(
                         if (currentLocation == null) {
                             requestLocation()
                         }
-                        val matchingProj = projects.firstOrNull { it.name.equals(activeShift.value.projectName.trim(), ignoreCase = true) }
-                        if (matchingProj?.geofenceEnabled == true && matchingProj.geofenceLatitude != null && matchingProj.geofenceLongitude != null && currentLocation != null) {
-                            val check = com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
-                                userLat = currentLocation?.latitude,
-                                userLng = currentLocation?.longitude,
-                                fenceLat = matchingProj.geofenceLatitude,
-                                fenceLng = matchingProj.geofenceLongitude,
-                                radiusMeters = matchingProj.geofenceRadius,
-                                enabled = matchingProj.geofenceEnabled
-                            )
-                            if (!check.isInside) {
-                                val dist = check.distanceMeters?.toInt() ?: 0
-                                val rad = matchingProj.geofenceRadius?.toInt() ?: 200
-                                Toast.makeText(context, "Cannot Time Out: Outside site geofence (${dist}m from center, limit: ${rad}m). Please return to site to Time Out.", Toast.LENGTH_LONG).show()
-                                return@QuickActions
-                            }
+                        targetShiftForTimeOut = activeShifts.value.firstOrNull()
+                        showLogTimeDialog = true
+                    },
+                    onTimeOutProject = { shift ->
+                        if (currentLocation == null) {
+                            requestLocation()
                         }
+                        targetShiftForTimeOut = shift
                         showLogTimeDialog = true
                     }
                 )
@@ -1859,9 +1870,14 @@ fun DashboardScreen(
             initialEngineerName = resolvedUserName,
             currentLocation = currentLocation,
             isLocating = isLocating,
+            activeProjectNames = activeShifts.value.map { it.projectName.trim().lowercase() }.toSet(),
             onRequestLocation = { requestLocation() },
             onDismiss = { showTimeInDialog = false },
             onConfirmTimeIn = { chosenProject ->
+                if (activeShifts.value.any { it.projectName.equals(chosenProject.trim(), ignoreCase = true) }) {
+                    Toast.makeText(context, "Already timed in to $chosenProject!", Toast.LENGTH_SHORT).show()
+                    return@TimeInDialog
+                }
                 val proj = projects.firstOrNull { it.name.equals(chosenProject.trim(), ignoreCase = true) }
                 if (proj?.geofenceEnabled == true && proj.geofenceLatitude != null && proj.geofenceLongitude != null) {
                     val check = com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
@@ -1885,7 +1901,7 @@ fun DashboardScreen(
                 }
 
                 val newShift = TimeTrackingManager.setTimeIn(context, chosenProject)
-                activeShift.value = newShift
+                activeShifts.value = TimeTrackingManager.getActiveShifts(context)
                 isTimedIn = true
                 showTimeInDialog = false
                 Toast.makeText(context, "Timed In at ${newShift.timeInFormatted} for $chosenProject", Toast.LENGTH_SHORT).show()
@@ -1894,9 +1910,10 @@ fun DashboardScreen(
     }
 
     if (showLogTimeDialog) {
+        val shiftToClose = targetShiftForTimeOut ?: activeShifts.value.firstOrNull() ?: TimeTrackingManager.getActiveShift(context)
         LogTimeDialog(
             projectsList = projects,
-            activeShift = activeShift.value,
+            activeShift = shiftToClose,
             initialEngineerName = resolvedUserName,
             currentLocation = currentLocation,
             locationMessage = locationMessage,
@@ -1908,6 +1925,7 @@ fun DashboardScreen(
             onDismiss = {
                 if (!isLoggingTime) {
                     showLogTimeDialog = false
+                    targetShiftForTimeOut = null
                 }
             },
             onSubmit = { form ->
@@ -1926,10 +1944,13 @@ fun DashboardScreen(
                     equipmentUsed = form.equipmentUsed,
                     additionalNotes = form.additionalNotes,
                     onSuccess = {
-                        TimeTrackingManager.clearShift(context)
-                        activeShift.value = TimeTrackingManager.getActiveShift(context)
-                        isTimedIn = false
+                        TimeTrackingManager.clearShift(context, form.projectName)
+                        val refreshed = TimeTrackingManager.getActiveShifts(context)
+                        activeShifts.value = refreshed
+                        isTimedIn = refreshed.isNotEmpty()
+                        activeShift.value = refreshed.firstOrNull() ?: TimeTrackingManager.getActiveShift(context)
                         showLogTimeDialog = false
+                        targetShiftForTimeOut = null
                     }
                 )
             }
@@ -2559,6 +2580,7 @@ private fun NotificationDialog(
 
 object TimeTrackingManager {
     private const val PREFS_NAME = "sitepulse_time_tracking"
+    private const val KEY_ACTIVE_SHIFTS_JSON = "active_shifts_json"
     private const val KEY_IS_TIMED_IN = "is_timed_in"
     private const val KEY_TIME_IN_MS = "time_in_ms"
     private const val KEY_TIME_IN_FORMATTED = "time_in_formatted"
@@ -2570,6 +2592,8 @@ object TimeTrackingManager {
     private const val KEY_HAS_GEOFENCE_ALERT = "has_geofence_alert"
     private const val KEY_GEOFENCE_HISTORY = "geofence_events_history"
 
+    private val gson = Gson()
+
     data class ActiveShift(
         val isTimedIn: Boolean = false,
         val timeInMs: Long = 0L,
@@ -2580,12 +2604,31 @@ object TimeTrackingManager {
         val geofenceReturnedTime: String = "",
         val currentlyOutsideGeofence: Boolean = false,
         val hasGeofenceAlert: Boolean = false,
-        val incidentsCount: Int = 0
-    )
+        val incidentsCount: Int = 0,
+        val geofenceHistory: String = ""
+    ) {
+        val hasVerifiedExit: Boolean get() = currentlyOutsideGeofence || geofenceLeftTime.isNotBlank()
+    }
 
-    fun getActiveShift(context: Context): ActiveShift {
+    fun getActiveShifts(context: Context): List<ActiveShift> {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val json = prefs.getString(KEY_ACTIVE_SHIFTS_JSON, null)
+        if (!json.isNullOrBlank()) {
+            try {
+                val type = object : TypeToken<List<ActiveShift>>() {}.type
+                val list: List<ActiveShift>? = gson.fromJson(json, type)
+                if (list != null && list.isNotEmpty()) {
+                    return list
+                }
+            } catch (e: Exception) {
+                Log.w("TimeTrackingManager", "Error parsing active shifts json: ${e.message}")
+            }
+        }
+
+        // Fallback to legacy single shift
         val isTimedIn = prefs.getBoolean(KEY_IS_TIMED_IN, false)
+        if (!isTimedIn) return emptyList()
+
         val timeInMs = prefs.getLong(KEY_TIME_IN_MS, 0L)
         val formatted = prefs.getString(KEY_TIME_IN_FORMATTED, "") ?: ""
         val project = prefs.getString(KEY_TIME_IN_PROJECT, "") ?: ""
@@ -2597,17 +2640,63 @@ object TimeTrackingManager {
         val history = prefs.getString(KEY_GEOFENCE_HISTORY, "") ?: ""
         val historyCount = if (history.isBlank()) 0 else history.split(";;").filter { it.isNotBlank() }.size
         val totalIncidents = historyCount + (if (isOutside) 1 else 0)
-        return ActiveShift(isTimedIn, timeInMs, formatted, project, date, leftTime, returnedTime, isOutside, hasAlert, totalIncidents)
+
+        val legacyShift = ActiveShift(
+            isTimedIn = true,
+            timeInMs = timeInMs,
+            timeInFormatted = formatted,
+            projectName = project,
+            date = date,
+            geofenceLeftTime = leftTime,
+            geofenceReturnedTime = returnedTime,
+            currentlyOutsideGeofence = isOutside,
+            hasGeofenceAlert = hasAlert,
+            incidentsCount = totalIncidents,
+            geofenceHistory = history
+        )
+        return listOf(legacyShift)
+    }
+
+    fun getActiveShift(context: Context, projectName: String? = null): ActiveShift {
+        val shifts = getActiveShifts(context)
+        if (shifts.isEmpty()) return ActiveShift()
+        if (projectName.isNullOrBlank()) return shifts.first()
+        return shifts.firstOrNull { it.projectName.equals(projectName.trim(), ignoreCase = true) } ?: ActiveShift()
+    }
+
+    fun isProjectTimedIn(context: Context, projectName: String): Boolean {
+        if (projectName.isBlank()) return false
+        return getActiveShifts(context).any { it.projectName.equals(projectName.trim(), ignoreCase = true) }
     }
 
     fun setTimeIn(context: Context, projectName: String, timeInMs: Long = System.currentTimeMillis()): ActiveShift {
         val formattedTime = SimpleDateFormat("hh:mm a", Locale.US).format(Date(timeInMs))
         val formattedDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(timeInMs))
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
+        val cleanName = projectName.trim()
+
+        val currentShifts = getActiveShifts(context).filterNot { it.projectName.equals(cleanName, ignoreCase = true) }.toMutableList()
+        val newShift = ActiveShift(
+            isTimedIn = true,
+            timeInMs = timeInMs,
+            timeInFormatted = formattedTime,
+            projectName = cleanName,
+            date = formattedDate,
+            geofenceLeftTime = "",
+            geofenceReturnedTime = "",
+            currentlyOutsideGeofence = false,
+            hasGeofenceAlert = false,
+            incidentsCount = 0,
+            geofenceHistory = ""
+        )
+        currentShifts.add(newShift)
+
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString(KEY_ACTIVE_SHIFTS_JSON, gson.toJson(currentShifts))
             .putBoolean(KEY_IS_TIMED_IN, true)
             .putLong(KEY_TIME_IN_MS, timeInMs)
             .putString(KEY_TIME_IN_FORMATTED, formattedTime)
-            .putString(KEY_TIME_IN_PROJECT, projectName)
+            .putString(KEY_TIME_IN_PROJECT, cleanName)
             .putString(KEY_TIME_IN_DATE, formattedDate)
             .remove(KEY_GEOFENCE_LEFT_TIME)
             .remove(KEY_GEOFENCE_RETURNED_TIME)
@@ -2615,97 +2704,141 @@ object TimeTrackingManager {
             .putBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, false)
             .putBoolean(KEY_HAS_GEOFENCE_ALERT, false)
             .apply()
-        return ActiveShift(true, timeInMs, formattedTime, projectName, formattedDate, "", "", false, false, 0)
+
+        return newShift
     }
 
-    fun clearShift(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit()
-            .putBoolean(KEY_IS_TIMED_IN, false)
-            .putLong(KEY_TIME_IN_MS, 0L)
-            .putString(KEY_TIME_IN_FORMATTED, "")
-            .putString(KEY_TIME_IN_PROJECT, "")
-            .putString(KEY_TIME_IN_DATE, "")
-            .remove(KEY_GEOFENCE_LEFT_TIME)
-            .remove(KEY_GEOFENCE_RETURNED_TIME)
-            .remove(KEY_GEOFENCE_HISTORY)
-            .putBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, false)
-            .putBoolean(KEY_HAS_GEOFENCE_ALERT, false)
-            .apply()
+    fun clearShift(context: Context, projectName: String? = null) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (projectName.isNullOrBlank()) {
+            prefs.edit()
+                .remove(KEY_ACTIVE_SHIFTS_JSON)
+                .putBoolean(KEY_IS_TIMED_IN, false)
+                .putLong(KEY_TIME_IN_MS, 0L)
+                .putString(KEY_TIME_IN_FORMATTED, "")
+                .putString(KEY_TIME_IN_PROJECT, "")
+                .putString(KEY_TIME_IN_DATE, "")
+                .remove(KEY_GEOFENCE_LEFT_TIME)
+                .remove(KEY_GEOFENCE_RETURNED_TIME)
+                .remove(KEY_GEOFENCE_HISTORY)
+                .putBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, false)
+                .putBoolean(KEY_HAS_GEOFENCE_ALERT, false)
+                .apply()
+            return
+        }
+
+        val cleanName = projectName.trim()
+        val remaining = getActiveShifts(context).filterNot { it.projectName.equals(cleanName, ignoreCase = true) }
+        val editor = prefs.edit()
+        if (remaining.isEmpty()) {
+            editor.remove(KEY_ACTIVE_SHIFTS_JSON)
+                .putBoolean(KEY_IS_TIMED_IN, false)
+                .putLong(KEY_TIME_IN_MS, 0L)
+                .putString(KEY_TIME_IN_FORMATTED, "")
+                .putString(KEY_TIME_IN_PROJECT, "")
+                .putString(KEY_TIME_IN_DATE, "")
+                .remove(KEY_GEOFENCE_LEFT_TIME)
+                .remove(KEY_GEOFENCE_RETURNED_TIME)
+                .remove(KEY_GEOFENCE_HISTORY)
+                .putBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, false)
+                .putBoolean(KEY_HAS_GEOFENCE_ALERT, false)
+        } else {
+            val first = remaining.first()
+            editor.putString(KEY_ACTIVE_SHIFTS_JSON, gson.toJson(remaining))
+                .putBoolean(KEY_IS_TIMED_IN, true)
+                .putLong(KEY_TIME_IN_MS, first.timeInMs)
+                .putString(KEY_TIME_IN_FORMATTED, first.timeInFormatted)
+                .putString(KEY_TIME_IN_PROJECT, first.projectName)
+                .putString(KEY_TIME_IN_DATE, first.date)
+                .putString(KEY_GEOFENCE_LEFT_TIME, first.geofenceLeftTime)
+                .putString(KEY_GEOFENCE_RETURNED_TIME, first.geofenceReturnedTime)
+                .putString(KEY_GEOFENCE_HISTORY, first.geofenceHistory)
+                .putBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, first.currentlyOutsideGeofence)
+                .putBoolean(KEY_HAS_GEOFENCE_ALERT, first.hasGeofenceAlert)
+        }
+        editor.apply()
     }
 
     fun recordGeofenceEvent(
         context: Context,
+        projectName: String? = null,
         isInside: Boolean,
         timestampMs: Long = System.currentTimeMillis()
     ): ActiveShift {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val isTimedIn = prefs.getBoolean(KEY_IS_TIMED_IN, false)
-        if (!isTimedIn) return getActiveShift(context)
+        val shifts = getActiveShifts(context)
+        if (shifts.isEmpty()) return ActiveShift()
 
-        val currentlyOutside = prefs.getBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, false)
-        val editor = prefs.edit()
+        val target = if (!projectName.isNullOrBlank()) {
+            shifts.firstOrNull { it.projectName.equals(projectName.trim(), ignoreCase = true) }
+        } else shifts.firstOrNull()
+
+        if (target == null) return shifts.first()
+
         val timeFormatted = SimpleDateFormat("hh:mm a", Locale.US).format(Date(timestampMs))
+        var updatedTarget = target
 
-        if (!isInside && !currentlyOutside) {
-            // Engineer just stepped outside the geofenced site perimeter!
-            editor.putBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, true)
-            editor.putBoolean(KEY_HAS_GEOFENCE_ALERT, true)
-            editor.putString(KEY_GEOFENCE_LEFT_TIME, timeFormatted)
-            editor.putString(KEY_GEOFENCE_RETURNED_TIME, "")
-            editor.apply()
-        } else if (isInside && currentlyOutside) {
-            // Engineer returned back to the geofenced perimeter!
-            val leftTime = prefs.getString(KEY_GEOFENCE_LEFT_TIME, "") ?: timeFormatted
-            val existingHistory = prefs.getString(KEY_GEOFENCE_HISTORY, "") ?: ""
+        if (!isInside && !target.currentlyOutsideGeofence) {
+            val newCount = target.incidentsCount + 1
+            updatedTarget = target.copy(
+                currentlyOutsideGeofence = true,
+                hasGeofenceAlert = true,
+                geofenceLeftTime = timeFormatted,
+                geofenceReturnedTime = "",
+                incidentsCount = newCount
+            )
+        } else if (isInside && target.currentlyOutsideGeofence) {
+            val leftTime = target.geofenceLeftTime.ifBlank { timeFormatted }
+            val existingHistory = target.geofenceHistory
             val newEntry = "$leftTime|$timeFormatted"
             val updatedHistory = if (existingHistory.isBlank()) newEntry else "$existingHistory;;$newEntry"
-
-            editor.putBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, false)
-            editor.putString(KEY_GEOFENCE_RETURNED_TIME, timeFormatted)
-            editor.putString(KEY_GEOFENCE_HISTORY, updatedHistory)
-            editor.apply()
+            updatedTarget = target.copy(
+                currentlyOutsideGeofence = false,
+                geofenceReturnedTime = timeFormatted,
+                geofenceHistory = updatedHistory
+            )
         }
 
-        return getActiveShift(context)
+        val updatedList = shifts.map { if (it.projectName.equals(target.projectName, ignoreCase = true)) updatedTarget else it }
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_ACTIVE_SHIFTS_JSON, gson.toJson(updatedList)).apply()
+
+        return updatedTarget
     }
 
-    fun getGeofenceAlertTag(context: Context): String? {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val hasAlert = prefs.getBoolean(KEY_HAS_GEOFENCE_ALERT, false)
-        if (!hasAlert) return null
+    fun getGeofenceAlertTag(context: Context, projectName: String? = null): String? {
+        val shift = getActiveShift(context, projectName)
+        if (!shift.hasGeofenceAlert) return null
 
-        val history = prefs.getString(KEY_GEOFENCE_HISTORY, "") ?: ""
-        val isStillOutside = prefs.getBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, false)
-        val currentLeftTime = prefs.getString(KEY_GEOFENCE_LEFT_TIME, "") ?: ""
-        val currentReturnedTime = prefs.getString(KEY_GEOFENCE_RETURNED_TIME, "") ?: ""
+        val history = shift.geofenceHistory
+        val isStillOutside = shift.currentlyOutsideGeofence
+        val currentLeftTime = shift.geofenceLeftTime
+        val currentReturnedTime = shift.geofenceReturnedTime
 
-        val incidentTags = mutableListOf<String>()
+        val tags = mutableListOf<String>()
 
         if (history.isNotBlank()) {
             val entries = history.split(";;").filter { it.isNotBlank() }
             for (entry in entries) {
                 val parts = entry.split("|")
                 if (parts.size >= 2) {
-                    incidentTags.add("[Geofence Alert: Left at ${parts[0]} • Returned at ${parts[1]}]")
+                    tags.add("[Geofence Alert: Left at ${parts[0]} • Returned at ${parts[1]}]")
                 } else if (parts.size == 1) {
-                    incidentTags.add("[Geofence Alert: Left at ${parts[0]} • Returned at site]")
+                    tags.add("[Geofence Alert: Left at ${parts[0]} • Returned at site]")
                 }
             }
         }
 
         if (isStillOutside && currentLeftTime.isNotBlank()) {
-            incidentTags.add("[Geofence Alert: Left at $currentLeftTime • Currently Outside Perimeter]")
-        } else if (incidentTags.isEmpty() && currentLeftTime.isNotBlank()) {
+            tags.add("[Geofence Alert: Left at $currentLeftTime • Currently Outside Perimeter]")
+        } else if (tags.isEmpty() && currentLeftTime.isNotBlank()) {
             if (currentReturnedTime.isNotBlank()) {
-                incidentTags.add("[Geofence Alert: Left at $currentLeftTime • Returned at $currentReturnedTime]")
+                tags.add("[Geofence Alert: Left at $currentLeftTime • Returned at $currentReturnedTime]")
             } else {
-                incidentTags.add("[Geofence Alert: Left at $currentLeftTime • Returned at site]")
+                tags.add("[Geofence Alert: Left at $currentLeftTime • Returned at site]")
             }
         }
 
-        return if (incidentTags.isNotEmpty()) {
-            incidentTags.joinToString(" • ")
-        } else null
+        return if (tags.isNotEmpty()) tags.joinToString(" • ") else null
     }
 
     fun calculateWorkHours(timeInMs: Long, timeOutMs: Long = System.currentTimeMillis()): Pair<Double, String> {
@@ -2849,13 +2982,15 @@ private fun TimeInDialog(
     initialEngineerName: String,
     currentLocation: DashboardLocationUi?,
     isLocating: Boolean,
+    activeProjectNames: Set<String> = emptySet(),
     onRequestLocation: () -> Unit,
     onDismiss: () -> Unit,
     onConfirmTimeIn: (projectName: String) -> Unit
 ) {
     val projects = remember(projectsList) { projectsList.map { it.name }.filter { it.isNotBlank() } }
-    val initialProject = remember(projectsList, currentLocation) {
+    val initialProject = remember(projectsList, currentLocation, activeProjectNames) {
         val insideProject = projectsList.firstOrNull { p ->
+            !activeProjectNames.contains(p.name.trim().lowercase()) &&
             p.geofenceEnabled == true && p.geofenceLatitude != null && p.geofenceLongitude != null &&
             com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
                 userLat = currentLocation?.latitude,
@@ -2866,7 +3001,7 @@ private fun TimeInDialog(
                 enabled = p.geofenceEnabled
             ).isInside
         }
-        insideProject?.name?.takeIf { it.isNotBlank() } ?: projects.firstOrNull() ?: ""
+        insideProject?.name?.takeIf { it.isNotBlank() } ?: projects.firstOrNull { !activeProjectNames.contains(it.trim().lowercase()) } ?: projects.firstOrNull() ?: ""
     }
     var selectedProject by remember { mutableStateOf(initialProject) }
     var customProject by remember { mutableStateOf("") }
@@ -3080,6 +3215,7 @@ private fun TimeInDialog(
                             ) {
                                 projects.forEach { proj ->
                                     val isSelected = proj == selectedProject
+                                    val isAlreadyActive = activeProjectNames.contains(proj.trim().lowercase())
                                     DropdownMenuItem(
                                         text = {
                                             Row(
@@ -3087,12 +3223,22 @@ private fun TimeInDialog(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
-                                                Text(
-                                                    text = proj,
-                                                    fontSize = 14.sp,
-                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                                                    color = if (isSelected) SitePulseOrange else Color(0xFF0F172A)
-                                                )
+                                                Column(modifier = Modifier.weight(1f, fill = false)) {
+                                                    Text(
+                                                        text = proj,
+                                                        fontSize = 14.sp,
+                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                                        color = if (isSelected) SitePulseOrange else Color(0xFF0F172A)
+                                                    )
+                                                    if (isAlreadyActive) {
+                                                        Text(
+                                                            text = "Shift currently active",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = Color(0xFFD97706)
+                                                        )
+                                                    }
+                                                }
                                                 if (isSelected) {
                                                     Icon(
                                                         imageVector = Icons.Outlined.Check,
@@ -3100,6 +3246,19 @@ private fun TimeInDialog(
                                                         tint = SitePulseOrange,
                                                         modifier = Modifier.size(18.dp)
                                                     )
+                                                } else if (isAlreadyActive) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = Color(0xFFFEF3C7)
+                                                    ) {
+                                                        Text(
+                                                            text = "ACTIVE",
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color(0xFFB45309),
+                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                        )
+                                                    }
                                                 }
                                             }
                                         },
@@ -3112,7 +3271,7 @@ private fun TimeInDialog(
                                         onClick = {
                                             selectedProject = proj
                                             projectMenuExpanded = false
-                                            localError = null
+                                            localError = if (isAlreadyActive) "Shift for '$proj' is already active. Select another project or time out first." else null
                                         }
                                     )
                                 }
@@ -3219,11 +3378,18 @@ private fun TimeInDialog(
                         Text("Cancel")
                     }
 
+                    val activeProjName = if (isCustomProject) customProject.trim() else selectedProject.trim()
+                    val isAlreadyActive = activeProjectNames.contains(activeProjName.lowercase())
+
                     Button(
                         onClick = {
                             val activeProj = if (isCustomProject) customProject.trim() else selectedProject.trim()
                             if (activeProj.isBlank()) {
                                 localError = "Please select or enter a project name."
+                                return@Button
+                            }
+                            if (isAlreadyActive) {
+                                localError = "You are already timed in to '$activeProj'. Select another project or time out first."
                                 return@Button
                             }
                             if (isGeofenceLocked) {
@@ -3234,23 +3400,23 @@ private fun TimeInDialog(
                             }
                             onConfirmTimeIn(activeProj)
                         },
-                        enabled = !isGeofenceLocked,
+                        enabled = !isGeofenceLocked && !isAlreadyActive,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isGeofenceLocked) Color(0xFFEF4444) else Color(0xFF16A34A),
-                            disabledContainerColor = Color(0xFFFCA5A5)
+                            containerColor = if (isAlreadyActive) Color(0xFFF59E0B) else if (isGeofenceLocked) Color(0xFFEF4444) else Color(0xFF16A34A),
+                            disabledContainerColor = if (isAlreadyActive) Color(0xFFFDE68A) else Color(0xFFFCA5A5)
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(
-                            imageVector = if (isGeofenceLocked) Icons.Outlined.Lock else Icons.Outlined.PlayArrow,
+                            imageVector = if (isAlreadyActive) Icons.Outlined.CheckCircle else if (isGeofenceLocked) Icons.Outlined.Lock else Icons.Outlined.PlayArrow,
                             contentDescription = null,
                             tint = Color.White,
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = if (isGeofenceLocked) "Geofence Locked" else "Confirm Time In",
+                            text = if (isAlreadyActive) "Already Active" else if (isGeofenceLocked) "Geofence Locked" else "Confirm Time In",
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp
@@ -3305,12 +3471,17 @@ private fun LogTimeDialog(
         mutableStateOf(false)
     }
 
+    val context = LocalContext.current
+    val currentSelectedShift = remember(selectedProject, customProject, isCustomProject, activeShift) {
+        val projName = if (isCustomProject || projects.isEmpty()) customProject.trim() else selectedProject.trim()
+        TimeTrackingManager.getActiveShift(context, projName) ?: activeShift
+    }
     val timeOutMs = remember { System.currentTimeMillis() }
     val formattedTimeOut = remember(timeOutMs) {
         SimpleDateFormat("hh:mm a", Locale.US).format(Date(timeOutMs))
     }
-    val effectiveTimeInMs = if (activeShift.timeInMs > 0L) activeShift.timeInMs else (timeOutMs - 8 * 3600 * 1000L)
-    val effectiveTimeInFormatted = if (activeShift.timeInFormatted.isNotBlank()) activeShift.timeInFormatted else "08:00 AM"
+    val effectiveTimeInMs = if (currentSelectedShift.timeInMs > 0L) currentSelectedShift.timeInMs else if (activeShift.timeInMs > 0L) activeShift.timeInMs else (timeOutMs - 8 * 3600 * 1000L)
+    val effectiveTimeInFormatted = if (currentSelectedShift.timeInFormatted.isNotBlank()) currentSelectedShift.timeInFormatted else if (activeShift.timeInFormatted.isNotBlank()) activeShift.timeInFormatted else "08:00 AM"
     val (calculatedHoursVal, calculatedHoursDisplay) = remember(effectiveTimeInMs, timeOutMs) {
         TimeTrackingManager.calculateWorkHours(effectiveTimeInMs, timeOutMs)
     }
@@ -3626,8 +3797,14 @@ private fun LogTimeDialog(
                                         .fillMaxWidth(0.85f)
                                         .background(Color.White, RoundedCornerShape(12.dp))
                                 ) {
+                                    val activeShiftsList = remember { TimeTrackingManager.getActiveShifts(context) }
+                                    val activeMap = remember(activeShiftsList) {
+                                        activeShiftsList.associateBy { it.projectName.trim().lowercase() }
+                                    }
                                     projects.forEach { proj ->
                                         val isSelected = proj == selectedProject
+                                        val shiftForProj = activeMap[proj.trim().lowercase()]
+                                        val isActiveShift = shiftForProj != null
                                         DropdownMenuItem(
                                             text = {
                                                 Row(
@@ -3635,12 +3812,22 @@ private fun LogTimeDialog(
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.SpaceBetween
                                                 ) {
-                                                    Text(
-                                                        text = proj,
-                                                        fontSize = 14.sp,
-                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                                                        color = if (isSelected) SitePulseOrange else Color(0xFF0F172A)
-                                                    )
+                                                    Column(modifier = Modifier.weight(1f, fill = false)) {
+                                                        Text(
+                                                            text = proj,
+                                                            fontSize = 14.sp,
+                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                                            color = if (isSelected) SitePulseOrange else Color(0xFF0F172A)
+                                                        )
+                                                        if (isActiveShift) {
+                                                            Text(
+                                                                text = "Active since ${shiftForProj?.timeInFormatted}",
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Medium,
+                                                                color = Color(0xFFD97706)
+                                                            )
+                                                        }
+                                                    }
                                                     if (isSelected) {
                                                         Icon(
                                                             imageVector = Icons.Outlined.Check,
@@ -3648,6 +3835,19 @@ private fun LogTimeDialog(
                                                             tint = SitePulseOrange,
                                                             modifier = Modifier.size(18.dp)
                                                         )
+                                                    } else if (isActiveShift) {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = Color(0xFFFEF3C7)
+                                                        ) {
+                                                            Text(
+                                                                text = "ACTIVE",
+                                                                fontSize = 9.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = Color(0xFFB45309),
+                                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                            )
+                                                        }
                                                     }
                                                 }
                                             },
@@ -3688,6 +3888,7 @@ private fun LogTimeDialog(
                             val isInside = geofenceResult?.isInside == true
                             val distance = geofenceResult?.distanceMeters ?: 0f
                             val radius = matchedProject.geofenceRadius?.toInt() ?: 200
+                            val hasVerifiedDeparture = currentSelectedShift.hasVerifiedExit || currentSelectedShift.currentlyOutsideGeofence || currentSelectedShift.geofenceLeftTime.isNotBlank()
 
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
@@ -3695,12 +3896,14 @@ private fun LogTimeDialog(
                                 colors = CardDefaults.cardColors(
                                     containerColor = if (currentLocation == null) Color(0xFFFFFBEB)
                                     else if (isInside) Color(0xFFF0FDF4)
+                                    else if (hasVerifiedDeparture) Color(0xFFFFFBEB)
                                     else Color(0xFFFEF2F2)
                                 ),
                                 border = BorderStroke(
                                     1.dp,
                                     if (currentLocation == null) Color(0xFFFDE68A)
                                     else if (isInside) Color(0xFFBBF7D0)
+                                    else if (hasVerifiedDeparture) Color(0xFFFDE68A)
                                     else Color(0xFFFECACA)
                                 )
                             ) {
@@ -3714,10 +3917,12 @@ private fun LogTimeDialog(
                                     Icon(
                                         imageVector = if (currentLocation == null) Icons.Outlined.LocationSearching
                                         else if (isInside) Icons.Outlined.CheckCircle
+                                        else if (hasVerifiedDeparture) Icons.Outlined.CheckCircle
                                         else Icons.Outlined.WarningAmber,
                                         contentDescription = null,
                                         tint = if (currentLocation == null) Color(0xFFD97706)
                                         else if (isInside) Color(0xFF16A34A)
+                                        else if (hasVerifiedDeparture) Color(0xFFD97706)
                                         else Color(0xFFDC2626),
                                         modifier = Modifier.size(18.dp)
                                     )
@@ -3725,20 +3930,24 @@ private fun LogTimeDialog(
                                         Text(
                                             text = if (currentLocation == null) "GEOFENCE: WAITING FOR GPS"
                                             else if (isInside) "GEOFENCE VERIFIED (ON-SITE)"
+                                            else if (hasVerifiedDeparture) "GEOFENCE: DEPARTURE RECORDED"
                                             else "GEOFENCE ALERT (OUTSIDE PERIMETER)",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold,
                                             color = if (currentLocation == null) Color(0xFFB45309)
                                             else if (isInside) Color(0xFF15803D)
+                                            else if (hasVerifiedDeparture) Color(0xFFB45309)
                                             else Color(0xFFB91C1C)
                                         )
                                         Text(
                                             text = if (currentLocation == null) "Acquiring GPS fix to verify presence within ${radius}m boundary"
                                             else if (isInside) "${String.format(Locale.US, "%.1f", distance)}m from site center • Perimeter: ${radius}m"
+                                            else if (hasVerifiedDeparture) "Recorded departure at ${currentSelectedShift.geofenceLeftTime.ifBlank { "earlier" }}. Off-site Time Out authorized."
                                             else "${String.format(Locale.US, "%.1f", distance)}m from site center • Outside ${radius}m boundary. Time Out locked until on-site.",
                                             fontSize = 10.sp,
                                             color = if (currentLocation == null) Color(0xFF92400E)
                                             else if (isInside) Color(0xFF166534)
+                                            else if (hasVerifiedDeparture) Color(0xFF92400E)
                                             else Color(0xFF991B1B)
                                         )
                                     }
@@ -4397,7 +4606,9 @@ private fun LogTimeDialog(
                         Text("Cancel")
                     }
 
-                    val isGeofenceLocked = matchedProject?.geofenceEnabled == true && (currentLocation == null || geofenceResult?.isInside != true)
+                    val hasVerifiedDeparture = currentSelectedShift.hasVerifiedExit || currentSelectedShift.currentlyOutsideGeofence || currentSelectedShift.geofenceLeftTime.isNotBlank()
+                    val isOutsidePerimeter = matchedProject?.geofenceEnabled == true && (currentLocation == null || geofenceResult?.isInside != true)
+                    val isGeofenceLocked = isOutsidePerimeter && !hasVerifiedDeparture
 
                     Button(
                         onClick = {
@@ -4405,7 +4616,7 @@ private fun LogTimeDialog(
                                 localError = "Please select or enter a project name."
                                 return@Button
                             }
-                            if (matchedProject?.geofenceEnabled == true) {
+                            if (matchedProject?.geofenceEnabled == true && !hasVerifiedDeparture) {
                                 if (currentLocation == null) {
                                     localError = "Cannot Time Out: Waiting for GPS location to verify site geofence."
                                     onRequestLocation()
@@ -5285,137 +5496,178 @@ private fun StatusBadge(
 
 @Composable
 private fun QuickActions(
-    isTimedIn: Boolean,
-    activeShift: TimeTrackingManager.ActiveShift,
-    elapsedDuration: String,
+    activeShifts: List<TimeTrackingManager.ActiveShift> = emptyList(),
     isLoggingTime: Boolean = false,
     onTimeInClick: () -> Unit = {},
-    onTimeOutClick: () -> Unit = {}
+    onTimeOutClick: () -> Unit = {},
+    onTimeOutProject: (shift: TimeTrackingManager.ActiveShift) -> Unit = {}
 ) {
+    val isTimedIn = activeShifts.isNotEmpty()
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+
+    LaunchedEffect(isTimedIn) {
+        if (!isTimedIn) return@LaunchedEffect
+        while (isActive) {
+            nowMs = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Active Shift Card when timed in
+        // Active Shifts Cards (renders each shift separately if multiple!)
         if (isTimedIn) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
-                border = BorderStroke(1.5.dp, Color(0xFFFDBA74))
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+            activeShifts.forEach { shift ->
+                val elapsed = TimeTrackingManager.formatDuration(
+                    (nowMs - shift.timeInMs).coerceAtLeast(0L)
+                )
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+                    border = BorderStroke(1.5.dp, Color(0xFFFDBA74))
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.weight(1f)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(38.dp)
-                                .background(Color(0xFFEA580C), CircleShape),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Schedule,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Column {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(8.dp)
-                                        .background(Color(0xFF16A34A), CircleShape)
+                                        .size(38.dp)
+                                        .background(Color(0xFFEA580C), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Schedule,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Column {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .background(
+                                                    if (shift.currentlyOutsideGeofence) Color(0xFFEF4444) else Color(0xFF16A34A),
+                                                    CircleShape
+                                                )
+                                        )
+                                        Text(
+                                            text = "SHIFT ACTIVE • ${shift.timeInFormatted}",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFC2410C),
+                                            letterSpacing = 0.5.sp
+                                        )
+                                    }
+                                    Text(
+                                        text = shift.projectName.ifBlank { "Site Operations" },
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0F172A),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = elapsed,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFFEA580C)
                                 )
                                 Text(
-                                    text = "SHIFT ACTIVE • ${activeShift.timeInFormatted}",
+                                    text = "Elapsed Time",
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFC2410C),
-                                    letterSpacing = 0.5.sp
+                                    color = Color(0xFF64748B)
                                 )
                             }
-                            Text(
-                                text = activeShift.projectName.ifBlank { "Site Operations" },
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF0F172A),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
                         }
-                    }
 
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = elapsedDuration,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color(0xFFEA580C)
-                        )
-                        Text(
-                            text = "Elapsed Time",
-                            fontSize = 11.sp,
-                            color = Color(0xFF64748B)
-                        )
-                    }
-                }
-            }
+                        // Shift Alert / Departure info if outside or recorded
+                        if (shift.hasGeofenceAlert) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (shift.currentlyOutsideGeofence) Color(0xFFFEF2F2) else Color(0xFFFFFBEB),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (shift.currentlyOutsideGeofence) Color(0xFFFECACA) else Color(0xFFFDE68A)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.WarningAmber,
+                                        contentDescription = null,
+                                        tint = if (shift.currentlyOutsideGeofence) Color(0xFFDC2626) else Color(0xFFD97706),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = if (shift.currentlyOutsideGeofence)
+                                            "Left zone at ${shift.geofenceLeftTime} (Off-site timeout enabled)"
+                                        else
+                                            "Recorded exit: ${shift.geofenceLeftTime} • Back on-site",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (shift.currentlyOutsideGeofence) Color(0xFF991B1B) else Color(0xFF92400E)
+                                    )
+                                }
+                            }
+                        }
 
-            if (activeShift.hasGeofenceAlert) {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (activeShift.currentlyOutsideGeofence) Color(0xFFFEF2F2) else Color(0xFFFFFBEB)
-                    ),
-                    border = BorderStroke(
-                        1.dp,
-                        if (activeShift.currentlyOutsideGeofence) Color(0xFFFECACA) else Color(0xFFFDE68A)
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.WarningAmber,
-                            contentDescription = null,
-                            tint = if (activeShift.currentlyOutsideGeofence) Color(0xFFDC2626) else Color(0xFFD97706),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = if (activeShift.currentlyOutsideGeofence) "ALERT: OUTSIDE GEOFENCE ZONE" else "GEOFENCE ALERT RECORDED",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (activeShift.currentlyOutsideGeofence) Color(0xFFB91C1C) else Color(0xFFB45309)
-                            )
-                            Text(
-                                text = if (activeShift.currentlyOutsideGeofence)
-                                    "Left geofence zone at ${activeShift.geofenceLeftTime}. Move on-site to resume shift."
-                                else if (activeShift.incidentsCount > 1)
-                                    "Latest: Left zone at ${activeShift.geofenceLeftTime} • Returned at ${activeShift.geofenceReturnedTime}"
-                                else
-                                    "Left zone at ${activeShift.geofenceLeftTime} • Returned to zone at ${activeShift.geofenceReturnedTime}",
-                                fontSize = 10.sp,
-                                color = if (activeShift.currentlyOutsideGeofence) Color(0xFF991B1B) else Color(0xFF92400E)
-                            )
+                        // If multiple shifts are active, show a quick "Time Out [Project]" button right on the card!
+                        if (activeShifts.size > 1) {
+                            Button(
+                                onClick = { onTimeOutProject(shift) },
+                                enabled = !isLoggingTime,
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFEA580C)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(36.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Logout,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Time Out: ${shift.projectName}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
                         }
                     }
                 }
@@ -5427,16 +5679,16 @@ private fun QuickActions(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            // Time In Button
+            // Time In Button (Always available to add another site!)
             Button(
                 onClick = onTimeInClick,
-                enabled = !isTimedIn && !isLoggingTime,
+                enabled = !isLoggingTime,
                 modifier = Modifier
                     .weight(1f)
                     .height(50.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isTimedIn) Color(0xFFE2E8F0) else Color(0xFF16A34A),
+                    containerColor = Color(0xFF16A34A),
                     disabledContainerColor = Color(0xFFF1F5F9)
                 )
             ) {
@@ -5445,17 +5697,17 @@ private fun QuickActions(
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
-                        imageVector = if (isTimedIn) Icons.Outlined.CheckCircle else Icons.Outlined.Login,
+                        imageVector = if (isTimedIn) Icons.Outlined.Add else Icons.Outlined.Login,
                         contentDescription = null,
-                        tint = if (isTimedIn) Color(0xFF64748B) else Color.White,
+                        tint = Color.White,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = if (isTimedIn) "Timed In" else "Time In",
+                        text = if (isTimedIn) "+ Time In" else "Time In",
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
-                        color = if (isTimedIn) Color(0xFF64748B) else Color.White
+                        color = Color.White
                     )
                 }
             }
