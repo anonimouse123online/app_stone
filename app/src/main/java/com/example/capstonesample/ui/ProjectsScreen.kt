@@ -2,6 +2,8 @@ package com.example.capstonesample
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -313,6 +315,9 @@ fun ProjectsScreen(
                                     project
                                 )
                             }
+                        com.example.capstonesample.sync.OfflineSyncManager.cacheProjects(context, result.data)
+                        NavBadgeState.ongoingProjectsCount = projects.count { NavBadgeState.isOngoingProject(it.status) }
+                        NavBadgeState.refresh(context, token)
 
 
                         println(
@@ -364,6 +369,21 @@ fun ProjectsScreen(
             ) {
 
                 e.printStackTrace()
+
+                val isNetError = !com.example.capstonesample.network.NetworkMonitor.isInternetAvailable(context) ||
+                        e is java.net.ConnectException ||
+                        e is java.net.UnknownHostException ||
+                        e is java.net.SocketTimeoutException ||
+                        e.message?.contains("Failed to connect", ignoreCase = true) == true
+
+                if (isNetError) {
+                    val cached = com.example.capstonesample.sync.OfflineSyncManager.getCachedProjects(context)
+                    if (cached.isNotEmpty()) {
+                        projects = cached.map { convertProject(it) }
+                        NavBadgeState.ongoingProjectsCount = projects.count { NavBadgeState.isOngoingProject(it.status) }
+                        println("📡 Restored ${projects.size} cached projects in ProjectsScreen")
+                    }
+                }
 
                 println(
                     "Unable to load projects: ${e.message}"
@@ -1275,7 +1295,11 @@ private fun JoinProjectDialog(
 
         text = {
 
-            Column {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
 
 
                 Text(
@@ -2080,6 +2104,8 @@ private fun ProjectsBottomNavigationBar(
                 selectedScreen ==
                         "dashboard",
 
+            badgeCount = 0,
+
             onClick =
                 onHomeClick
         )
@@ -2096,6 +2122,8 @@ private fun ProjectsBottomNavigationBar(
             selected =
                 selectedScreen ==
                         "projects",
+
+            badgeCount = NavBadgeState.ongoingProjectsCount,
 
             onClick =
                 onProjectsClick
@@ -2114,6 +2142,8 @@ private fun ProjectsBottomNavigationBar(
                 selectedScreen ==
                         "chat",
 
+            badgeCount = NavBadgeState.unreadMessagesCount,
+
             onClick =
                 onMessagesClick
         )
@@ -2130,6 +2160,8 @@ private fun ProjectsBottomNavigationBar(
             selected =
                 selectedScreen ==
                         "tasks",
+
+            badgeCount = NavBadgeState.ongoingTasksCount,
 
             onClick =
                 onTasksClick
@@ -2148,6 +2180,8 @@ private fun ProjectsBottomNavigationBar(
                 selectedScreen ==
                         "profile",
 
+            badgeCount = 0,
+
             onClick =
                 onProfileClick
         )
@@ -2164,6 +2198,8 @@ private fun RowScope.ProjectsNavigationItem(
 
     selected: Boolean,
 
+    badgeCount: Int = 0,
+
     onClick: () -> Unit
 
 ) {
@@ -2178,14 +2214,33 @@ private fun RowScope.ProjectsNavigationItem(
 
         icon = {
 
-            Icon(
+            BadgedBox(
+                badge = {
+                    if (badgeCount > 0) {
+                        Badge(
+                            containerColor = ProjectOrange,
+                            contentColor = Color.White
+                        ) {
+                            Text(
+                                text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            ) {
+                Icon(
+                    imageVector =
+                        icon,
 
-                imageVector =
-                    icon,
+                    contentDescription =
+                        title,
 
-                contentDescription =
-                    title
-            )
+                    modifier =
+                        Modifier.size(21.dp)
+                )
+            }
         },
 
         label = {
@@ -2196,7 +2251,11 @@ private fun RowScope.ProjectsNavigationItem(
                     title,
 
                 fontSize =
-                    9.sp
+                    9.sp,
+
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
         },
 

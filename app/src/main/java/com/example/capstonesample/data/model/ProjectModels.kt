@@ -70,5 +70,55 @@ data class ProjectResponse(
     @SerializedName("due_date")
     val dueDate: String? = null,
 
-    val manager: String? = null
+    val manager: String? = null,
+
+    @SerializedName("geofence_latitude")
+    val geofenceLatitude: Double? = null,
+
+    @SerializedName("geofence_longitude")
+    val geofenceLongitude: Double? = null,
+
+    @SerializedName("geofence_radius")
+    val geofenceRadius: Double? = null,
+
+    @SerializedName("geofence_enabled")
+    val geofenceEnabled: Boolean? = null
+)
+
+data class VerifyGeofenceRequest(
+    val latitude: Double,
+    val longitude: Double
+)
+
+data class VerifyGeofenceResponse(
+    val success: Boolean = false,
+    val data: GeofenceVerificationData? = null,
+    val message: String? = null
+)
+
+data class GeofenceVerificationData(
+    @SerializedName("geofence_enabled") val geofenceEnabled: Boolean = false,
+    @SerializedName("has_coordinates") val hasCoordinates: Boolean = false,
+    @SerializedName("is_inside") val isInside: Boolean = true,
+    @SerializedName("distance_meters") val distanceMeters: Double? = null,
+    @SerializedName("allowed_radius_meters") val allowedRadiusMeters: Double? = null,
+    val status: String? = null,
+    val message: String? = null
+)
+
+data class ProjectGeofenceResponse(
+    val success: Boolean = false,
+    val data: ProjectGeofenceData? = null,
+    val message: String? = null
+)
+
+data class ProjectGeofenceData(
+    val id: String? = null,
+    val code: String? = null,
+    val name: String? = null,
+    val location: String? = null,
+    @SerializedName("geofence_latitude") val geofenceLatitude: Double? = null,
+    @SerializedName("geofence_longitude") val geofenceLongitude: Double? = null,
+    @SerializedName("geofence_radius") val geofenceRadius: Double? = null,
+    @SerializedName("geofence_enabled") val geofenceEnabled: Boolean? = null
 )

@@ -13,6 +13,12 @@ data class TimeLogCreateRequest(
 
     val date: String,
 
+    @SerializedName("time_in")
+    val timeIn: String? = null,
+
+    @SerializedName("time_out")
+    val timeOut: String? = null,
+
     @SerializedName("work_on_site")
     val workOnSite: Int = 0,
 

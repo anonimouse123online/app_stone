@@ -24,7 +24,17 @@ object RetrofitClient {
     }
 
 
+<<<<<<< HEAD
     const val BASE_URL = "http://192.168.254.110:5001/"
+=======
+    // ============================================================
+    // BACKEND BASE URL
+    // ============================================================
+
+    // PHYSICAL PHONE 
+
+    const val BASE_URL = "http://192.168.254.132:5001/"
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 
     //const val BASE_URL = "http://192.168.1.4:5001/"
 
@@ -103,17 +113,17 @@ object RetrofitClient {
             }
 
             .connectTimeout(
-                15,
+                30,
                 TimeUnit.SECONDS
             )
 
             .readTimeout(
-                30,
+                120,
                 TimeUnit.SECONDS
             )
 
             .writeTimeout(
-                30,
+                120,
                 TimeUnit.SECONDS
             )
 

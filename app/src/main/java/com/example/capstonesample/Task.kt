@@ -37,6 +37,8 @@ import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import java.util.Locale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -318,6 +320,7 @@ fun TaskDetailScreen(
 
     // Manpower deployment inputs (starts empty so nothing is displayed until added)
     var manpowerList by remember { mutableStateOf<List<ManpowerItem>>(emptyList()) }
+    var engineerDailyNotes by remember(task.id) { mutableStateOf("") }
 
     fun applyTaskUpdate(response: Response<TaskUpdateResponse>) {
         val body = response.body()
@@ -330,7 +333,7 @@ fun TaskDetailScreen(
             throw IllegalStateException(serverError ?: body?.error ?: body?.message
                 ?: "Unable to save task changes (${response.code()}).")
         }
-        currentStatus = saved.status ?: currentStatus
+        currentStatus = workStatusLabel(saved.status ?: currentStatus, task.schedule)
         currentProgress = saved.progress ?: currentProgress
         currentSubtasks = saved.subtasks ?: currentSubtasks
         taskCompleted = currentStatus.equals("Completed", true) ||
@@ -355,7 +358,15 @@ fun TaskDetailScreen(
                 }
                 applyTaskUpdate(response)
             } catch (e: Exception) {
-                workStatusError = e.message ?: "Unable to save work status."
+                try {
+                    val db = com.example.capstonesample.data.local.AppDatabase.getDatabase(context)
+                    db.taskDao().markTaskUnsynced(task.id)
+                    com.example.capstonesample.sync.SyncManager.requestImmediateSync(context)
+                    currentStatus = status
+                    workStatusError = "Offline: Stored locally in device cache. Will automatically sync once connection is restored."
+                } catch (_: Exception) {
+                    workStatusError = e.message ?: "Unable to save work status."
+                }
             } finally {
                 if (subtaskId == null) isSavingTaskStatus = false
                 else {
@@ -851,6 +862,13 @@ fun TaskDetailScreen(
 
                 onSubtaskProgressUpdate = { label, stage, progress ->
                     updateSubtaskProgressFromEvidence(label, stage, progress)
+                },
+
+                dailyNotes =
+                    engineerDailyNotes,
+
+                onDailyNotesChange = {
+                    engineerDailyNotes = it
                 }
             )
 
@@ -1054,7 +1072,10 @@ fun TaskDetailScreen(
                                                     currentProgress,
 
                                                 manpower =
-                                                    inputtedManpower
+                                                    inputtedManpower,
+
+                                                engineerNotes =
+                                                    engineerDailyNotes
                                             )
 
                                         // A newer selection/task must never receive this result.
@@ -1201,6 +1222,29 @@ fun TaskDetailScreen(
 
                                 val projectCode = task.projectCode
                                     ?: throw IllegalStateException("Project code is missing for this task.")
+
+                                // GEOFENCE VERIFICATION CHECK
+                                val geofenceRes = try {
+                                    RetrofitClient.api.getProjectGeofence(projectCode)
+                                } catch (_: Exception) { null }
+
+                                val gfData = geofenceRes?.body()?.data
+                                if (gfData?.geofenceEnabled == true && gfData.geofenceLatitude != null && gfData.geofenceLongitude != null) {
+                                    val lastLoc = com.example.capstonesample.security.GeofenceHelper.getLastKnownLocation(context)
+                                    if (lastLoc != null) {
+                                        val dist = com.example.capstonesample.security.GeofenceHelper.calculateDistance(
+                                            lastLoc.latitude, lastLoc.longitude,
+                                            gfData.geofenceLatitude, gfData.geofenceLongitude
+                                        )
+                                        val radius = (gfData.geofenceRadius ?: 200.0).toFloat()
+                                        if (dist > radius) {
+                                            val exceed = (dist - radius).toInt()
+                                            throw IllegalStateException(
+                                                "🚫 Geofence Restriction: You are ${dist.toInt()}m from site ($exceed m outside the ${radius.toInt()}m boundary). Field reports can only be submitted within the verified site perimeter."
+                                            )
+                                        }
+                                    }
+                                }
 
                                 val reportImages = mutableListOf<AiReportImage>()
 
@@ -1836,7 +1880,9 @@ private fun InformationRow(
         )
 
 
-        Column {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
             val displayValue = if (label.equals("Task ID", ignoreCase = true) && value.length > 8) {
                 "#${value.take(8).uppercase()}"
             } else {
@@ -1983,23 +2029,30 @@ private fun TaskSubtasksCard(
                             Spacer(modifier = Modifier.width(12.dp))
 
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = item.title.ifBlank { "Untitled Step" },
-                                    fontSize = 13.sp,
-                                    fontWeight = if (isDone) FontWeight.Normal else FontWeight.Medium,
-                                    color = if (isDone) TaskDetailGray else Color(0xFF1E293B),
-                                    textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
-                                    modifier = Modifier.clickable(enabled = enabled && !isUpdating) {
-                                        onToggleSubtask(item.id)
-                                    }
-                                )
-                                WorkStatusDropdown(
-                                    status = if (isDone) "Completed" else item.status,
-                                    enabled = enabled && canChangeStatus && !isUpdating && !isDone && !isFinishedWorkStatus(item.status),
-                                    isSaving = savingStatusId == item.id,
-                                    onStatusChange = { onStatusChange(item.id, it) }
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = item.title.ifBlank { "Untitled Step" },
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isDone) FontWeight.Normal else FontWeight.SemiBold,
+                                        color = if (isDone) TaskDetailGray else Color(0xFF1E293B),
+                                        textDecoration = if (isDone) TextDecoration.LineThrough else TextDecoration.None,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier
+                                            .weight(1f, fill = false)
+                                            .clickable(enabled = enabled && !isUpdating) {
+                                                onToggleSubtask(item.id)
+                                            }
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    WorkStatusBadge(
+                                        status = if (isDone) "Completed" else item.status
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier.fillMaxWidth()
@@ -2033,40 +2086,52 @@ private fun TaskSubtasksCard(
 
 
 @Composable
+private fun WorkStatusBadge(
+    status: String?,
+    dueDate: String? = null
+) {
+    val displayLabel = workStatusLabel(status, dueDate)
+    val lower = displayLabel.lowercase(Locale.ROOT)
+
+    val (badgeBg, badgeText, badgeBorder) = when {
+        lower in setOf("completed", "done", "approved", "verified") ->
+            Triple(Color(0xFFE1F5E7), TaskDetailGreen, Color(0xFFB9F6CA))
+        lower in setOf("delayed", "overdue", "late") ->
+            Triple(Color(0xFFFFE1E1), TaskDetailRed, Color(0xFFFFCDD2))
+        lower in setOf("ongoing", "in progress", "in-progress") ->
+            Triple(Color(0xFFFFE5D8), TaskDetailOrange, Color(0xFFFFCCBC))
+        lower in setOf("extended") ->
+            Triple(Color(0xFFEFF6FF), Color(0xFF1D4ED8), Color(0xFFBFDBFE))
+        lower == "locked" ->
+            Triple(Color(0xFFF1F5F9), Color(0xFF64748B), Color(0xFFCBD5E1))
+        else ->
+            Triple(Color(0xFFF1F5F9), Color(0xFF475569), Color(0xFFE2E8F0))
+    }
+
+    Box(
+        modifier = Modifier
+            .background(badgeBg, RoundedCornerShape(8.dp))
+            .border(1.dp, badgeBorder, RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp)
+    ) {
+        Text(
+            text = displayLabel,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = badgeText
+        )
+    }
+}
+
+@Composable
 private fun WorkStatusDropdown(
     status: String?,
-    enabled: Boolean,
-    isSaving: Boolean,
-    onStatusChange: (String) -> Unit
+    dueDate: String? = null,
+    enabled: Boolean = false,
+    isSaving: Boolean = false,
+    onStatusChange: (String) -> Unit = {}
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    LaunchedEffect(enabled) { if (!enabled) expanded = false }
-    Box {
-        OutlinedButton(
-            onClick = { expanded = true },
-            enabled = enabled,
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-        ) {
-            Text(if (isSaving) "Saving..." else workStatusLabel(status), fontSize = 12.sp)
-            Spacer(Modifier.width(6.dp))
-            if (isSaving) {
-                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
-            } else {
-                Icon(Icons.Outlined.KeyboardArrowDown, contentDescription = "Select work status", modifier = Modifier.size(18.dp))
-            }
-        }
-        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
-            listOf("pending" to "Pending", "ongoing" to "Ongoing").forEach { (value, label) ->
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    onClick = {
-                        expanded = false
-                        if (workStatusLabel(status) != label) onStatusChange(value)
-                    }
-                )
-            }
-        }
-    }
+    WorkStatusBadge(status = status, dueDate = dueDate)
 }
 
 @Composable
@@ -2140,7 +2205,6 @@ private fun TaskProgressCard(
 
 
                 Text(
-
                     text =
                         "Task Progress",
 
@@ -2151,15 +2215,19 @@ private fun TaskProgressCard(
                         FontWeight.Bold
                 )
 
+                Spacer(modifier = Modifier.width(8.dp))
+
+                WorkStatusBadge(
+                    status = status,
+                    dueDate = task.schedule
+                )
 
                 Spacer(
                     modifier =
                         Modifier.weight(1f)
                 )
 
-
                 Text(
-
                     text =
                         "$safeProgress%",
 
@@ -2174,18 +2242,9 @@ private fun TaskProgressCard(
                 )
             }
 
-
             Spacer(
                 modifier =
-                    Modifier.height(12.dp)
-            )
-
-
-            WorkStatusDropdown(
-                status = status,
-                enabled = canChangeStatus && !isSavingStatus,
-                isSaving = isSavingStatus,
-                onStatusChange = onStatusChange
+                    Modifier.height(14.dp)
             )
 
             LinearProgressIndicator(
@@ -2269,7 +2328,11 @@ private fun FieldEvidenceCard(
 
     subtasks: List<SubtaskItem> = emptyList(),
 
-    onSubtaskProgressUpdate: ((label: String, stage: String, progress: Int?) -> Unit)? = null
+    onSubtaskProgressUpdate: ((label: String, stage: String, progress: Int?) -> Unit)? = null,
+
+    dailyNotes: String = "",
+
+    onDailyNotesChange: (String) -> Unit = {}
 
 ) {
 
@@ -4162,6 +4225,58 @@ private fun FieldEvidenceCard(
                 lineHeight = 15.sp,
                 color = TaskDetailGray
             )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Color(0xFFE2E8F0))
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            Text(
+                text = "Daily Site Observations / Field Notes",
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF0F172A)
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            OutlinedTextField(
+                value = dailyNotes,
+                onValueChange = onDailyNotesChange,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = {
+                    Text(
+                        text = "e.g., Completed formwork for 2nd floor beams. Rebar tying 80% finished. Concrete pouring scheduled tomorrow morning.",
+                        fontSize = 11.sp,
+                        color = Color(0xFF94A3B8),
+                        lineHeight = 15.sp
+                    )
+                },
+                minLines = 3,
+                maxLines = 6,
+                shape = RoundedCornerShape(10.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = Color(0xFFF8FAFC),
+                    unfocusedContainerColor = Color(0xFFF8FAFC),
+                    focusedBorderColor = TaskDetailOrange,
+                    unfocusedBorderColor = Color(0xFF64748B),
+                    focusedTextColor = Color(0xFF0F172A),
+                    unfocusedTextColor = Color(0xFF0F172A)
+                )
+            )
+
+            Text(
+                text = "These notes will appear under the Site Notes section in the official Daily Site Report.",
+                fontSize = 10.sp,
+                color = TaskDetailGray,
+                modifier = Modifier.padding(top = 4.dp)
+            )
         }
     }
 
@@ -4393,7 +4508,11 @@ private fun AddFieldAnnotationDialog(
 
         text = {
 
-            Column {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
 
                 Text(
 
@@ -4449,36 +4568,34 @@ private fun AddFieldAnnotationDialog(
 
 
                     DropdownMenu(
-
-                        expanded =
-                            labelMenuExpanded,
-
-                        onDismissRequest = {
-                            labelMenuExpanded =
-                                false
-                        }
-
+                        expanded = labelMenuExpanded,
+                        onDismissRequest = { labelMenuExpanded = false },
+                        containerColor = Color.White,
+                        shadowElevation = 8.dp,
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.background(Color.White, RoundedCornerShape(12.dp))
                     ) {
-
-                        workLabels
-                            .forEach { label ->
-
-                                DropdownMenuItem(
-
-                                    text = {
-                                        Text(
-                                            text =
-                                                label
-                                        )
-                                    },
-
-                                    onClick = {
-
-                                        selectedLabel =
-                                            label
-
-                                        labelMenuExpanded =
-                                            false
+                        workLabels.forEach { label ->
+                            val isSelected = label == selectedLabel
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = label,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                        color = if (isSelected) TaskDetailOrange else Color(0xFF0F172A)
+                                    )
+                                },
+                                colors = MenuDefaults.itemColors(
+                                    textColor = Color(0xFF0F172A)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(if (isSelected) Color(0xFFFFF7ED) else Color.White),
+                                onClick = {
+                                    selectedLabel = label
+                                    labelMenuExpanded = false
 
                                         val matching =
                                             subtasks.firstOrNull { it.title.trim().equals(label, ignoreCase = true) }
@@ -4558,39 +4675,37 @@ private fun AddFieldAnnotationDialog(
 
 
                     DropdownMenu(
-
-                        expanded =
-                            stageMenuExpanded,
-
-                        onDismissRequest = {
-                            stageMenuExpanded =
-                                false
-                        }
-
+                        expanded = stageMenuExpanded,
+                        onDismissRequest = { stageMenuExpanded = false },
+                        containerColor = Color.White,
+                        shadowElevation = 8.dp,
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.background(Color.White, RoundedCornerShape(12.dp))
                     ) {
-
-                        workStages
-                            .forEach { stage ->
-
-                                DropdownMenuItem(
-
-                                    text = {
-                                        Text(
-                                            text =
-                                                stage
-                                        )
-                                    },
-
-                                    onClick = {
-
-                                        selectedStage =
-                                            stage
-
-                                        stageMenuExpanded =
-                                            false
-                                    }
-                                )
-                            }
+                        workStages.forEach { stage ->
+                            val isSelected = stage == selectedStage
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = stage,
+                                        fontSize = 14.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                        color = if (isSelected) TaskDetailOrange else Color(0xFF0F172A)
+                                    )
+                                },
+                                colors = MenuDefaults.itemColors(
+                                    textColor = Color(0xFF0F172A)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(if (isSelected) Color(0xFFFFF7ED) else Color.White),
+                                onClick = {
+                                    selectedStage = stage
+                                    stageMenuExpanded = false
+                                }
+                            )
+                        }
                     }
                 }
 
@@ -6991,6 +7106,7 @@ private fun TaskDetailStatusBadge(
             "done" ->
                 Color(0xFFE1F5E7)
 
+            "delayed",
             "overdue",
             "urgent",
             "blocked" ->
@@ -7010,6 +7126,7 @@ private fun TaskDetailStatusBadge(
             "done" ->
                 TaskDetailGreen
 
+            "delayed",
             "overdue",
             "urgent",
             "blocked" ->

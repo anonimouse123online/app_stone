@@ -13,9 +13,11 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.filled.Lock
 
 import androidx.compose.material3.*
 
@@ -30,9 +32,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.capstonesample.ui.theme.*
 
+import androidx.compose.ui.platform.LocalContext
+import com.example.capstonesample.data.local.AppDatabase
+import com.example.capstonesample.data.local.toTaskResponse
+import com.example.capstonesample.data.local.toTaskEntity
+import com.example.capstonesample.network.NetworkMonitor
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.api.TaskResponse
 import com.example.capstonesample.data.api.SubtaskItem
+import com.example.capstonesample.data.model.isTaskOverdue
+import com.example.capstonesample.data.model.workStatusLabel
 
 import kotlinx.coroutines.launch
 
@@ -55,6 +64,8 @@ data class SiteTask(
     val assigneeColor: Color,
     val indicatorColor: Color,
     val overdue: Boolean = false,
+    val isExtended: Boolean = false,
+    val originalDueDate: String? = null,
     val subtasks: List<SubtaskItem> = emptyList(),
     val projectLocation: String? = null,
     val materialsRequired: String? = null,
@@ -178,12 +189,25 @@ fun TasksScreen(
     val scope =
         rememberCoroutineScope()
 
+    val context =
+        LocalContext.current
+
+    var isOfflineMode by remember {
+        mutableStateOf(false)
+    }
+
 
     //
     // When user clicks a task card, the selected task is stored
     // here and TaskDetailScreen.kt will be shown.
     var selectedTask by remember {
 
+        mutableStateOf<SiteTask?>(
+            null
+        )
+    }
+
+    var lockedTaskPrompt by remember {
         mutableStateOf<SiteTask?>(
             null
         )
@@ -283,6 +307,27 @@ fun TasksScreen(
             taskError =
                 null
 
+            if (!NetworkMonitor.isInternetAvailable(context)) {
+                try {
+                    val db = AppDatabase.getDatabase(context)
+                    val cached = db.taskDao().getAllTasksList()
+                    if (cached.isNotEmpty()) {
+                        serverTasks = cached.map { it.toTaskResponse() }
+                        isOfflineMode = true
+                        taskError = null
+                        println("📡 Loaded ${serverTasks.size} tasks from local Room cache (Offline)")
+                    } else {
+                        isOfflineMode = true
+                        taskError = "Offline Mode: No cached tasks saved on device. Reconnect once to synchronize."
+                    }
+                } catch (_: Exception) {
+                    isOfflineMode = true
+                    taskError = "Offline Mode: Unable to access local database."
+                }
+                isRefreshing = false
+                return@launch
+            }
+
 
             try {
 
@@ -358,6 +403,19 @@ fun TasksScreen(
 
                         serverTasks =
                             result.data
+
+                        isOfflineMode = false
+                        try {
+                            val db = AppDatabase.getDatabase(context)
+                            val entities = serverTasks.map { it.toTaskEntity() }
+                            db.taskDao().deleteAllTasks()
+                            db.taskDao().insertTasks(entities)
+                        } catch (_: Exception) {}
+
+                        NavBadgeState.ongoingTasksCount = serverTasks.count {
+                            NavBadgeState.isOngoingTask(it.status, it.dueDate, it.progress, it.subtasks)
+                        }
+                        NavBadgeState.refresh(token = authorizationToken)
 
 
                         println(
@@ -500,15 +558,37 @@ fun TasksScreen(
 
                 e.printStackTrace()
 
-
                 println(
                     "❌ TASK EXCEPTION = ${e.message}"
                 )
 
+                val isNetError = !NetworkMonitor.isInternetAvailable(context) ||
+                        e is java.net.ConnectException ||
+                        e is java.net.UnknownHostException ||
+                        e is java.net.SocketTimeoutException ||
+                        e.message?.contains("Failed to connect", ignoreCase = true) == true
 
-                taskError =
-                    e.message
-                        ?: "Unable to connect to the SitePulse server."
+                if (isNetError) {
+                    try {
+                        val db = AppDatabase.getDatabase(context)
+                        val cached = db.taskDao().getAllTasksList()
+                        if (cached.isNotEmpty()) {
+                            serverTasks = cached.map { it.toTaskResponse() }
+                            isOfflineMode = true
+                            taskError = null
+                        } else {
+                            isOfflineMode = true
+                            taskError = "Offline Mode: Unable to connect and no cached tasks stored."
+                        }
+                    } catch (_: Exception) {
+                        isOfflineMode = true
+                        taskError = "Offline Mode: Connection unavailable."
+                    }
+                } else {
+                    taskError =
+                        e.message
+                            ?: "Unable to connect to the SitePulse server."
+                }
 
 
             } finally {
@@ -543,8 +623,7 @@ fun TasksScreen(
 
 
             val taskStatus =
-                task.status
-                    ?: "Pending"
+                workStatusLabel(task.status, task.dueDate, task.progress)
 
 
             val indicatorColor =
@@ -559,18 +638,19 @@ fun TasksScreen(
                         TaskGreen
 
 
-                    "in progress",
-                    "ongoing" ->
-
-                        TaskOrange
-
-
+                    "delayed",
                     "urgent",
                     "overdue",
                     "blocked",
                     "rejected" ->
 
                         TaskRed
+
+
+                    "in progress",
+                    "ongoing" ->
+
+                        TaskOrange
 
 
                     else ->
@@ -675,10 +755,30 @@ fun TasksScreen(
                     indicatorColor,
 
                 overdue =
-                    taskStatus.equals(
-                        "overdue",
-                        ignoreCase = true
+                    !taskStatus.equals("Completed", ignoreCase = true) &&
+                    !taskStatus.equals("Done", ignoreCase = true) &&
+                    !taskStatus.equals("Approved", ignoreCase = true) &&
+                    (
+                        taskStatus.equals(
+                            "delayed",
+                            ignoreCase = true
+                        ) ||
+                        taskStatus.equals(
+                            "overdue",
+                            ignoreCase = true
+                        ) ||
+                        isTaskOverdue(task.dueDate)
                     ),
+
+                isExtended =
+                    task.isExtended == true ||
+                    (task.isExtended == null &&
+                        !task.originalDueDate.isNullOrBlank() &&
+                        !task.dueDate.isNullOrBlank() &&
+                        task.dueDate > task.originalDueDate),
+
+                originalDueDate =
+                    task.originalDueDate,
 
                 subtasks =
                     task.subtasks ?: emptyList(),
@@ -728,9 +828,12 @@ fun TasksScreen(
                         "In Progress",
                         ignoreCase = true
                     ) ||
-
                             it.status.equals(
                                 "Ongoing",
+                                ignoreCase = true
+                            ) ||
+                            it.status.equals(
+                                "Delayed",
                                 ignoreCase = true
                             )
                 }
@@ -774,7 +877,7 @@ fun TasksScreen(
 
 
     if (
-        openedTask != null
+        openedTask != null && !openedTask.status.trim().equals("locked", ignoreCase = true)
     ) {
 
         TaskDetailScreen(
@@ -1042,8 +1145,49 @@ fun TasksScreen(
                     }
 
 
+<<<<<<< HEAD
+=======
+                    // =================================================
+                    // OFFLINE MODE BANNER & ERROR MESSAGE
+                    // =================================================
+
+                    if (isOfflineMode) {
+                        Spacer(
+                            modifier = Modifier.height(10.dp)
+                        )
+
+                        Surface(
+                            color = Color(0xFFF1F5F9),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("📡", fontSize = 14.sp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        "Offline Mode (Cached Tasks)",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF1E293B)
+                                    )
+                                    Text(
+                                        "Showing tasks saved on this device.",
+                                        fontSize = 10.sp,
+                                        color = Color(0xFF64748B)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                     if (
-                        taskError != null
+                        taskError != null && !isOfflineMode
                     ) {
 
                         Spacer(
@@ -1349,6 +1493,7 @@ fun TasksScreen(
                                     task,
 
                                 onClick = {
+<<<<<<< HEAD
 
                                     selectedTask =
                                         task
@@ -1365,6 +1510,15 @@ fun TasksScreen(
                                     onTaskClick(
                                         task
                                     )
+=======
+                                    val isLocked = task.status.trim().equals("locked", ignoreCase = true)
+                                    if (isLocked) {
+                                        lockedTaskPrompt = task
+                                    } else {
+                                        selectedTask = task
+                                        onTaskClick(task)
+                                    }
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                                 }
                             )
                         }
@@ -1384,6 +1538,89 @@ fun TasksScreen(
                 }
             }
         }
+    }
+
+    // ========================================================
+    // LOCKED TASK PROMPT DIALOG
+    // ========================================================
+    if (lockedTaskPrompt != null) {
+        val lockedTask = lockedTaskPrompt!!
+        AlertDialog(
+            onDismissRequest = { lockedTaskPrompt = null },
+            icon = {
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .background(Color(0xFFFEF2F2), CircleShape)
+                        .border(1.5.dp, Color(0xFFFEE2E2), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Lock,
+                        contentDescription = "Locked Task",
+                        tint = Color(0xFFEF4444),
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
+            },
+            title = {
+                Text(
+                    text = "Turnover Task is Locked",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = TextSlate900,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "\"${lockedTask.title}\"",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = TaskOrange,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = "This Turnover task cannot be opened while it is locked.",
+                        fontSize = 13.sp,
+                        color = TextSlate700,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 18.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "It will automatically unlock to \"Ongoing\" once all other tasks of this project are completed.",
+                        fontSize = 12.sp,
+                        color = TextSlate500,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 17.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { lockedTaskPrompt = null },
+                    colors = ButtonDefaults.buttonColors(containerColor = TaskOrange),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Understood",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color.White
+                    )
+                }
+            },
+            containerColor = Color.White,
+            shape = RoundedCornerShape(20.dp)
+        )
     }
 }
 
@@ -1589,7 +1826,13 @@ private fun TaskListCard(
                     overflow = TextOverflow.Ellipsis
                 )
                 Spacer(Modifier.width(8.dp))
-                TaskStatusBadge(status = task.status)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TaskStatusBadge(status = task.status)
+                    if (task.isExtended) {
+                        Spacer(Modifier.width(6.dp))
+                        TaskStatusBadge(status = "Extended")
+                    }
+                }
             }
 
             Spacer(Modifier.height(12.dp))
@@ -1706,11 +1949,12 @@ private fun TaskListCard(
                     fontWeight = if (task.overdue) FontWeight.SemiBold else FontWeight.Normal,
                     color = if (task.overdue) TaskRed else TextSlate500
                 )
+                val isLocked = task.status.trim().equals("locked", ignoreCase = true)
                 Icon(
-                    imageVector = Icons.Outlined.ChevronRight,
-                    contentDescription = "Open Task",
+                    imageVector = if (isLocked) Icons.Filled.Lock else Icons.Outlined.ChevronRight,
+                    contentDescription = if (isLocked) "Locked Task" else "Open Task",
                     modifier = Modifier.size(18.dp),
-                    tint = TaskOrange
+                    tint = if (isLocked) TextSlate400 else TaskOrange
                 )
             }
         }
@@ -1789,6 +2033,7 @@ private fun TaskStatusBadge(
                 )
 
 
+            "delayed",
             "overdue",
             "blocked",
             "rejected",
@@ -1804,6 +2049,12 @@ private fun TaskStatusBadge(
 
                 Color(
                     0xFFFFE5D8
+                )
+
+            "extended" ->
+
+                Color(
+                    0xFFEFF6FF
                 )
 
 
@@ -1827,6 +2078,7 @@ private fun TaskStatusBadge(
                 TaskGreen
 
 
+            "delayed",
             "overdue",
             "blocked",
             "rejected",
@@ -1839,6 +2091,10 @@ private fun TaskStatusBadge(
             "ongoing" ->
 
                 TaskOrange
+
+            "extended" ->
+
+                Color(0xFF1D4ED8)
 
 
             else ->
@@ -1926,6 +2182,8 @@ private fun TasksBottomNavigationBar(
                 selectedScreen ==
                         "dashboard",
 
+            badgeCount = 0,
+
             onClick =
                 onHomeClick
         )
@@ -1942,6 +2200,8 @@ private fun TasksBottomNavigationBar(
             selected =
                 selectedScreen ==
                         "projects",
+
+            badgeCount = NavBadgeState.ongoingProjectsCount,
 
             onClick =
                 onProjectsClick
@@ -1960,6 +2220,8 @@ private fun TasksBottomNavigationBar(
                 selectedScreen ==
                         "chat",
 
+            badgeCount = NavBadgeState.unreadMessagesCount,
+
             onClick =
                 onMessagesClick
         )
@@ -1976,6 +2238,8 @@ private fun TasksBottomNavigationBar(
             selected =
                 selectedScreen ==
                         "tasks",
+
+            badgeCount = NavBadgeState.ongoingTasksCount,
 
             onClick =
                 onTasksClick
@@ -1994,6 +2258,8 @@ private fun TasksBottomNavigationBar(
                 selectedScreen ==
                         "profile",
 
+            badgeCount = 0,
+
             onClick =
                 onProfileClick
         )
@@ -2010,6 +2276,8 @@ private fun RowScope.TasksNavigationItem(
 
     selected: Boolean,
 
+    badgeCount: Int = 0,
+
     onClick: () -> Unit
 
 ) {
@@ -2024,19 +2292,36 @@ private fun RowScope.TasksNavigationItem(
 
         icon = {
 
+            BadgedBox(
+                badge = {
+                    if (badgeCount > 0) {
+                        Badge(
+                            containerColor = TaskOrange,
+                            contentColor = Color.White
+                        ) {
+                            Text(
+                                text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            ) {
+                Icon(
+                    imageVector =
+                        icon,
 
-            Icon(
+                    contentDescription =
+                        title,
 
-                imageVector =
-                    icon,
-
-                contentDescription =
-                    title
-            )
+                    modifier =
+                        Modifier.size(21.dp)
+                )
+            }
         },
 
         label = {
-
 
             Text(
 
@@ -2044,7 +2329,11 @@ private fun RowScope.TasksNavigationItem(
                     title,
 
                 fontSize =
-                    9.sp
+                    9.sp,
+
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
         },
 

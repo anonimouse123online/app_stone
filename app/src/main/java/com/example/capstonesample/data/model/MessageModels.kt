@@ -161,3 +161,15 @@ data class SendMessageResponse(
 
     val message: MessageDto?
 )
+
+
+// ============================================================
+// MARK READ RESPONSE
+// ============================================================
+
+data class MarkReadResponse(
+
+    val success: Boolean,
+
+    val message: String? = null
+)

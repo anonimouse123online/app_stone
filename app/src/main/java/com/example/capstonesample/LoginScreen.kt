@@ -1604,7 +1604,9 @@ fun ForgotPasswordDialog(
 
             Column(
                 modifier =
-                    Modifier.fillMaxWidth()
+                    Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
             ) {
 
 

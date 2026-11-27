@@ -1,12 +1,16 @@
 package com.example.capstonesample
 
+import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Environment
 import android.provider.OpenableColumns
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,10 +22,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.automirrored.outlined.Send
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.outlined.AttachFile
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material.icons.outlined.Group
+import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,22 +38,32 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import coil.ImageLoader
 import coil.compose.AsyncImage
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.model.MessageDto
 import com.example.capstonesample.data.model.SendMessageRequest
+import com.example.capstonesample.security.TokenManager
 import com.example.capstonesample.documents.projectDocumentUrl
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
 
 internal fun chatAttachmentUrl(path: String?, baseUrl: String): String? = runCatching {
     val url = projectDocumentUrl(path.orEmpty(), baseUrl)
@@ -59,7 +77,7 @@ internal fun chatAttachmentUrl(path: String?, baseUrl: String): String? = runCat
     }
 }.getOrNull()
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun MessageDetailScreen(
     conversationId: Int,
@@ -67,23 +85,38 @@ fun MessageDetailScreen(
     isGroup: Boolean = false,
     onBackClick: () -> Unit
 ) {
-    BackHandler {
-        onBackClick()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val handleBack: () -> Unit = {
+        scope.launch {
+            try {
+                RetrofitClient.api.markConversationAsRead(conversationId)
+                NavBadgeState.refresh(context)
+            } catch (_: Exception) {}
+            onBackClick()
+        }
     }
 
-    val context = LocalContext.current
+    BackHandler {
+        handleBack()
+    }
+
     val imageLoader = remember(context) {
         ImageLoader.Builder(context).okHttpClient(RetrofitClient.okHttpClient).build()
     }
     DisposableEffect(imageLoader) { onDispose { imageLoader.shutdown() } }
-    val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val density = LocalDensity.current
+    val imeBottom = WindowInsets.ime.getBottom(density)
 
     var messageText by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf<List<MessageDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var isSending by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var viewingImageUrl by remember { mutableStateOf<String?>(null) }
+    var viewingVideoUrl by remember { mutableStateOf<String?>(null) }
 
     suspend fun loadMessages() {
         try {
@@ -145,6 +178,10 @@ fun MessageDetailScreen(
         isLoading = true
         errorMessage = null
         loadMessages()
+        try {
+            RetrofitClient.api.markConversationAsRead(conversationId)
+            NavBadgeState.refresh(context)
+        } catch (_: Exception) {}
     }
 
     LaunchedEffect(conversationId) {
@@ -156,24 +193,35 @@ fun MessageDetailScreen(
                     val body = response.body()
                     if (body != null && body.success) {
                         messages = body.messages
+                        RetrofitClient.api.markConversationAsRead(conversationId)
                     }
                 }
             } catch (_: Exception) {}
         }
     }
 
+<<<<<<< HEAD
     LaunchedEffect(messages.size) {
+=======
+    // ============================================================
+    // AUTO SCROLL
+    // ============================================================
+
+    LaunchedEffect(messages.size, imeBottom) {
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.lastIndex)
         }
     }
 
     Scaffold(
+        modifier = Modifier.fillMaxSize(),
         containerColor = Color(0xFFF6F8FA),
+        contentWindowInsets = WindowInsets.statusBars,
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = onBackClick) {
+                    IconButton(onClick = handleBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Outlined.ArrowBack,
                             contentDescription = "Back"
@@ -225,11 +273,16 @@ fun MessageDetailScreen(
         bottomBar = {
             Surface(
                 color = Color.White,
-                shadowElevation = 5.dp
+                shadowElevation = 8.dp,
+                border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .windowInsetsPadding(
+                            WindowInsets.navigationBars.union(WindowInsets.ime)
+                        )
                         .padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -248,10 +301,27 @@ fun MessageDetailScreen(
                         value = messageText,
                         onValueChange = { messageText = it },
                         modifier = Modifier.weight(1f),
-                        placeholder = { Text("Type a message...", fontSize = 13.sp) },
+                        placeholder = {
+                            Text(
+                                text = "Type a message...",
+                                fontSize = 13.sp,
+                                color = Color(0xFF64748B)
+                            )
+                        },
                         shape = RoundedCornerShape(22.dp),
                         maxLines = 4,
-                        enabled = !isSending
+                        enabled = !isSending,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color.White,
+                            unfocusedContainerColor = Color(0xFFF8FAFC),
+                            focusedBorderColor = Color(0xFFF15A24),
+                            unfocusedBorderColor = Color(0xFF64748B),
+                            cursorColor = Color(0xFFF15A24),
+                            focusedTextColor = Color(0xFF0F172A),
+                            unfocusedTextColor = Color(0xFF0F172A),
+                            focusedPlaceholderColor = Color(0xFF64748B),
+                            unfocusedPlaceholderColor = Color(0xFF64748B)
+                        )
                     )
 
                     Spacer(modifier = Modifier.width(6.dp))
@@ -362,6 +432,7 @@ fun MessageDetailScreen(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
+                    .imeNestedScroll()
                     .padding(horizontal = 14.dp),
                 contentPadding = PaddingValues(vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -402,6 +473,12 @@ fun MessageDetailScreen(
                                                         attachment.originalName?.endsWith(it, ignoreCase = true) == true
                                                     }
 
+                                            val isVideo = attachment.mimeType?.startsWith("video") == true ||
+                                                    listOf(".mp4", ".mov", ".webm", ".mkv", ".avi", ".3gp").any {
+                                                        attachment.filePath?.endsWith(it, ignoreCase = true) == true ||
+                                                        attachment.originalName?.endsWith(it, ignoreCase = true) == true
+                                                    }
+
                                             val fileUrl = if (attachment.filePath?.startsWith("http") == true) {
                                                 attachment.filePath
                                             } else {
@@ -425,17 +502,107 @@ fun MessageDetailScreen(
                                                         onError = { imageFailed = true },
                                                         contentDescription = attachment.originalName ?: "Image attachment",
                                                         modifier = Modifier
-                                                            .fillMaxWidth()
-                                                            .heightIn(max = 220.dp)
+                                                            .widthIn(max = 260.dp)
+                                                            .heightIn(max = 360.dp)
                                                             .clip(RoundedCornerShape(8.dp))
                                                             .clickable {
-                                                                try {
-                                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(imageUrl))
-                                                                    context.startActivity(intent)
-                                                                } catch (_: Exception) {}
+                                                                viewingImageUrl = imageUrl
                                                             },
-                                                        contentScale = ContentScale.Crop
+                                                        contentScale = ContentScale.Fit
                                                     )
+                                                }
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                            } else if (isVideo) {
+                                                val token = remember { TokenManager.getToken(context) }
+                                                val authVideoUrl = remember(fileUrl, token) {
+                                                    if (!token.isNullOrBlank()) {
+                                                        if (fileUrl.contains("?")) "$fileUrl&token=$token" else "$fileUrl?token=$token"
+                                                    } else fileUrl
+                                                }
+                                                Surface(
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    color = Color(0xFF0F172A),
+                                                    modifier = Modifier
+                                                        .widthIn(max = 260.dp)
+                                                        .clip(RoundedCornerShape(10.dp))
+                                                        .clickable {
+                                                            viewingVideoUrl = authVideoUrl
+                                                        }
+                                                ) {
+                                                    Column {
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .height(130.dp)
+                                                                .background(Color(0xFF1E293B)),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            Box(
+                                                                modifier = Modifier
+                                                                    .size(48.dp)
+                                                                    .background(Color.Black.copy(alpha = 0.65f), CircleShape),
+                                                                contentAlignment = Alignment.Center
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Filled.PlayArrow,
+                                                                    contentDescription = "Play video",
+                                                                    tint = Color.White,
+                                                                    modifier = Modifier.size(28.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .padding(horizontal = 10.dp, vertical = 7.dp),
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Outlined.Videocam,
+                                                                contentDescription = null,
+                                                                tint = Color(0xFFF15A24),
+                                                                modifier = Modifier.size(20.dp)
+                                                            )
+                                                            Spacer(modifier = Modifier.width(6.dp))
+                                                            Column(modifier = Modifier.weight(1f)) {
+                                                                Text(
+                                                                    text = attachment.originalName ?: attachment.fileName ?: "Video attachment",
+                                                                    fontSize = 12.sp,
+                                                                    fontWeight = FontWeight.SemiBold,
+                                                                    color = Color.White,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis
+                                                                )
+                                                                if (attachment.fileSize != null && attachment.fileSize > 0) {
+                                                                    val sizeStr = if (attachment.fileSize >= 1024 * 1024) {
+                                                                        String.format("%.1f MB", attachment.fileSize / (1024f * 1024f))
+                                                                    } else {
+                                                                        "${attachment.fileSize / 1024} KB"
+                                                                    }
+                                                                    Text(
+                                                                        text = sizeStr,
+                                                                        fontSize = 10.sp,
+                                                                        color = Color.LightGray
+                                                                    )
+                                                                }
+                                                            }
+                                                            Spacer(modifier = Modifier.width(6.dp))
+                                                            IconButton(
+                                                                onClick = {
+                                                                    val safeName = attachment.originalName ?: attachment.fileName ?: "video_${System.currentTimeMillis()}.mp4"
+                                                                    downloadMediaFile(context, authVideoUrl, safeName)
+                                                                },
+                                                                modifier = Modifier.size(28.dp)
+                                                            ) {
+                                                                Icon(
+                                                                    imageVector = Icons.Outlined.FileDownload,
+                                                                    contentDescription = "Download video",
+                                                                    tint = Color.White,
+                                                                    modifier = Modifier.size(18.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                                 Spacer(modifier = Modifier.height(4.dp))
                                             } else {
@@ -518,8 +685,168 @@ fun MessageDetailScreen(
             }
         }
     }
+
+    // ============================================================
+    // FULL-SCREEN IN-APP IMAGE VIEWER
+    // ============================================================
+
+    if (viewingImageUrl != null) {
+        Dialog(
+            onDismissRequest = { viewingImageUrl = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.95f))
+                    .clickable { viewingImageUrl = null },
+                contentAlignment = Alignment.Center
+            ) {
+                AsyncImage(
+                    model = viewingImageUrl,
+                    imageLoader = imageLoader,
+                    contentDescription = "Full view image",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    contentScale = ContentScale.Fit
+                )
+
+                IconButton(
+                    onClick = { viewingImageUrl = null },
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .statusBarsPadding()
+                        .padding(16.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Close,
+                        contentDescription = "Close",
+                        tint = Color.White
+                    )
+                }
+            }
+        }
+    }
+
+    // ============================================================
+    // FULL-SCREEN IN-APP VIDEO PLAYER
+    // ============================================================
+
+    if (viewingVideoUrl != null) {
+        val exoPlayer = remember(viewingVideoUrl) {
+            ExoPlayer.Builder(context).build().apply {
+                setMediaItem(MediaItem.fromUri(Uri.parse(viewingVideoUrl)))
+                prepare()
+                playWhenReady = true
+            }
+        }
+
+        DisposableEffect(exoPlayer) {
+            onDispose {
+                exoPlayer.release()
+            }
+        }
+
+        Dialog(
+            onDismissRequest = { viewingVideoUrl = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                AndroidView(
+                    factory = { ctx ->
+                        PlayerView(ctx).apply {
+                            player = exoPlayer
+                            useController = true
+                            setShowNextButton(false)
+                            setShowPreviousButton(false)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                // Top Controls (Download + External Player + Close)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .align(Alignment.TopEnd)
+                        .statusBarsPadding()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Download button
+                    IconButton(
+                        onClick = {
+                            viewingVideoUrl?.let { url ->
+                                val fileName = "video_${System.currentTimeMillis()}.mp4"
+                                downloadMediaFile(context, url, fileName)
+                            }
+                        },
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.FileDownload,
+                            contentDescription = "Download video",
+                            tint = Color.White
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    IconButton(
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW).apply {
+                                    setDataAndType(Uri.parse(viewingVideoUrl), "video/*")
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (_: Exception) {}
+                        },
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.OpenInNew,
+                            contentDescription = "Open in external video player",
+                            tint = Color.White
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(10.dp))
+
+                    IconButton(
+                        onClick = { viewingVideoUrl = null },
+                        modifier = Modifier
+                            .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = "Close",
+                            tint = Color.White
+                        )
+                    }
+                }
+            }
+        }
+    }
 }
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// HELPER: URI TO MULTIPART (STREAMING VIA TEMP FILE)
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 internal fun uriToMultipartPart(context: Context, uri: Uri, partName: String = "file"): MultipartBody.Part? {
     return try {
         val contentResolver = context.contentResolver
@@ -539,8 +866,15 @@ internal fun uriToMultipartPart(context: Context, uri: Uri, partName: String = "
             }
         }
 
-        val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
-        val requestBody = bytes.toRequestBody(mimeType.toMediaTypeOrNull())
+        // Stream into temporary cache file to avoid reading massive video files into RAM (prevents OOM)
+        val tempFile = File(context.cacheDir, "upload_${System.currentTimeMillis()}_$fileName")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            tempFile.outputStream().use { output ->
+                input.copyTo(output)
+            }
+        } ?: return null
+
+        val requestBody = tempFile.asRequestBody(mimeType.toMediaTypeOrNull())
         MultipartBody.Part.createFormData(partName, fileName, requestBody)
     } catch (e: Exception) {
         e.printStackTrace()
@@ -558,5 +892,33 @@ private fun formatChatTime(date: String?): String {
         }
     } catch (_: Exception) {
         ""
+    }
+}
+
+// ============================================================
+// HELPER: DOWNLOAD MEDIA FILE TO PUBLIC DOWNLOADS
+// ============================================================
+
+private fun downloadMediaFile(context: Context, url: String, fileName: String) {
+    try {
+        val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
+        if (dm == null) {
+            Toast.makeText(context, "Download manager not available", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val safeName = fileName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+        val req = DownloadManager.Request(Uri.parse(url)).apply {
+            setTitle(safeName)
+            setDescription("Downloading video from SitePulse...")
+            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safeName)
+            setAllowedOverMetered(true)
+            setAllowedOverRoaming(true)
+        }
+        dm.enqueue(req)
+        Toast.makeText(context, "Downloading $safeName...", Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Download failed: ${e.message}", Toast.LENGTH_SHORT).show()
     }
 }

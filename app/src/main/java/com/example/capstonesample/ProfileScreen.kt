@@ -59,6 +59,13 @@ import java.io.File
 import java.util.Locale
 
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// COLORS
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 private val ProfileBackground =
     Color(0xFFF6F8FA)
 
@@ -72,6 +79,13 @@ private val ProfileDividerColor =
     Color(0xFFE2E8F0)
 
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// PROFILE MODEL
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 data class ProfileUiModel(
 
     val fullName: String = "",
@@ -86,6 +100,13 @@ data class ProfileUiModel(
 )
 
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// PROFILE SCREEN
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileScreen(
@@ -120,6 +141,13 @@ fun ProfileScreen(
         rememberScrollState()
 
 
+<<<<<<< HEAD
+=======
+    // ============================================================
+    // PROFILE INFO
+    // ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
     val displayName =
         profile.fullName.ifBlank {
             "User"
@@ -136,6 +164,13 @@ fun ProfileScreen(
         )
 
 
+<<<<<<< HEAD
+=======
+    // ============================================================
+    // USER PROJECTS
+    // ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
     var userProjects by remember {
 
         mutableStateOf<List<SiteProject>>(
@@ -154,9 +189,19 @@ fun ProfileScreen(
     }
 
 
+<<<<<<< HEAD
     //
     // SAME API USED BY ProjectsScreen
     // GET joined projects for logged-in user
+=======
+    // ============================================================
+    // LOAD USER PROJECTS
+    //
+    // SAME API USED BY ProjectsScreen
+    // GET joined projects for logged-in user
+    // ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
     fun loadUserProjects() {
 
         if (
@@ -320,6 +365,13 @@ fun ProfileScreen(
     }
 
 
+<<<<<<< HEAD
+=======
+    // ============================================================
+    // USER STATS: COMPLETED TASKS & LOGGED HOURS
+    // ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
     var completedCount by remember {
         mutableIntStateOf(profile.completedCount)
     }
@@ -400,6 +452,18 @@ fun ProfileScreen(
                 // 2. Fetch tasks to calculate completed tasks count
                 val tasksResponse = RetrofitClient.api.getTasks(token = authHeader)
                 val taskList = tasksResponse.body()?.data.orEmpty()
+<<<<<<< HEAD
+=======
+                val userTasks = if (!currentUserId.isNullOrBlank()) {
+                    taskList.filter { it.assigneeId.isNullOrBlank() || it.assigneeId.equals(currentUserId, ignoreCase = true) }
+                } else {
+                    taskList
+                }
+                NavBadgeState.ongoingTasksCount = userTasks.count {
+                    NavBadgeState.isOngoingTask(it.status, it.dueDate, it.progress, it.subtasks)
+                }
+                NavBadgeState.refresh(token = authHeader)
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 
                 val completedTasksAssigned = taskList.count { task ->
                     val status = task.status.orEmpty().trim().lowercase(Locale.ROOT)
@@ -427,6 +491,13 @@ fun ProfileScreen(
     }
 
 
+<<<<<<< HEAD
+=======
+    // ============================================================
+    // LOAD PROJECTS & STATS WHEN PROFILE OPENS
+    // ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
     LaunchedEffect(
         token
     ) {
@@ -435,6 +506,13 @@ fun ProfileScreen(
     }
 
 
+<<<<<<< HEAD
+=======
+    // ============================================================
+    // SCREEN
+    // ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
     Scaffold(
 
         containerColor =
@@ -541,6 +619,13 @@ fun ProfileScreen(
             )
 
 
+<<<<<<< HEAD
+=======
+            // ====================================================
+            // PROFILE CARD
+            // ====================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
             Card(
 
                 modifier =
@@ -577,6 +662,13 @@ fun ProfileScreen(
                 ) {
 
 
+<<<<<<< HEAD
+=======
+                    // =================================================
+                    // AVATAR
+                    // =================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                     Box(
 
                         modifier = Modifier
@@ -622,6 +714,13 @@ fun ProfileScreen(
                     )
 
 
+<<<<<<< HEAD
+=======
+                    // =================================================
+                    // NAME
+                    // =================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                     Text(
 
                         text =
@@ -638,6 +737,13 @@ fun ProfileScreen(
                     )
 
 
+<<<<<<< HEAD
+=======
+                    // =================================================
+                    // EMAIL
+                    // =================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                     if (
                         profile.email.isNotBlank()
                     ) {
@@ -671,6 +777,13 @@ fun ProfileScreen(
                     )
 
 
+<<<<<<< HEAD
+=======
+                    // =================================================
+                    // ROLE
+                    // =================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                     Text(
 
                         text =
@@ -707,6 +820,13 @@ fun ProfileScreen(
                     )
 
 
+<<<<<<< HEAD
+=======
+                    // =================================================
+                    // PROFILE STATS
+                    // =================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                     Row(
 
                         modifier =
@@ -715,6 +835,13 @@ fun ProfileScreen(
                     ) {
 
 
+<<<<<<< HEAD
+=======
+                        // =================================================
+                        // ACTUAL PROJECT COUNT
+                        // =================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                         ProfileStat(
 
                             modifier =
@@ -773,6 +900,13 @@ fun ProfileScreen(
 
 
 
+<<<<<<< HEAD
+=======
+            // ====================================================
+            // SETTINGS
+            // ====================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
             Card(
 
                 modifier =
@@ -798,7 +932,13 @@ fun ProfileScreen(
                 Column {
 
 
+<<<<<<< HEAD
                     // Which settings sheet is open
+=======
+                    // ------------------------------------------------
+                    // Which settings sheet is open
+                    // ------------------------------------------------
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                     var showAccountSettings    by remember { mutableStateOf(false) }
                     var showNotifications      by remember { mutableStateOf(false) }
                     var showAppearance         by remember { mutableStateOf(false) }
@@ -852,6 +992,12 @@ fun ProfileScreen(
                         onClick = { showHelp = true }
                     )
 
+<<<<<<< HEAD
+=======
+                    // ------------------------------------------------
+                    // SETTINGS BOTTOM SHEETS
+                    // ------------------------------------------------
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                     if (showAccountSettings) {
                         AccountSettingsSheet(
                             profile = profile,
@@ -896,6 +1042,13 @@ fun ProfileScreen(
             )
 
 
+<<<<<<< HEAD
+=======
+            // ====================================================
+            // LOGOUT
+            // ====================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
             OutlinedButton(
 
                 onClick =
@@ -977,6 +1130,13 @@ fun ProfileScreen(
 }
 
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// PROFILE PROJECT CARD
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @Composable
 private fun ProfileProjectCard(
 
@@ -1261,6 +1421,13 @@ private fun ProfileProjectCard(
 }
 
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// INITIALS
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 private fun getProfileInitials(
     fullName: String
 ): String {
@@ -1292,6 +1459,13 @@ private fun getProfileInitials(
 }
 
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// PROFILE STAT
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @Composable
 private fun ProfileStat(
 
@@ -1356,6 +1530,13 @@ private fun ProfileStat(
 }
 
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// SETTINGS ROW
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @Composable
 private fun ProfileSettingRow(
 
@@ -1451,6 +1632,13 @@ private fun ProfileSettingRow(
 }
 
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// DIVIDER
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @Composable
 private fun ProfileDivider() {
 
@@ -1467,6 +1655,13 @@ private fun ProfileDivider() {
 }
 
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// BOTTOM NAV
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @Composable
 private fun ProfileBottomNavigationBar(
 
@@ -1503,6 +1698,11 @@ private fun ProfileBottomNavigationBar(
             selected =
                 false,
 
+<<<<<<< HEAD
+=======
+            badgeCount = 0,
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
             onClick =
                 onHomeClick
         )
@@ -1519,6 +1719,11 @@ private fun ProfileBottomNavigationBar(
             selected =
                 false,
 
+<<<<<<< HEAD
+=======
+            badgeCount = NavBadgeState.ongoingProjectsCount,
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
             onClick =
                 onProjectsClick
         )
@@ -1535,6 +1740,11 @@ private fun ProfileBottomNavigationBar(
             selected =
                 false,
 
+<<<<<<< HEAD
+=======
+            badgeCount = NavBadgeState.unreadMessagesCount,
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
             onClick =
                 onMessagesClick
         )
@@ -1551,6 +1761,11 @@ private fun ProfileBottomNavigationBar(
             selected =
                 false,
 
+<<<<<<< HEAD
+=======
+            badgeCount = NavBadgeState.ongoingTasksCount,
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
             onClick =
                 onTasksClick
         )
@@ -1567,6 +1782,11 @@ private fun ProfileBottomNavigationBar(
             selected =
                 true,
 
+<<<<<<< HEAD
+=======
+            badgeCount = 0,
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
             onClick =
                 onProfileClick
         )
@@ -1574,6 +1794,13 @@ private fun ProfileBottomNavigationBar(
 }
 
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// NAV ITEM
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @Composable
 private fun RowScope.ProfileNavigationItem(
 
@@ -1583,6 +1810,11 @@ private fun RowScope.ProfileNavigationItem(
 
     selected: Boolean,
 
+<<<<<<< HEAD
+=======
+    badgeCount: Int = 0,
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
     onClick: () -> Unit
 
 ) {
@@ -1597,6 +1829,7 @@ private fun RowScope.ProfileNavigationItem(
 
         icon = {
 
+<<<<<<< HEAD
             Icon(
 
                 imageVector =
@@ -1610,6 +1843,38 @@ private fun RowScope.ProfileNavigationItem(
                         21.dp
                     )
             )
+=======
+            BadgedBox(
+                badge = {
+                    if (badgeCount > 0) {
+                        Badge(
+                            containerColor = ProfileOrange,
+                            contentColor = Color.White
+                        ) {
+                            Text(
+                                text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            ) {
+                Icon(
+
+                    imageVector =
+                        icon,
+
+                    contentDescription =
+                        title,
+
+                    modifier =
+                        Modifier.size(
+                            21.dp
+                        )
+                )
+            }
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
         },
 
         label = {
@@ -1620,7 +1885,15 @@ private fun RowScope.ProfileNavigationItem(
                     title,
 
                 fontSize =
+<<<<<<< HEAD
                     9.sp
+=======
+                    9.sp,
+
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
             )
         },
 
@@ -1648,6 +1921,13 @@ private fun RowScope.ProfileNavigationItem(
 }
 
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// HELPERS
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 private fun getAppPrefs(context: Context): SharedPreferences =
     context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
 
@@ -1662,7 +1942,14 @@ private fun formatBytes(bytes: Long): String = when {
 }
 
 
+<<<<<<< HEAD
 // 1. ACCOUNT SETTINGS SHEET
+=======
+// ============================================================
+// 1. ACCOUNT SETTINGS SHEET
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountSettingsSheet(
@@ -1773,7 +2060,14 @@ private fun AccountInfoItem(
 }
 
 
+<<<<<<< HEAD
 // 2. NOTIFICATIONS SHEET
+=======
+// ============================================================
+// 2. NOTIFICATIONS SHEET
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationsSheet(onDismiss: () -> Unit) {
@@ -1886,7 +2180,14 @@ private fun NotifToggleRow(
 }
 
 
+<<<<<<< HEAD
 // 3. APPEARANCE SHEET
+=======
+// ============================================================
+// 3. APPEARANCE SHEET
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppearanceSheet(onDismiss: () -> Unit) {
@@ -2015,7 +2316,14 @@ fun AppearanceSheet(onDismiss: () -> Unit) {
 }
 
 
+<<<<<<< HEAD
 // 4. DATA AND STORAGE SHEET
+=======
+// ============================================================
+// 4. DATA AND STORAGE SHEET
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DataStorageSheet(onDismiss: () -> Unit) {
@@ -2134,7 +2442,14 @@ private fun StorageInfoRow(label: String, value: String) {
 }
 
 
+<<<<<<< HEAD
 // 5. SECURITY SHEET  (change password via email OTP flow)
+=======
+// ============================================================
+// 5. SECURITY SHEET  (change password via email OTP flow)
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SecuritySheet(
@@ -2182,7 +2497,13 @@ fun SecuritySheet(
 
             when (step) {
 
+<<<<<<< HEAD
                 // STEP 0: Request password-reset OTP
+=======
+                // -----------------------------------------------
+                // STEP 0: Request password-reset OTP
+                // -----------------------------------------------
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                 0 -> {
                     Surface(
                         shape  = RoundedCornerShape(14.dp),
@@ -2262,7 +2583,13 @@ fun SecuritySheet(
                     }
                 }
 
+<<<<<<< HEAD
                 // STEP 1: Enter OTP + new password
+=======
+                // -----------------------------------------------
+                // STEP 1: Enter OTP + new password
+                // -----------------------------------------------
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                 1 -> {
                     Text(
                         text = "Enter the 6-digit code sent to $email and choose a new password.",
@@ -2368,7 +2695,13 @@ fun SecuritySheet(
                     }
                 }
 
+<<<<<<< HEAD
                 // STEP 2: Success
+=======
+                // -----------------------------------------------
+                // STEP 2: Success
+                // -----------------------------------------------
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                 2 -> {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -2413,7 +2746,14 @@ fun SecuritySheet(
 }
 
 
+<<<<<<< HEAD
 // 6. HELP AND SUPPORT SHEET
+=======
+// ============================================================
+// 6. HELP AND SUPPORT SHEET
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HelpSupportSheet(onDismiss: () -> Unit) {
@@ -2558,4 +2898,8 @@ fun HelpSupportSheet(onDismiss: () -> Unit) {
             }
         }
     }
+<<<<<<< HEAD
 }
+=======
+}
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec

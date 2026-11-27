@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.example.capstonesample.data.api.NotificationData
+import com.example.capstonesample.data.model.workStatusLabel
 import com.example.capstonesample.security.TokenManager
 import android.net.Uri
 import android.os.Environment
@@ -32,6 +33,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -43,7 +45,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -60,13 +64,22 @@ import com.example.capstonesample.ui.theme.*
 import com.example.capstonesample.data.api.RetrofitClient
 import com.example.capstonesample.data.api.TaskResponse
 import com.example.capstonesample.data.api.TimeLogCreateRequest
+import com.example.capstonesample.data.local.AppDatabase
+import com.example.capstonesample.data.local.toTaskResponse
+import com.example.capstonesample.data.local.toTaskEntity
+import com.example.capstonesample.sync.OfflineSyncManager
+import com.example.capstonesample.network.NetworkMonitor
 import java.time.OffsetDateTime
 import java.time.Duration
 
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 
 data class Task(
@@ -81,7 +94,12 @@ data class DashboardProjectUi(
     val name: String,
     val type: String,
     val progress: Int,
-    val status: String
+    val status: String,
+    val code: String? = null,
+    val geofenceLatitude: Double? = null,
+    val geofenceLongitude: Double? = null,
+    val geofenceRadius: Double? = null,
+    val geofenceEnabled: Boolean? = null
 )
 
 
@@ -168,6 +186,10 @@ fun DashboardScreen(
         mutableStateOf<String?>(null)
     }
 
+    var isOfflineDashboard by remember {
+        mutableStateOf(false)
+    }
+
     var showNotifications by remember {
         mutableStateOf(false)
     }
@@ -213,9 +235,47 @@ fun DashboardScreen(
         generateInitials(resolvedUserName)
     }
 
-    var showLogTimeDialog by remember {
-        mutableStateOf(false)
+    val configuration = LocalConfiguration.current
+    val isSmallScreen = configuration.screenWidthDp < 360
+
+    val activeShifts = remember { mutableStateOf(TimeTrackingManager.getActiveShifts(context)) }
+    val activeShift = remember { mutableStateOf(activeShifts.value.firstOrNull() ?: TimeTrackingManager.getActiveShift(context)) }
+    var isTimedIn by remember { mutableStateOf(activeShifts.value.isNotEmpty()) }
+    var targetShiftForTimeOut by remember { mutableStateOf<TimeTrackingManager.ActiveShift?>(null) }
+    var elapsedDuration by remember {
+        val first = activeShifts.value.firstOrNull()
+        val initialDiff = if (first != null && first.timeInMs > 0L) (System.currentTimeMillis() - first.timeInMs).coerceAtLeast(0L) else 0L
+        mutableStateOf(if (first != null && first.isTimedIn) TimeTrackingManager.formatDuration(initialDiff) else "00h 00m 00s")
     }
+    var showTimeInDialog by remember { mutableStateOf(false) }
+    var showLogTimeDialog by remember { mutableStateOf(false) }
+
+    val pendingOfflineLogsCount = remember { mutableStateOf(com.example.capstonesample.sync.OfflineSyncManager.getPendingCount(context)) }
+    var isSyncingOfflineLogs by remember { mutableStateOf(false) }
+
+    fun triggerSyncPendingLogs() {
+        if (!NetworkMonitor.isInternetAvailable(context)) {
+            Toast.makeText(context, "Cannot sync: No internet connection.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        coroutineScope.launch {
+            isSyncingOfflineLogs = true
+            try {
+                val synced = com.example.capstonesample.sync.OfflineSyncManager.syncPendingTimeLogs(context)
+                pendingOfflineLogsCount.value = com.example.capstonesample.sync.OfflineSyncManager.getPendingCount(context)
+                if (synced > 0) {
+                    Toast.makeText(context, "✅ Synced $synced offline time log(s) to server!", Toast.LENGTH_LONG).show()
+                } else if (pendingOfflineLogsCount.value > 0) {
+                    Toast.makeText(context, "Logs queued on device. Please sign in online to complete sync.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Log.e("DASH_SYNC", "Error syncing offline logs", e)
+            } finally {
+                isSyncingOfflineLogs = false
+            }
+        }
+    }
+
 
     fun loadNotifications() {
 
@@ -449,8 +509,55 @@ fun DashboardScreen(
         }
     }
 
+    LaunchedEffect(isTimedIn, activeShifts.value) {
+        var tick = 0
+        while (isTimedIn && activeShifts.value.isNotEmpty()) {
+            val first = activeShifts.value.firstOrNull()
+            if (first != null && first.timeInMs > 0L) {
+                val now = System.currentTimeMillis()
+                elapsedDuration = TimeTrackingManager.formatDuration(now - first.timeInMs)
+            }
+            tick++
+            if (tick % 30 == 0) {
+                requestLocation()
+            }
+            kotlinx.coroutines.delay(1000L)
+        }
+    }
+
+    LaunchedEffect(currentLocation, activeShifts.value) {
+        val currLoc = currentLocation
+        val shifts = activeShifts.value
+        if (shifts.isNotEmpty() && currLoc != null) {
+            for (shift in shifts) {
+                val projName = shift.projectName
+                val matchingProj = projects.firstOrNull { it.name.equals(projName.trim(), ignoreCase = true) }
+                if (matchingProj?.geofenceEnabled == true && matchingProj.geofenceLatitude != null && matchingProj.geofenceLongitude != null) {
+                    val check = com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
+                        userLat = currLoc.latitude,
+                        userLng = currLoc.longitude,
+                        fenceLat = matchingProj.geofenceLatitude,
+                        fenceLng = matchingProj.geofenceLongitude,
+                        radiusMeters = matchingProj.geofenceRadius,
+                        enabled = matchingProj.geofenceEnabled
+                    )
+                    TimeTrackingManager.recordGeofenceEvent(context, projName, check.isInside)
+                }
+            }
+            val refreshed = TimeTrackingManager.getActiveShifts(context)
+            activeShifts.value = refreshed
+            if (refreshed.isNotEmpty()) {
+                activeShift.value = refreshed.first()
+            }
+            isTimedIn = refreshed.isNotEmpty()
+        }
+    }
+
+
     fun submitTimeLog(
         selectedProject: String = projects.firstOrNull()?.name ?: "General Project",
+        timeIn: String? = null,
+        timeOut: String? = null,
         hours: String = "8",
         workCompleted: String = "",
         weather: String = "Sunny",
@@ -469,56 +576,119 @@ fun DashboardScreen(
             return
         }
 
+        val isDeviceOffline = isOfflineDashboard || !NetworkMonitor.isInternetAvailable(context)
+        val location = currentLocation
+        val matchingProject = projects.firstOrNull { it.name.equals(trimmedProject, ignoreCase = true) }
+        val geofenceCheck = if (matchingProject?.geofenceEnabled == true && matchingProject.geofenceLatitude != null && matchingProject.geofenceLongitude != null) {
+            com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
+                userLat = location?.latitude,
+                userLng = location?.longitude,
+                fenceLat = matchingProject.geofenceLatitude,
+                fenceLng = matchingProject.geofenceLongitude,
+                radiusMeters = matchingProject.geofenceRadius,
+                enabled = matchingProject.geofenceEnabled
+            )
+        } else null
+
+        // Enforce geofence boundary: cannot Time Out outside the zone unless verified exit occurred OR device is offline
+        if (matchingProject?.geofenceEnabled == true && !isDeviceOffline) {
+            if (location == null) {
+                Toast.makeText(context, "Cannot Time Out: GPS location required to verify site geofence.", Toast.LENGTH_LONG).show()
+                return
+            }
+            if (geofenceCheck?.isInside != true) {
+                val shiftForProject = TimeTrackingManager.getActiveShift(context, trimmedProject)
+                val hasVerifiedExit = shiftForProject.isTimedIn && (shiftForProject.currentlyOutsideGeofence || shiftForProject.geofenceLeftTime.isNotBlank())
+                if (!hasVerifiedExit) {
+                    val dist = geofenceCheck?.distanceMeters?.toInt() ?: 0
+                    val rad = matchingProject.geofenceRadius?.toInt() ?: 200
+                    Toast.makeText(context, "Cannot Time Out: Outside site geofence (${dist}m from center, limit: ${rad}m).", Toast.LENGTH_LONG).show()
+                    return
+                }
+            }
+        }
+
+        val geofenceTag = when {
+            geofenceCheck == null -> ""
+            geofenceCheck.isInside -> " • [Geofence: VERIFIED ON-SITE (${geofenceCheck.distanceMeters}m)]"
+            else -> " • [Geofence: OUTSIDE SITE PERIMETER (${geofenceCheck.distanceMeters}m)]"
+        }
+
+        val locationNote = if (location != null) {
+            "Location: ${location.label} (${location.latitude}, ${location.longitude})$geofenceTag"
+        } else {
+            "Location: Field / Mobile App$geofenceTag"
+        }
+
+        val timeTag = if (!timeIn.isNullOrBlank() && !timeOut.isNullOrBlank()) {
+            "[Time In: ${timeIn.trim()}] • [Time Out: ${timeOut.trim()}]"
+        } else if (!timeIn.isNullOrBlank()) {
+            "[Time In: ${timeIn.trim()}]"
+        } else ""
+
+        val geofenceAlertTag = TimeTrackingManager.getGeofenceAlertTag(context, trimmedProject) ?: ""
+        val durationTag = if (hours.isNotBlank()) "[Duration: ${hours.trim()}]" else ""
+
+        val finalNotes = listOf(timeTag, durationTag, geofenceAlertTag, additionalNotes.trim(), locationNote)
+            .filter { it.isNotBlank() }
+            .joinToString(" • ")
+
+        val parsedHours = hours.trim().ifBlank { "8" }
+        val tempToSend = temperature.trim().ifBlank { null }
+        val parsedWorkOnSite = workOnSite.trim().toIntOrNull() ?: 1
+        val parsedSupervisors = supervisors.trim().toIntOrNull() ?: 1
+        val parsedSubContractors = subContractors.trim().toIntOrNull() ?: 0
+
+        val logRequest = TimeLogCreateRequest(
+            projectName = trimmedProject,
+            engineerName = resolvedUserName,
+            date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()),
+            timeIn = timeIn?.trim(),
+            timeOut = timeOut?.trim(),
+            workOnSite = parsedWorkOnSite,
+            supervisors = parsedSupervisors,
+            subContractors = parsedSubContractors,
+            totalWorkHours = parsedHours,
+            weather = weather.trim().ifBlank { "Sunny" },
+            temperature = tempToSend,
+            workCompleted = if (workCompleted.isNotBlank()) workCompleted.trim() else "Daily site supervision and engineering tasks.",
+            materialsDelivered = materialsDelivered.trim(),
+            equipmentUsed = equipmentUsed.trim(),
+            additionalNotes = finalNotes
+        )
+
         coroutineScope.launch {
             isLoggingTime = true
             logTimeMessage = null
 
+            val authorizationToken =
+                if (token.startsWith("Bearer ")) {
+                    token
+                } else {
+                    "Bearer $token"
+                }
+
             try {
-                val authorizationToken =
-                    if (token.startsWith("Bearer ")) {
-                        token
-                    } else {
-                        "Bearer $token"
-                    }
 
-                val location = currentLocation
-                val locationNote = if (location != null) {
-                    "Location: ${location.label} (${location.latitude}, ${location.longitude})"
-                } else {
-                    "Location: Field / Mobile App"
-                }
-
-                val finalNotes = if (additionalNotes.isNotBlank()) {
-                    "${additionalNotes.trim()} • $locationNote"
-                } else {
-                    locationNote
-                }
-
-                val parsedHours = hours.trim().ifBlank { "8" }
-                val tempToSend = temperature.trim().ifBlank { null }
-                val parsedWorkOnSite = workOnSite.trim().toIntOrNull() ?: 1
-                val parsedSupervisors = supervisors.trim().toIntOrNull() ?: 1
-                val parsedSubContractors = subContractors.trim().toIntOrNull() ?: 0
-
-                val response =
-                    RetrofitClient.api.createTimeLog(
-                        token = authorizationToken,
-                        request = TimeLogCreateRequest(
-                            projectName = trimmedProject,
-                            engineerName = resolvedUserName,
-                            date = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()),
-                            workOnSite = parsedWorkOnSite,
-                            supervisors = parsedSupervisors,
-                            subContractors = parsedSubContractors,
-                            totalWorkHours = parsedHours,
-                            weather = weather.trim().ifBlank { "Sunny" },
-                            temperature = tempToSend,
-                            workCompleted = if (workCompleted.isNotBlank()) workCompleted.trim() else "Daily site supervision and engineering tasks.",
-                            materialsDelivered = materialsDelivered.trim(),
-                            equipmentUsed = equipmentUsed.trim(),
-                            additionalNotes = finalNotes
-                        )
+                val isDeviceOffline = isOfflineDashboard || !NetworkMonitor.isInternetAvailable(context)
+                if (isDeviceOffline) {
+                    val offlineRequest = logRequest.copy(
+                        additionalNotes = "${logRequest.additionalNotes ?: ""} • [Offline Record: Queued for Sync]"
                     )
+                    com.example.capstonesample.sync.OfflineSyncManager.queueTimeLog(context, authorizationToken, offlineRequest)
+                    pendingOfflineLogsCount.value = com.example.capstonesample.sync.OfflineSyncManager.getPendingCount(context)
+                    com.example.capstonesample.sync.SyncManager.requestImmediateSync(context)
+                    val offlineMsg = "Offline mode: Log saved locally ($parsedHours hrs for $trimmedProject). It will sync automatically when back online."
+                    logTimeMessage = offlineMsg
+                    Toast.makeText(context, "💾 $offlineMsg", Toast.LENGTH_LONG).show()
+                    onSuccess()
+                    return@launch
+                }
+
+                val response = RetrofitClient.api.createTimeLog(
+                    token = authorizationToken,
+                    request = logRequest
+                )
 
                 val isSuccess = response.isSuccessful && (response.body()?.success == true || response.code() in 200..299)
                 if (isSuccess) {
@@ -540,9 +710,22 @@ fun DashboardScreen(
                 }
 
             } catch (e: Exception) {
-                val errorMsg = e.message ?: "Unable to connect to SitePulse server."
-                logTimeMessage = errorMsg
-                Toast.makeText(context, "❌ $errorMsg", Toast.LENGTH_LONG).show()
+                try {
+                    val offlineRequest = logRequest.copy(
+                        additionalNotes = "${logRequest.additionalNotes ?: ""} • [Offline Record: Queued for Sync]"
+                    )
+                    com.example.capstonesample.sync.OfflineSyncManager.queueTimeLog(context, authorizationToken, offlineRequest)
+                    pendingOfflineLogsCount.value = com.example.capstonesample.sync.OfflineSyncManager.getPendingCount(context)
+                    com.example.capstonesample.sync.SyncManager.requestImmediateSync(context)
+                    val offlineMsg = "Network unavailable: Log queued locally ($parsedHours hrs for $trimmedProject). Will sync when online."
+                    logTimeMessage = offlineMsg
+                    Toast.makeText(context, "💾 $offlineMsg", Toast.LENGTH_LONG).show()
+                    onSuccess()
+                } catch (_: Exception) {
+                    val errorMsg = e.message ?: "Unable to connect to SitePulse server."
+                    logTimeMessage = errorMsg
+                    Toast.makeText(context, "❌ $errorMsg", Toast.LENGTH_LONG).show()
+                }
             } finally {
                 isLoggingTime = false
             }
@@ -553,6 +736,17 @@ fun DashboardScreen(
 
         isLoading = true
         errorMessage = null
+
+        // Auto-sync any queued offline time logs if connected to network
+        if (NetworkMonitor.isInternetAvailable(context) && com.example.capstonesample.sync.OfflineSyncManager.hasPendingLogs(context)) {
+            launch {
+                val synced = com.example.capstonesample.sync.OfflineSyncManager.syncPendingTimeLogs(context)
+                pendingOfflineLogsCount.value = com.example.capstonesample.sync.OfflineSyncManager.getPendingCount(context)
+                if (synced > 0) {
+                    Toast.makeText(context, "✅ Synced $synced offline time log(s) to server!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
 
         try {
 
@@ -598,9 +792,17 @@ fun DashboardScreen(
 
                                 status =
                                     project.status
-                                        ?: "Active"
+                                        ?: "Active",
+
+                                code = project.code,
+                                geofenceLatitude = project.geofenceLatitude,
+                                geofenceLongitude = project.geofenceLongitude,
+                                geofenceRadius = project.geofenceRadius,
+                                geofenceEnabled = project.geofenceEnabled
                             )
                         }
+                    OfflineSyncManager.cacheProjects(context, body.data)
+                    NavBadgeState.ongoingProjectsCount = projects.count { NavBadgeState.isOngoingProject(it.status) }
 
                 } else {
 
@@ -647,6 +849,24 @@ fun DashboardScreen(
                     tasks =
                         body.data
 
+                    try {
+                        val db = AppDatabase.getDatabase(context)
+                        val entities = tasks.map { it.toTaskEntity() }
+                        db.taskDao().deleteAllTasks()
+                        db.taskDao().insertTasks(entities)
+                    } catch (_: Exception) {}
+
+                    val currentUid = NavBadgeState.getUserIdFromJwt(authorizationToken)
+                    val myTasks = if (!currentUid.isNullOrBlank()) {
+                        tasks.filter { it.assigneeId.isNullOrBlank() || it.assigneeId.equals(currentUid, ignoreCase = true) }
+                    } else {
+                        tasks
+                    }
+                    NavBadgeState.ongoingTasksCount = myTasks.count {
+                        NavBadgeState.isOngoingTask(it.status, it.dueDate, it.progress, it.subtasks)
+                    }
+                    NavBadgeState.refresh(context, authorizationToken)
+
                 } else {
 
                     if (errorMessage == null) {
@@ -682,9 +902,53 @@ fun DashboardScreen(
 
         } catch (e: Exception) {
 
-            errorMessage =
-                e.message
-                    ?: "Unable to connect to SitePulse server."
+            val isNetError = !NetworkMonitor.isInternetAvailable(context) ||
+                    e is java.net.ConnectException ||
+                    e is java.net.UnknownHostException ||
+                    e is java.net.SocketTimeoutException ||
+                    e.message?.contains("Failed to connect", ignoreCase = true) == true
+
+            if (isNetError) {
+                // Restore cached projects
+                val cachedProjects = OfflineSyncManager.getCachedProjects(context)
+                if (cachedProjects.isNotEmpty()) {
+                    projects = cachedProjects.map { project ->
+                        DashboardProjectUi(
+                            name = project.name ?: "Unnamed Project",
+                            type = "PROJECT",
+                            progress = (project.progress ?: 0.0).toInt().coerceIn(0, 100),
+                            status = project.status ?: "Active",
+                            code = project.code,
+                            geofenceLatitude = project.geofenceLatitude,
+                            geofenceLongitude = project.geofenceLongitude,
+                            geofenceRadius = project.geofenceRadius,
+                            geofenceEnabled = project.geofenceEnabled
+                        )
+                    }
+                    NavBadgeState.ongoingProjectsCount = projects.count { NavBadgeState.isOngoingProject(it.status) }
+                }
+
+                // Restore cached tasks from Room
+                try {
+                    val db = AppDatabase.getDatabase(context)
+                    val cachedTasks = db.taskDao().getAllTasksList()
+                    if (cachedTasks.isNotEmpty()) {
+                        tasks = cachedTasks.map { it.toTaskResponse() }
+                    }
+                } catch (_: Exception) {}
+
+                if (projects.isNotEmpty() || tasks.isNotEmpty()) {
+                    isOfflineDashboard = true
+                    errorMessage = null
+                } else {
+                    isOfflineDashboard = true
+                    errorMessage = "Offline Mode: No cached projects or tasks available. Connect once to synchronize."
+                }
+            } else {
+                errorMessage =
+                    e.message
+                        ?: "Unable to connect to SitePulse server."
+            }
 
         } finally {
 
@@ -709,8 +973,27 @@ fun DashboardScreen(
 
     //
     // Uses tasks from GET /tasks
+<<<<<<< HEAD
+=======
+    // ========================================================
+
+    val isEngineer = resolvedUserRole.trim().equals("engineer", ignoreCase = true)
+    val currentUid = remember(token) { NavBadgeState.getUserIdFromJwt(token) }
+
+    val relevantTasks = remember(tasks, isEngineer, currentUid, resolvedUserName) {
+        if (isEngineer && (!currentUid.isNullOrBlank() || resolvedUserName.isNotBlank())) {
+            tasks.filter { task ->
+                (!currentUid.isNullOrBlank() && task.assigneeId?.equals(currentUid, ignoreCase = true) == true) ||
+                (resolvedUserName.isNotBlank() && task.assigneeName?.trim().equals(resolvedUserName.trim(), ignoreCase = true))
+            }
+        } else {
+            tasks
+        }
+    }
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
     val activities =
-        tasks
+        relevantTasks
             .take(5)
             .map { task ->
 
@@ -726,8 +1009,7 @@ fun DashboardScreen(
                         buildString {
 
                             append(
-                                task.status
-                                    ?: "Pending"
+                                workStatusLabel(task.status, task.dueDate)
                             )
 
                             task.projectName?.let {
@@ -745,8 +1027,8 @@ fun DashboardScreen(
 
                     type =
                         when (
-                            task.status
-                                ?.uppercase()
+                            workStatusLabel(task.status, task.dueDate)
+                                .uppercase()
                         ) {
 
                             "DELAYED",
@@ -772,23 +1054,29 @@ fun DashboardScreen(
             }
 
 
+<<<<<<< HEAD
+=======
+    // ========================================================
+    // HEALTH CALCULATION (FILTERED TO ASSIGNED TASKS FOR ENGINEER)
+    // ========================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
     val totalTasks =
-        tasks.size
+        relevantTasks.size
 
 
     val delayedTasks =
-        tasks.count { task ->
-
-            task.status.equals(
-                "Delayed",
-                ignoreCase = true
-            ) ||
-
+        relevantTasks.count { task ->
+            val label = workStatusLabel(task.status, task.dueDate)
+            label.equals("Delayed", ignoreCase = true) ||
+                    task.status.equals(
+                        "Delayed",
+                        ignoreCase = true
+                    ) ||
                     task.status.equals(
                         "Overdue",
                         ignoreCase = true
                     ) ||
-
                     task.status.equals(
                         "Blocked",
                         ignoreCase = true
@@ -797,7 +1085,7 @@ fun DashboardScreen(
 
 
     val completedTasks =
-        tasks.count { task ->
+        relevantTasks.count { task ->
 
             task.status.equals(
                 "Completed",
@@ -815,6 +1103,7 @@ fun DashboardScreen(
                     )
         }
 
+<<<<<<< HEAD
 
     val onTrack =
         projects.count { project ->
@@ -834,20 +1123,34 @@ fun DashboardScreen(
                         "Planning",
                         ignoreCase = true
                     )
+=======
+    val onTrackTasks =
+        relevantTasks.count { task ->
+            val label = workStatusLabel(task.status, task.dueDate)
+            (label.equals("Ongoing", ignoreCase = true) ||
+             label.equals("Pending", ignoreCase = true) ||
+             label.equals("In Progress", ignoreCase = true)) &&
+            !label.equals("Delayed", ignoreCase = true)
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
         }
 
 
-    val delayed =
-        projects.count { project ->
+    // ========================================================
+    // WORKLOAD STATUS (ALIGNED WITH TASKS)
+    // ========================================================
 
-            project.status.equals(
-                "Delayed",
-                ignoreCase = true
-            )
-        }
+    val onTrack = onTrackTasks
+    val delayed = delayedTasks
 
 
+<<<<<<< HEAD
     // Temporary score: delayed, overdue, or blocked tasks reduce project health.
+=======
+    // ========================================================
+    // HEALTH SCORE
+    // ========================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
     val health =
         if (totalTasks == 0) {
 
@@ -855,13 +1158,9 @@ fun DashboardScreen(
 
         } else {
 
-            val delayedPercentage =
-                (
-                        delayedTasks.toFloat() /
-                                totalTasks.toFloat()
-                        ) * 100f
-
-            (100 - delayedPercentage.toInt())
+            val healthyTasks = (totalTasks - delayedTasks).coerceAtLeast(0)
+            ((healthyTasks.toFloat() / totalTasks.toFloat()) * 100f)
+                .toInt()
                 .coerceIn(0, 100)
         }
 
@@ -950,7 +1249,51 @@ fun DashboardScreen(
             }
 
 
+<<<<<<< HEAD
             errorMessage?.let { error ->
+=======
+            // =================================================
+            // OFFLINE BANNER / ERROR
+            // =================================================
+
+            if (isOfflineDashboard) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFFF1F5F9)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("📡", fontSize = 18.sp)
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Offline Mode Active",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFF1E293B)
+                                )
+                                Text(
+                                    "Showing cached projects and tasks. Field time logs can be submitted offline and will automatically sync when reconnected.",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF475569),
+                                    lineHeight = 15.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!isOfflineDashboard) {
+                errorMessage?.let { error ->
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 
                 item {
 
@@ -1072,6 +1415,98 @@ fun DashboardScreen(
                         }
                     )
 
+                    val geofencedProjects = remember(projects) {
+                        projects.filter { it.geofenceEnabled == true && it.geofenceLatitude != null && it.geofenceLongitude != null }
+                    }
+
+                    val evaluatedGeofences = remember(currentLocation, geofencedProjects) {
+                        geofencedProjects.map { proj ->
+                            val gf = com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
+                                userLat = currentLocation?.latitude,
+                                userLng = currentLocation?.longitude,
+                                fenceLat = proj.geofenceLatitude,
+                                fenceLng = proj.geofenceLongitude,
+                                radiusMeters = proj.geofenceRadius,
+                                enabled = proj.geofenceEnabled
+                            )
+                            Pair(proj, gf)
+                        }.sortedWith(
+                            compareByDescending<Pair<DashboardProjectUi, com.example.capstonesample.security.GeofenceCheckResult>> { it.second.isInside }
+                                .thenBy { it.second.distanceMeters ?: Float.MAX_VALUE }
+                        )
+                    }
+
+                    if (evaluatedGeofences.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            evaluatedGeofences.forEach { (proj, gfResult) ->
+                                val isInside = gfResult.isInside
+                                val distance = gfResult.distanceMeters
+                                val radius = proj.geofenceRadius?.toInt() ?: 200
+
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isInside) Color(0xFFECFDF5) else Color(0xFFF8FAFC),
+                                    border = BorderStroke(1.dp, if (isInside) Color(0xFFA7F3D0) else Color(0xFFE2E8F0)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(8.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (isInside) Color(0xFF10B981) else Color(0xFF94A3B8))
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                text = proj.name,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF0F172A),
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = if (isInside) " • On-Site" else " • Outside",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = if (isInside) Color(0xFF059669) else Color(0xFF64748B)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = if (currentLocation == null) {
+                                                "Acquiring GPS…"
+                                            } else if (distance != null) {
+                                                if (distance >= 1000f) {
+                                                    "${String.format(Locale.US, "%.1f", distance / 1000f)}km away"
+                                                } else {
+                                                    "${distance.toInt()}m / ${radius}m"
+                                                }
+                                            } else "Locating…",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = if (isInside) Color(0xFF047857) else Color(0xFF64748B)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     logTimeMessage?.let { message ->
 
                         Spacer(
@@ -1119,31 +1554,130 @@ fun DashboardScreen(
                     totalTasks =
                         totalTasks,
 
+                    isEngineer =
+                        isEngineer,
+
                     onClick =
                         onTasksClick
                 )
             }
 
 
+<<<<<<< HEAD
+=======
+            // =================================================
+            // OFFLINE QUEUE STATUS BANNER (IF ANY PENDING LOGS)
+            // =================================================
+            if (pendingOfflineLogsCount.value > 0) {
+                item {
+                    val isOnline = NetworkMonitor.isInternetAvailable(context)
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF6FF)),
+                        border = BorderStroke(1.dp, Color(0xFFBFDBFE))
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(Color(0xFF2563EB), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.CloudUpload,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Column {
+                                    Text(
+                                        text = "${pendingOfflineLogsCount.value} Offline Time Log(s) Saved",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1E40AF)
+                                    )
+                                    Text(
+                                        text = if (isOnline) "Internet connected • Ready to sync" else "Saved locally • Will auto-sync when online",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF3B82F6)
+                                    )
+                                }
+                            }
+
+                            if (isOnline) {
+                                Button(
+                                    onClick = { triggerSyncPendingLogs() },
+                                    enabled = !isSyncingOfflineLogs,
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    if (isSyncingOfflineLogs) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            color = Color.White,
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Syncing", fontSize = 11.sp, color = Color.White)
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Sync,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Sync Now", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // =================================================
+            // QUICK ACTIONS
+            // =================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
             item {
                 QuickActions(
+                    activeShifts = activeShifts.value,
                     isLoggingTime = isLoggingTime,
-                    onLogTimeClick = {
+                    onTimeInClick = {
                         if (currentLocation == null) {
                             requestLocation()
                         }
+                        showTimeInDialog = true
+                    },
+                    onTimeOutClick = {
+                        if (currentLocation == null) {
+                            requestLocation()
+                        }
+                        targetShiftForTimeOut = activeShifts.value.firstOrNull()
                         showLogTimeDialog = true
                     },
-                    onCaptureClick = {
-                        openDashboardCamera()
-                    },
-                    onReportClick = {
-                        onTasksClick()
-                        Toast.makeText(
-                            context,
-                            "Select a task to generate an AI field report or log issues",
-                            Toast.LENGTH_SHORT
-                        ).show()
+                    onTimeOutProject = { shift ->
+                        if (currentLocation == null) {
+                            requestLocation()
+                        }
+                        targetShiftForTimeOut = shift
+                        showLogTimeDialog = true
                     }
                 )
             }
@@ -1207,6 +1741,16 @@ fun DashboardScreen(
                     )
                 }
 
+            } else if (isSmallScreen) {
+
+                items(projects.take(2), key = { "proj-${it.name}" }) { project ->
+                    ProjectCard(
+                        project = project,
+                        currentLocation = currentLocation,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
             } else {
 
                 item {
@@ -1231,6 +1775,9 @@ fun DashboardScreen(
 
                                     project =
                                         project,
+
+                                    currentLocation =
+                                        currentLocation,
 
                                     modifier =
                                         Modifier.weight(1f)
@@ -1399,24 +1946,75 @@ fun DashboardScreen(
         )
     }
 
+    if (showTimeInDialog) {
+        TimeInDialog(
+            projectsList = projects,
+            initialEngineerName = resolvedUserName,
+            currentLocation = currentLocation,
+            isLocating = isLocating,
+            activeProjectNames = activeShifts.value.map { it.projectName.trim().lowercase() }.toSet(),
+            onRequestLocation = { requestLocation() },
+            onDismiss = { showTimeInDialog = false },
+            onConfirmTimeIn = { chosenProject ->
+                if (activeShifts.value.any { it.projectName.equals(chosenProject.trim(), ignoreCase = true) }) {
+                    Toast.makeText(context, "Already timed in to $chosenProject!", Toast.LENGTH_SHORT).show()
+                    return@TimeInDialog
+                }
+                val proj = projects.firstOrNull { it.name.equals(chosenProject.trim(), ignoreCase = true) }
+                if (proj?.geofenceEnabled == true && proj.geofenceLatitude != null && proj.geofenceLongitude != null) {
+                    val check = com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
+                        userLat = currentLocation?.latitude,
+                        userLng = currentLocation?.longitude,
+                        fenceLat = proj.geofenceLatitude,
+                        fenceLng = proj.geofenceLongitude,
+                        radiusMeters = proj.geofenceRadius,
+                        enabled = proj.geofenceEnabled
+                    )
+                    if (!check.isInside) {
+                        val dist = check.distanceMeters?.toInt() ?: 0
+                        val rad = proj.geofenceRadius?.toInt() ?: 200
+                        Toast.makeText(
+                            context,
+                            "Cannot Time In: Outside site perimeter (${dist}m from center, limit: ${rad}m). Please move on-site to Time In.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@TimeInDialog
+                    }
+                }
+
+                val newShift = TimeTrackingManager.setTimeIn(context, chosenProject)
+                activeShifts.value = TimeTrackingManager.getActiveShifts(context)
+                isTimedIn = true
+                showTimeInDialog = false
+                Toast.makeText(context, "Timed In at ${newShift.timeInFormatted} for $chosenProject", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
     if (showLogTimeDialog) {
+        val shiftToClose = targetShiftForTimeOut ?: activeShifts.value.firstOrNull() ?: TimeTrackingManager.getActiveShift(context)
         LogTimeDialog(
-            projects = projects.map { it.name },
+            projectsList = projects,
+            activeShift = shiftToClose,
             initialEngineerName = resolvedUserName,
             currentLocation = currentLocation,
             locationMessage = locationMessage,
             isLocating = isLocating,
             isSubmitting = isLoggingTime,
+            isOffline = isOfflineDashboard || !NetworkMonitor.isInternetAvailable(context),
             initialLiveWeather = liveWeather,
             onRequestLocation = { requestLocation() },
             onDismiss = {
                 if (!isLoggingTime) {
                     showLogTimeDialog = false
+                    targetShiftForTimeOut = null
                 }
             },
             onSubmit = { form ->
                 submitTimeLog(
                     selectedProject = form.projectName,
+                    timeIn = form.timeIn,
+                    timeOut = form.timeOut,
                     hours = form.hours,
                     workCompleted = form.workCompleted,
                     weather = form.weather,
@@ -1428,12 +2026,19 @@ fun DashboardScreen(
                     equipmentUsed = form.equipmentUsed,
                     additionalNotes = form.additionalNotes,
                     onSuccess = {
+                        TimeTrackingManager.clearShift(context, form.projectName)
+                        val refreshed = TimeTrackingManager.getActiveShifts(context)
+                        activeShifts.value = refreshed
+                        isTimedIn = refreshed.isNotEmpty()
+                        activeShift.value = refreshed.firstOrNull() ?: TimeTrackingManager.getActiveShift(context)
                         showLogTimeDialog = false
+                        targetShiftForTimeOut = null
                     }
                 )
             }
         )
     }
+}
 }
 
 
@@ -1759,7 +2364,10 @@ private fun NotificationDialog(
                                 11.sp,
 
                             color =
-                                TextGray
+                                TextGray,
+
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
 
@@ -2012,8 +2620,304 @@ private fun NotificationDialog(
     }
 }
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// TIME TRACKING MANAGER (TIME IN / TIME OUT PERSISTENCE & TIMER)
+// ============================================================
+
+object TimeTrackingManager {
+    private const val PREFS_NAME = "sitepulse_time_tracking"
+    private const val KEY_ACTIVE_SHIFTS_JSON = "active_shifts_json"
+    private const val KEY_IS_TIMED_IN = "is_timed_in"
+    private const val KEY_TIME_IN_MS = "time_in_ms"
+    private const val KEY_TIME_IN_FORMATTED = "time_in_formatted"
+    private const val KEY_TIME_IN_PROJECT = "time_in_project"
+    private const val KEY_TIME_IN_DATE = "time_in_date"
+    private const val KEY_GEOFENCE_LEFT_TIME = "geofence_left_time"
+    private const val KEY_GEOFENCE_RETURNED_TIME = "geofence_returned_time"
+    private const val KEY_CURRENTLY_OUTSIDE_GEOFENCE = "currently_outside_geofence"
+    private const val KEY_HAS_GEOFENCE_ALERT = "has_geofence_alert"
+    private const val KEY_GEOFENCE_HISTORY = "geofence_events_history"
+
+    private val gson = Gson()
+
+    data class ActiveShift(
+        val isTimedIn: Boolean = false,
+        val timeInMs: Long = 0L,
+        val timeInFormatted: String = "",
+        val projectName: String = "",
+        val date: String = "",
+        val geofenceLeftTime: String = "",
+        val geofenceReturnedTime: String = "",
+        val currentlyOutsideGeofence: Boolean = false,
+        val hasGeofenceAlert: Boolean = false,
+        val incidentsCount: Int = 0,
+        val geofenceHistory: String = ""
+    ) {
+        val hasVerifiedExit: Boolean get() = currentlyOutsideGeofence || geofenceLeftTime.isNotBlank()
+    }
+
+    fun getActiveShifts(context: Context): List<ActiveShift> {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val json = prefs.getString(KEY_ACTIVE_SHIFTS_JSON, null)
+        if (!json.isNullOrBlank()) {
+            try {
+                val type = object : TypeToken<List<ActiveShift>>() {}.type
+                val list: List<ActiveShift>? = gson.fromJson(json, type)
+                if (list != null && list.isNotEmpty()) {
+                    return list
+                }
+            } catch (e: Exception) {
+                Log.w("TimeTrackingManager", "Error parsing active shifts json: ${e.message}")
+            }
+        }
+
+        // Fallback to legacy single shift
+        val isTimedIn = prefs.getBoolean(KEY_IS_TIMED_IN, false)
+        if (!isTimedIn) return emptyList()
+
+        val timeInMs = prefs.getLong(KEY_TIME_IN_MS, 0L)
+        val formatted = prefs.getString(KEY_TIME_IN_FORMATTED, "") ?: ""
+        val project = prefs.getString(KEY_TIME_IN_PROJECT, "") ?: ""
+        val date = prefs.getString(KEY_TIME_IN_DATE, "") ?: ""
+        val leftTime = prefs.getString(KEY_GEOFENCE_LEFT_TIME, "") ?: ""
+        val returnedTime = prefs.getString(KEY_GEOFENCE_RETURNED_TIME, "") ?: ""
+        val isOutside = prefs.getBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, false)
+        val hasAlert = prefs.getBoolean(KEY_HAS_GEOFENCE_ALERT, false)
+        val history = prefs.getString(KEY_GEOFENCE_HISTORY, "") ?: ""
+        val historyCount = if (history.isBlank()) 0 else history.split(";;").filter { it.isNotBlank() }.size
+        val totalIncidents = historyCount + (if (isOutside) 1 else 0)
+
+        val legacyShift = ActiveShift(
+            isTimedIn = true,
+            timeInMs = timeInMs,
+            timeInFormatted = formatted,
+            projectName = project,
+            date = date,
+            geofenceLeftTime = leftTime,
+            geofenceReturnedTime = returnedTime,
+            currentlyOutsideGeofence = isOutside,
+            hasGeofenceAlert = hasAlert,
+            incidentsCount = totalIncidents,
+            geofenceHistory = history
+        )
+        return listOf(legacyShift)
+    }
+
+    fun getActiveShift(context: Context, projectName: String? = null): ActiveShift {
+        val shifts = getActiveShifts(context)
+        if (shifts.isEmpty()) return ActiveShift()
+        if (projectName.isNullOrBlank()) return shifts.first()
+        return shifts.firstOrNull { it.projectName.equals(projectName.trim(), ignoreCase = true) } ?: ActiveShift()
+    }
+
+    fun isProjectTimedIn(context: Context, projectName: String): Boolean {
+        if (projectName.isBlank()) return false
+        return getActiveShifts(context).any { it.projectName.equals(projectName.trim(), ignoreCase = true) }
+    }
+
+    fun setTimeIn(context: Context, projectName: String, timeInMs: Long = System.currentTimeMillis()): ActiveShift {
+        val formattedTime = SimpleDateFormat("hh:mm a", Locale.US).format(Date(timeInMs))
+        val formattedDate = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(timeInMs))
+        val cleanName = projectName.trim()
+
+        val currentShifts = getActiveShifts(context).filterNot { it.projectName.equals(cleanName, ignoreCase = true) }.toMutableList()
+        val newShift = ActiveShift(
+            isTimedIn = true,
+            timeInMs = timeInMs,
+            timeInFormatted = formattedTime,
+            projectName = cleanName,
+            date = formattedDate,
+            geofenceLeftTime = "",
+            geofenceReturnedTime = "",
+            currentlyOutsideGeofence = false,
+            hasGeofenceAlert = false,
+            incidentsCount = 0,
+            geofenceHistory = ""
+        )
+        currentShifts.add(newShift)
+
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit()
+            .putString(KEY_ACTIVE_SHIFTS_JSON, gson.toJson(currentShifts))
+            .putBoolean(KEY_IS_TIMED_IN, true)
+            .putLong(KEY_TIME_IN_MS, timeInMs)
+            .putString(KEY_TIME_IN_FORMATTED, formattedTime)
+            .putString(KEY_TIME_IN_PROJECT, cleanName)
+            .putString(KEY_TIME_IN_DATE, formattedDate)
+            .remove(KEY_GEOFENCE_LEFT_TIME)
+            .remove(KEY_GEOFENCE_RETURNED_TIME)
+            .remove(KEY_GEOFENCE_HISTORY)
+            .putBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, false)
+            .putBoolean(KEY_HAS_GEOFENCE_ALERT, false)
+            .apply()
+
+        return newShift
+    }
+
+    fun clearShift(context: Context, projectName: String? = null) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (projectName.isNullOrBlank()) {
+            prefs.edit()
+                .remove(KEY_ACTIVE_SHIFTS_JSON)
+                .putBoolean(KEY_IS_TIMED_IN, false)
+                .putLong(KEY_TIME_IN_MS, 0L)
+                .putString(KEY_TIME_IN_FORMATTED, "")
+                .putString(KEY_TIME_IN_PROJECT, "")
+                .putString(KEY_TIME_IN_DATE, "")
+                .remove(KEY_GEOFENCE_LEFT_TIME)
+                .remove(KEY_GEOFENCE_RETURNED_TIME)
+                .remove(KEY_GEOFENCE_HISTORY)
+                .putBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, false)
+                .putBoolean(KEY_HAS_GEOFENCE_ALERT, false)
+                .apply()
+            return
+        }
+
+        val cleanName = projectName.trim()
+        val remaining = getActiveShifts(context).filterNot { it.projectName.equals(cleanName, ignoreCase = true) }
+        val editor = prefs.edit()
+        if (remaining.isEmpty()) {
+            editor.remove(KEY_ACTIVE_SHIFTS_JSON)
+                .putBoolean(KEY_IS_TIMED_IN, false)
+                .putLong(KEY_TIME_IN_MS, 0L)
+                .putString(KEY_TIME_IN_FORMATTED, "")
+                .putString(KEY_TIME_IN_PROJECT, "")
+                .putString(KEY_TIME_IN_DATE, "")
+                .remove(KEY_GEOFENCE_LEFT_TIME)
+                .remove(KEY_GEOFENCE_RETURNED_TIME)
+                .remove(KEY_GEOFENCE_HISTORY)
+                .putBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, false)
+                .putBoolean(KEY_HAS_GEOFENCE_ALERT, false)
+        } else {
+            val first = remaining.first()
+            editor.putString(KEY_ACTIVE_SHIFTS_JSON, gson.toJson(remaining))
+                .putBoolean(KEY_IS_TIMED_IN, true)
+                .putLong(KEY_TIME_IN_MS, first.timeInMs)
+                .putString(KEY_TIME_IN_FORMATTED, first.timeInFormatted)
+                .putString(KEY_TIME_IN_PROJECT, first.projectName)
+                .putString(KEY_TIME_IN_DATE, first.date)
+                .putString(KEY_GEOFENCE_LEFT_TIME, first.geofenceLeftTime)
+                .putString(KEY_GEOFENCE_RETURNED_TIME, first.geofenceReturnedTime)
+                .putString(KEY_GEOFENCE_HISTORY, first.geofenceHistory)
+                .putBoolean(KEY_CURRENTLY_OUTSIDE_GEOFENCE, first.currentlyOutsideGeofence)
+                .putBoolean(KEY_HAS_GEOFENCE_ALERT, first.hasGeofenceAlert)
+        }
+        editor.apply()
+    }
+
+    fun recordGeofenceEvent(
+        context: Context,
+        projectName: String? = null,
+        isInside: Boolean,
+        timestampMs: Long = System.currentTimeMillis()
+    ): ActiveShift {
+        val shifts = getActiveShifts(context)
+        if (shifts.isEmpty()) return ActiveShift()
+
+        val target = if (!projectName.isNullOrBlank()) {
+            shifts.firstOrNull { it.projectName.equals(projectName.trim(), ignoreCase = true) }
+        } else shifts.firstOrNull()
+
+        if (target == null) return shifts.first()
+
+        val timeFormatted = SimpleDateFormat("hh:mm a", Locale.US).format(Date(timestampMs))
+        var updatedTarget = target
+
+        if (!isInside && !target.currentlyOutsideGeofence) {
+            val newCount = target.incidentsCount + 1
+            updatedTarget = target.copy(
+                currentlyOutsideGeofence = true,
+                hasGeofenceAlert = true,
+                geofenceLeftTime = timeFormatted,
+                geofenceReturnedTime = "",
+                incidentsCount = newCount
+            )
+        } else if (isInside && target.currentlyOutsideGeofence) {
+            val leftTime = target.geofenceLeftTime.ifBlank { timeFormatted }
+            val existingHistory = target.geofenceHistory
+            val newEntry = "$leftTime|$timeFormatted"
+            val updatedHistory = if (existingHistory.isBlank()) newEntry else "$existingHistory;;$newEntry"
+            updatedTarget = target.copy(
+                currentlyOutsideGeofence = false,
+                geofenceReturnedTime = timeFormatted,
+                geofenceHistory = updatedHistory
+            )
+        }
+
+        val updatedList = shifts.map { if (it.projectName.equals(target.projectName, ignoreCase = true)) updatedTarget else it }
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putString(KEY_ACTIVE_SHIFTS_JSON, gson.toJson(updatedList)).apply()
+
+        return updatedTarget
+    }
+
+    fun getGeofenceAlertTag(context: Context, projectName: String? = null): String? {
+        val shift = getActiveShift(context, projectName)
+        if (!shift.hasGeofenceAlert) return null
+
+        val history = shift.geofenceHistory
+        val isStillOutside = shift.currentlyOutsideGeofence
+        val currentLeftTime = shift.geofenceLeftTime
+        val currentReturnedTime = shift.geofenceReturnedTime
+
+        val tags = mutableListOf<String>()
+
+        if (history.isNotBlank()) {
+            val entries = history.split(";;").filter { it.isNotBlank() }
+            for (entry in entries) {
+                val parts = entry.split("|")
+                if (parts.size >= 2) {
+                    tags.add("[Geofence Alert: Left at ${parts[0]} • Returned at ${parts[1]}]")
+                } else if (parts.size == 1) {
+                    tags.add("[Geofence Alert: Left at ${parts[0]} • Returned at site]")
+                }
+            }
+        }
+
+        if (isStillOutside && currentLeftTime.isNotBlank()) {
+            tags.add("[Geofence Alert: Left at $currentLeftTime • Currently Outside Perimeter]")
+        } else if (tags.isEmpty() && currentLeftTime.isNotBlank()) {
+            if (currentReturnedTime.isNotBlank()) {
+                tags.add("[Geofence Alert: Left at $currentLeftTime • Returned at $currentReturnedTime]")
+            } else {
+                tags.add("[Geofence Alert: Left at $currentLeftTime • Returned at site]")
+            }
+        }
+
+        return if (tags.isNotEmpty()) tags.joinToString(" • ") else null
+    }
+
+    fun calculateWorkHours(timeInMs: Long, timeOutMs: Long = System.currentTimeMillis()): Pair<Double, String> {
+        val diffMs = (timeOutMs - timeInMs).coerceAtLeast(0L)
+        val totalSecs = (diffMs / 1000).coerceAtLeast(0L)
+        val hours = totalSecs / 3600
+        val minutes = (totalSecs % 3600) / 60
+        val seconds = totalSecs % 60
+        val formatted = String.format(Locale.US, "%02dh %02dm %02ds", hours, minutes, seconds)
+        val decimalHours = totalSecs.toDouble() / 3600.0
+        return Pair(decimalHours, formatted)
+    }
+
+    fun formatDuration(diffMs: Long): String {
+        val totalSecs = (diffMs / 1000).coerceAtLeast(0L)
+        val hours = totalSecs / 3600
+        val minutes = (totalSecs % 3600) / 60
+        val seconds = totalSecs % 60
+        return String.format(Locale.US, "%02dh %02dm %02ds", hours, minutes, seconds)
+    }
+}
+
+// ============================================================
+// LOG TIME FORM DATA
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 data class LogTimeFormData(
     val projectName: String,
+    val timeIn: String = "",
+    val timeOut: String = "",
     val hours: String,
     val workCompleted: String,
     val weather: String,
@@ -2026,20 +2930,578 @@ data class LogTimeFormData(
     val additionalNotes: String
 )
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// MANPOWER COUNTER COMPONENT
+// ============================================================
+
+@Composable
+private fun ManpowerCounter(
+    title: String,
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    val count = value.toIntOrNull() ?: 0
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+        border = BorderStroke(1.5.dp, Color(0xFF94A3B8))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp, horizontal = 4.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = title,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF1E293B),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (count > 0 && enabled) Color(0xFFE2E8F0) else Color(0xFFF1F5F9),
+                    border = BorderStroke(1.dp, Color(0xFF94A3B8)),
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clickable(enabled = count > 0 && enabled) {
+                            onValueChange((count - 1).coerceAtLeast(0).toString())
+                        }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "−",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (count > 0 && enabled) Color(0xFF0F172A) else Color(0xFF94A3B8)
+                        )
+                    }
+                }
+
+                Text(
+                    text = value.ifBlank { "0" },
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color(0xFF0F172A),
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (enabled) OrangeLight else Color(0xFFF1F5F9),
+                    border = BorderStroke(1.dp, if (enabled) SitePulseOrange else Color(0xFF94A3B8)),
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clickable(enabled = enabled) {
+                            onValueChange((count + 1).toString())
+                        }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "+",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (enabled) SitePulseOrange else Color(0xFF94A3B8)
+                        )
+                    }
+                }
+            }
+
+        }
+    }
+}
+
+// ============================================================
+// TIME IN DIALOG
+// ============================================================
+
+@Composable
+private fun TimeInDialog(
+    projectsList: List<DashboardProjectUi> = emptyList(),
+    initialEngineerName: String,
+    currentLocation: DashboardLocationUi?,
+    isLocating: Boolean,
+    activeProjectNames: Set<String> = emptySet(),
+    onRequestLocation: () -> Unit,
+    onDismiss: () -> Unit,
+    onConfirmTimeIn: (projectName: String) -> Unit
+) {
+    val projects = remember(projectsList) { projectsList.map { it.name }.filter { it.isNotBlank() } }
+    val initialProject = remember(projectsList, currentLocation, activeProjectNames) {
+        val insideProject = projectsList.firstOrNull { p ->
+            !activeProjectNames.contains(p.name.trim().lowercase()) &&
+            p.geofenceEnabled == true && p.geofenceLatitude != null && p.geofenceLongitude != null &&
+            com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
+                userLat = currentLocation?.latitude,
+                userLng = currentLocation?.longitude,
+                fenceLat = p.geofenceLatitude,
+                fenceLng = p.geofenceLongitude,
+                radiusMeters = p.geofenceRadius,
+                enabled = p.geofenceEnabled
+            ).isInside
+        }
+        insideProject?.name?.takeIf { it.isNotBlank() } ?: projects.firstOrNull { !activeProjectNames.contains(it.trim().lowercase()) } ?: projects.firstOrNull() ?: ""
+    }
+    var selectedProject by remember { mutableStateOf(initialProject) }
+    var customProject by remember { mutableStateOf("") }
+    var isCustomProject by remember { mutableStateOf(projects.isEmpty()) }
+    var projectMenuExpanded by remember { mutableStateOf(false) }
+    var localError by remember { mutableStateOf<String?>(null) }
+    val currentTime = remember { SimpleDateFormat("hh:mm a", Locale.US).format(Date()) }
+
+    val activeProject = if (isCustomProject) customProject.trim() else selectedProject.trim()
+    val matchedProject = remember(activeProject, projectsList) {
+        projectsList.firstOrNull { it.name.equals(activeProject.trim(), ignoreCase = true) }
+    }
+    val geofenceResult = remember(matchedProject, currentLocation) {
+        if (matchedProject != null && matchedProject.geofenceEnabled == true && matchedProject.geofenceLatitude != null && matchedProject.geofenceLongitude != null) {
+            com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
+                userLat = currentLocation?.latitude,
+                userLng = currentLocation?.longitude,
+                fenceLat = matchedProject.geofenceLatitude,
+                fenceLng = matchedProject.geofenceLongitude,
+                radiusMeters = matchedProject.geofenceRadius,
+                enabled = matchedProject.geofenceEnabled
+            )
+        } else null
+    }
+    val isGeofenceLocked = matchedProject?.geofenceEnabled == true && (currentLocation == null || geofenceResult?.isInside != true)
+
+    LaunchedEffect(Unit) {
+        if (currentLocation == null) {
+            onRequestLocation()
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(0.92f)
+                .wrapContentHeight(),
+            shape = RoundedCornerShape(20.dp),
+            color = Color.White,
+            shadowElevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(Color(0xFFDCFCE7), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.Login,
+                            contentDescription = null,
+                            tint = Color(0xFF16A34A),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Site Time In",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color(0xFF0F172A)
+                        )
+                        Text(
+                            text = "Start daily site shift & active timer",
+                            fontSize = 12.sp,
+                            color = TextGray
+                        )
+                    }
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+                        Icon(
+                            imageVector = Icons.Outlined.Close,
+                            contentDescription = "Close",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                // Time Banner
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF0FDF4)),
+                    border = BorderStroke(1.dp, Color(0xFFBBF7D0))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "START TIME",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF15803D),
+                                letterSpacing = 0.5.sp
+                            )
+                            Text(
+                                text = currentTime,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFF166534)
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                text = "ENGINEER",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF15803D),
+                                letterSpacing = 0.5.sp
+                            )
+                            Text(
+                                text = initialEngineerName,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFF0F172A),
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+
+                // Project Selector
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Project *",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F172A)
+                        )
+                        if (projects.isNotEmpty()) {
+                            Text(
+                                text = if (isCustomProject) "Choose from list" else "+ Custom name",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = SitePulseOrange,
+                                modifier = Modifier.clickable {
+                                    isCustomProject = !isCustomProject
+                                    localError = null
+                                }
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    if (!isCustomProject && projects.isNotEmpty()) {
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            OutlinedCard(
+                                onClick = { projectMenuExpanded = !projectMenuExpanded },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.outlinedCardColors(containerColor = Color(0xFFF8FAFC)),
+                                border = BorderStroke(1.5.dp, Color(0xFF64748B))
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = if (selectedProject.isNotBlank()) selectedProject else "Select Project",
+                                        fontSize = 14.sp,
+                                        fontWeight = if (selectedProject.isNotBlank()) FontWeight.SemiBold else FontWeight.Normal,
+                                        color = if (selectedProject.isNotBlank()) Color(0xFF0F172A) else Color(0xFF64748B),
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Icon(
+                                        imageVector = if (projectMenuExpanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+                                        contentDescription = "Expand",
+                                        tint = Color(0xFF334155)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = projectMenuExpanded,
+                                onDismissRequest = { projectMenuExpanded = false },
+                                containerColor = Color.White,
+                                shadowElevation = 8.dp,
+                                border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth(0.85f)
+                                    .background(Color.White, RoundedCornerShape(12.dp))
+                            ) {
+                                projects.forEach { proj ->
+                                    val isSelected = proj == selectedProject
+                                    val isAlreadyActive = activeProjectNames.contains(proj.trim().lowercase())
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f, fill = false)) {
+                                                    Text(
+                                                        text = proj,
+                                                        fontSize = 14.sp,
+                                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                                        color = if (isSelected) SitePulseOrange else Color(0xFF0F172A)
+                                                    )
+                                                    if (isAlreadyActive) {
+                                                        Text(
+                                                            text = "Shift currently active",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.Medium,
+                                                            color = Color(0xFFD97706)
+                                                        )
+                                                    }
+                                                }
+                                                if (isSelected) {
+                                                    Icon(
+                                                        imageVector = Icons.Outlined.Check,
+                                                        contentDescription = "Selected",
+                                                        tint = SitePulseOrange,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                } else if (isAlreadyActive) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = Color(0xFFFEF3C7)
+                                                    ) {
+                                                        Text(
+                                                            text = "ACTIVE",
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = Color(0xFFB45309),
+                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        colors = MenuDefaults.itemColors(
+                                            textColor = Color(0xFF0F172A)
+                                        ),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(if (isSelected) Color(0xFFFFF7ED) else Color.White),
+                                        onClick = {
+                                            selectedProject = proj
+                                            projectMenuExpanded = false
+                                            localError = if (isAlreadyActive) "Shift for '$proj' is already active. Select another project or time out first." else null
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = customProject,
+                            onValueChange = {
+                                customProject = it
+                                localError = null
+                            },
+                            placeholder = { Text("Enter project name") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                    }
+
+                    // LIVE GEOFENCING STATUS FOR SELECTED PROJECT
+                    if (matchedProject?.geofenceEnabled == true) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val isInside = geofenceResult?.isInside == true
+                        val distance = geofenceResult?.distanceMeters ?: 0f
+                        val radius = matchedProject.geofenceRadius?.toInt() ?: 200
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (currentLocation == null) Color(0xFFFFFBEB)
+                                else if (isInside) Color(0xFFF0FDF4)
+                                else Color(0xFFFEF2F2)
+                            ),
+                            border = BorderStroke(
+                                1.dp,
+                                if (currentLocation == null) Color(0xFFFDE68A)
+                                else if (isInside) Color(0xFFBBF7D0)
+                                else Color(0xFFFECACA)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (currentLocation == null) Icons.Outlined.LocationSearching
+                                    else if (isInside) Icons.Outlined.CheckCircle
+                                    else Icons.Outlined.WarningAmber,
+                                    contentDescription = null,
+                                    tint = if (currentLocation == null) Color(0xFFD97706)
+                                    else if (isInside) Color(0xFF16A34A)
+                                    else Color(0xFFDC2626),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (currentLocation == null) "GEOFENCE: WAITING FOR GPS"
+                                        else if (isInside) "GEOFENCE VERIFIED (ON-SITE)"
+                                        else "GEOFENCE ALERT (OUTSIDE PERIMETER)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (currentLocation == null) Color(0xFFB45309)
+                                        else if (isInside) Color(0xFF15803D)
+                                        else Color(0xFFB91C1C)
+                                    )
+                                    Text(
+                                        text = if (currentLocation == null) "Acquiring GPS fix to verify presence within ${radius}m boundary"
+                                        else if (isInside) "${String.format(Locale.US, "%.1f", distance)}m from site center • Perimeter: ${radius}m"
+                                        else "${String.format(Locale.US, "%.1f", distance)}m from site center • Outside ${radius}m boundary. Time In locked until on-site.",
+                                        fontSize = 10.sp,
+                                        color = if (currentLocation == null) Color(0xFF92400E)
+                                        else if (isInside) Color(0xFF166534)
+                                        else Color(0xFF991B1B)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (localError != null) {
+                    Text(
+                        text = localError!!,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Cancel")
+                    }
+
+                    val activeProjName = if (isCustomProject) customProject.trim() else selectedProject.trim()
+                    val isAlreadyActive = activeProjectNames.contains(activeProjName.lowercase())
+
+                    Button(
+                        onClick = {
+                            val activeProj = if (isCustomProject) customProject.trim() else selectedProject.trim()
+                            if (activeProj.isBlank()) {
+                                localError = "Please select or enter a project name."
+                                return@Button
+                            }
+                            if (isAlreadyActive) {
+                                localError = "You are already timed in to '$activeProj'. Select another project or time out first."
+                                return@Button
+                            }
+                            if (isGeofenceLocked) {
+                                val radius = matchedProject?.geofenceRadius?.toInt() ?: 200
+                                val distStr = geofenceResult?.distanceMeters?.let { String.format(Locale.US, "%.1f", it) } ?: "unknown"
+                                localError = "Cannot Time In: Outside project perimeter (${distStr}m from center, max ${radius}m). Please move on-site to start your shift."
+                                return@Button
+                            }
+                            onConfirmTimeIn(activeProj)
+                        },
+                        enabled = !isGeofenceLocked && !isAlreadyActive,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isAlreadyActive) Color(0xFFF59E0B) else if (isGeofenceLocked) Color(0xFFEF4444) else Color(0xFF16A34A),
+                            disabledContainerColor = if (isAlreadyActive) Color(0xFFFDE68A) else Color(0xFFFCA5A5)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(
+                            imageVector = if (isAlreadyActive) Icons.Outlined.CheckCircle else if (isGeofenceLocked) Icons.Outlined.Lock else Icons.Outlined.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (isAlreadyActive) "Already Active" else if (isGeofenceLocked) "Geofence Locked" else "Confirm Time In",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+
+        }
+    }
+}
+
+// ============================================================
+// LOG TIME DIALOG (TIME OUT & SITE LOG)
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @Composable
 private fun LogTimeDialog(
-    projects: List<String>,
+    projectsList: List<DashboardProjectUi> = emptyList(),
+    activeShift: TimeTrackingManager.ActiveShift,
     initialEngineerName: String,
     currentLocation: DashboardLocationUi?,
     locationMessage: String,
     isLocating: Boolean,
     isSubmitting: Boolean,
+    isOffline: Boolean = false,
     initialLiveWeather: LiveWeatherInfo? = null,
     onRequestLocation: () -> Unit,
     onDismiss: () -> Unit,
     onSubmit: (form: LogTimeFormData) -> Unit
 ) {
     val dialogScope = rememberCoroutineScope()
+    val projects = remember(projectsList) { projectsList.map { it.name }.filter { it.isNotBlank() } }
 
     var liveWeather by remember {
         mutableStateOf<LiveWeatherInfo?>(initialLiveWeather)
@@ -2049,7 +3511,7 @@ private fun LogTimeDialog(
     }
 
     var selectedProject by remember {
-        mutableStateOf(projects.firstOrNull() ?: "")
+        mutableStateOf(activeShift.projectName.ifBlank { projects.firstOrNull() ?: "" })
     }
     var customProject by remember {
         mutableStateOf("")
@@ -2061,8 +3523,19 @@ private fun LogTimeDialog(
         mutableStateOf(false)
     }
 
-    var hours by remember {
-        mutableStateOf("8")
+    val context = LocalContext.current
+    val currentSelectedShift = remember(selectedProject, customProject, isCustomProject, activeShift) {
+        val projName = if (isCustomProject || projects.isEmpty()) customProject.trim() else selectedProject.trim()
+        TimeTrackingManager.getActiveShift(context, projName) ?: activeShift
+    }
+    val timeOutMs = remember { System.currentTimeMillis() }
+    val formattedTimeOut = remember(timeOutMs) {
+        SimpleDateFormat("hh:mm a", Locale.US).format(Date(timeOutMs))
+    }
+    val effectiveTimeInMs = if (currentSelectedShift.timeInMs > 0L) currentSelectedShift.timeInMs else if (activeShift.timeInMs > 0L) activeShift.timeInMs else (timeOutMs - 8 * 3600 * 1000L)
+    val effectiveTimeInFormatted = if (currentSelectedShift.timeInFormatted.isNotBlank()) currentSelectedShift.timeInFormatted else if (activeShift.timeInFormatted.isNotBlank()) activeShift.timeInFormatted else "08:00 AM"
+    val (calculatedHoursVal, calculatedHoursDisplay) = remember(effectiveTimeInMs, timeOutMs) {
+        TimeTrackingManager.calculateWorkHours(effectiveTimeInMs, timeOutMs)
     }
     var workCompleted by remember {
         mutableStateOf("")
@@ -2130,6 +3603,37 @@ private fun LogTimeDialog(
 
     val activeProjectName = if (isCustomProject || projects.isEmpty()) customProject else selectedProject
 
+    val matchedProject = remember(activeProjectName, projectsList) {
+        projectsList.firstOrNull { it.name.equals(activeProjectName.trim(), ignoreCase = true) }
+    }
+
+    val geofenceResult = remember(matchedProject, currentLocation) {
+        if (matchedProject != null && matchedProject.geofenceEnabled == true && matchedProject.geofenceLatitude != null && matchedProject.geofenceLongitude != null) {
+            com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
+                userLat = currentLocation?.latitude,
+                userLng = currentLocation?.longitude,
+                fenceLat = matchedProject.geofenceLatitude,
+                fenceLng = matchedProject.geofenceLongitude,
+                radiusMeters = matchedProject.geofenceRadius,
+                enabled = matchedProject.geofenceEnabled
+            )
+        } else null
+    }
+
+    val outdoorFieldColors = OutlinedTextFieldDefaults.colors(
+        focusedContainerColor = Color.White,
+        unfocusedContainerColor = Color(0xFFF8FAFC),
+        focusedBorderColor = SitePulseOrange,
+        unfocusedBorderColor = Color(0xFF64748B),
+        focusedTextColor = Color(0xFF0F172A),
+        unfocusedTextColor = Color(0xFF0F172A),
+        focusedPlaceholderColor = Color(0xFF64748B),
+        unfocusedPlaceholderColor = Color(0xFF64748B),
+        focusedLabelColor = SitePulseOrange,
+        unfocusedLabelColor = Color(0xFF334155),
+        cursorColor = SitePulseOrange
+    )
+
     Dialog(
         onDismissRequest = {
             if (!isSubmitting) {
@@ -2143,12 +3647,10 @@ private fun LogTimeDialog(
     ) {
         Card(
             modifier = Modifier
-                .fillMaxWidth(0.94f)
+                .fillMaxWidth(0.95f)
                 .fillMaxHeight(0.92f),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color.White
-            ),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
         ) {
             Column(
@@ -2179,13 +3681,13 @@ private fun LogTimeDialog(
 
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Log Work Hours",
+                            text = "Time Out & Site Log",
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
                             color = Color.Black
                         )
                         Text(
-                            text = "Record daily engineering work & site log",
+                            text = "Record shift completion & engineering work",
                             fontSize = 12.sp,
                             color = TextGray
                         )
@@ -2214,6 +3716,45 @@ private fun LogTimeDialog(
                         .verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
+                    // Offline Mode Banner (if offline)
+                    if (isOffline) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color(0xFFEFF6FF)),
+                            border = BorderStroke(1.dp, Color(0xFFBFDBFE))
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.CloudOff,
+                                    contentDescription = null,
+                                    tint = Color(0xFF2563EB),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Offline Mode Active",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1E40AF)
+                                    )
+                                    Text(
+                                        text = "Log will be recorded to local device storage with timestamp and auto-synced when back online.",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF3B82F6),
+                                        lineHeight = 15.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+
                     // Engineer Badge
                     Row(
                         modifier = Modifier
@@ -2246,8 +3787,8 @@ private fun LogTimeDialog(
                             Text(
                                 text = "Project *",
                                 fontSize = 13.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Color.Black
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF0F172A)
                             )
 
                             if (projects.isNotEmpty()) {
@@ -2272,9 +3813,8 @@ private fun LogTimeDialog(
                                     onClick = { if (!isSubmitting) projectMenuExpanded = !projectMenuExpanded },
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.outlinedCardColors(
-                                        containerColor = Color.White
-                                    )
+                                    colors = CardDefaults.outlinedCardColors(containerColor = Color(0xFFF8FAFC)),
+                                    border = BorderStroke(1.5.dp, Color(0xFF64748B))
                                 ) {
                                     Row(
                                         modifier = Modifier
@@ -2286,14 +3826,14 @@ private fun LogTimeDialog(
                                         Text(
                                             text = if (selectedProject.isNotBlank()) selectedProject else "Select Project",
                                             fontSize = 14.sp,
-                                            fontWeight = if (selectedProject.isNotBlank()) FontWeight.Medium else FontWeight.Normal,
-                                            color = if (selectedProject.isNotBlank()) Color.Black else TextGray,
+                                            fontWeight = if (selectedProject.isNotBlank()) FontWeight.SemiBold else FontWeight.Normal,
+                                            color = if (selectedProject.isNotBlank()) Color(0xFF0F172A) else Color(0xFF64748B),
                                             modifier = Modifier.weight(1f)
                                         )
                                         Icon(
                                             imageVector = if (projectMenuExpanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
                                             contentDescription = "Expand",
-                                            tint = TextGray
+                                            tint = Color(0xFF334155)
                                         )
                                     }
                                 }
@@ -2301,17 +3841,74 @@ private fun LogTimeDialog(
                                 DropdownMenu(
                                     expanded = projectMenuExpanded,
                                     onDismissRequest = { projectMenuExpanded = false },
-                                    modifier = Modifier.fillMaxWidth(0.75f)
+                                    containerColor = Color.White,
+                                    shadowElevation = 8.dp,
+                                    border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.85f)
+                                        .background(Color.White, RoundedCornerShape(12.dp))
                                 ) {
+                                    val activeShiftsList = remember { TimeTrackingManager.getActiveShifts(context) }
+                                    val activeMap = remember(activeShiftsList) {
+                                        activeShiftsList.associateBy { it.projectName.trim().lowercase() }
+                                    }
                                     projects.forEach { proj ->
+                                        val isSelected = proj == selectedProject
+                                        val shiftForProj = activeMap[proj.trim().lowercase()]
+                                        val isActiveShift = shiftForProj != null
                                         DropdownMenuItem(
                                             text = {
-                                                Text(
-                                                    text = proj,
-                                                    fontWeight = if (proj == selectedProject) FontWeight.Bold else FontWeight.Normal,
-                                                    color = if (proj == selectedProject) SitePulseOrange else Color.Black
-                                                )
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                ) {
+                                                    Column(modifier = Modifier.weight(1f, fill = false)) {
+                                                        Text(
+                                                            text = proj,
+                                                            fontSize = 14.sp,
+                                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                                                            color = if (isSelected) SitePulseOrange else Color(0xFF0F172A)
+                                                        )
+                                                        if (isActiveShift) {
+                                                            Text(
+                                                                text = "Active since ${shiftForProj?.timeInFormatted}",
+                                                                fontSize = 10.sp,
+                                                                fontWeight = FontWeight.Medium,
+                                                                color = Color(0xFFD97706)
+                                                            )
+                                                        }
+                                                    }
+                                                    if (isSelected) {
+                                                        Icon(
+                                                            imageVector = Icons.Outlined.Check,
+                                                            contentDescription = "Selected",
+                                                            tint = SitePulseOrange,
+                                                            modifier = Modifier.size(18.dp)
+                                                        )
+                                                    } else if (isActiveShift) {
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = Color(0xFFFEF3C7)
+                                                        ) {
+                                                            Text(
+                                                                text = "ACTIVE",
+                                                                fontSize = 9.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = Color(0xFFB45309),
+                                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
                                             },
+                                            colors = MenuDefaults.itemColors(
+                                                textColor = Color(0xFF0F172A)
+                                            ),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(if (isSelected) Color(0xFFFFF7ED) else Color.White),
                                             onClick = {
                                                 selectedProject = proj
                                                 projectMenuExpanded = false
@@ -2332,61 +3929,216 @@ private fun LogTimeDialog(
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
-                                enabled = !isSubmitting
+                                enabled = !isSubmitting,
+                                colors = outdoorFieldColors
                             )
+                        }
+
+                        // LIVE GEOFENCING STATUS FOR SELECTED PROJECT
+                        if (matchedProject?.geofenceEnabled == true) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            val isInside = geofenceResult?.isInside == true
+                            val distance = geofenceResult?.distanceMeters ?: 0f
+                            val radius = matchedProject.geofenceRadius?.toInt() ?: 200
+                            val hasVerifiedDeparture = currentSelectedShift.hasVerifiedExit || currentSelectedShift.currentlyOutsideGeofence || currentSelectedShift.geofenceLeftTime.isNotBlank()
+                            val isDeviceOffline = isOffline || !NetworkMonitor.isInternetAvailable(context)
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isDeviceOffline) Color(0xFFEFF6FF)
+                                    else if (currentLocation == null) Color(0xFFFFFBEB)
+                                    else if (isInside) Color(0xFFF0FDF4)
+                                    else if (hasVerifiedDeparture) Color(0xFFFFFBEB)
+                                    else Color(0xFFFEF2F2)
+                                ),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isDeviceOffline) Color(0xFFBFDBFE)
+                                    else if (currentLocation == null) Color(0xFFFDE68A)
+                                    else if (isInside) Color(0xFFBBF7D0)
+                                    else if (hasVerifiedDeparture) Color(0xFFFDE68A)
+                                    else Color(0xFFFECACA)
+                                )
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (isDeviceOffline) Icons.Outlined.CloudQueue
+                                        else if (currentLocation == null) Icons.Outlined.LocationSearching
+                                        else if (isInside) Icons.Outlined.CheckCircle
+                                        else if (hasVerifiedDeparture) Icons.Outlined.CheckCircle
+                                        else Icons.Outlined.WarningAmber,
+                                        contentDescription = null,
+                                        tint = if (isDeviceOffline) Color(0xFF2563EB)
+                                        else if (currentLocation == null) Color(0xFFD97706)
+                                        else if (isInside) Color(0xFF16A34A)
+                                        else if (hasVerifiedDeparture) Color(0xFFD97706)
+                                        else Color(0xFFDC2626),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = if (isDeviceOffline) "OFFLINE MODE: LOCAL LOGGING"
+                                            else if (currentLocation == null) "GEOFENCE: WAITING FOR GPS"
+                                            else if (isInside) "GEOFENCE VERIFIED (ON-SITE)"
+                                            else if (hasVerifiedDeparture) "GEOFENCE: DEPARTURE RECORDED"
+                                            else "GEOFENCE ALERT (OUTSIDE PERIMETER)",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDeviceOffline) Color(0xFF1E40AF)
+                                            else if (currentLocation == null) Color(0xFFB45309)
+                                            else if (isInside) Color(0xFF15803D)
+                                            else if (hasVerifiedDeparture) Color(0xFFB45309)
+                                            else Color(0xFFB91C1C)
+                                        )
+                                        Text(
+                                            text = if (isDeviceOffline) "Shift completion will be safely stored on your device with timestamp and automatically synced when back online."
+                                            else if (currentLocation == null) "Acquiring GPS fix to verify presence within ${radius}m boundary"
+                                            else if (isInside) "${String.format(Locale.US, "%.1f", distance)}m from site center • Perimeter: ${radius}m"
+                                            else if (hasVerifiedDeparture) "Recorded departure at ${currentSelectedShift.geofenceLeftTime.ifBlank { "earlier" }}. Off-site Time Out authorized."
+                                            else "${String.format(Locale.US, "%.1f", distance)}m from site center • Outside ${radius}m boundary. Time Out locked until on-site.",
+                                            fontSize = 10.sp,
+                                            color = if (isDeviceOffline) Color(0xFF2563EB)
+                                            else if (currentLocation == null) Color(0xFF92400E)
+                                            else if (isInside) Color(0xFF166534)
+                                            else if (hasVerifiedDeparture) Color(0xFF92400E)
+                                            else Color(0xFF991B1B)
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
-                    // Hours Worked
-                    Column {
-                        Text(
-                            text = "Work Hours *",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.Black
-                        )
-
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        OutlinedTextField(
-                            value = hours,
-                            onValueChange = {
-                                if (it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d*$"))) {
-                                    hours = it
-                                    localError = null
-                                }
-                            },
-                            placeholder = { Text("8") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            shape = RoundedCornerShape(12.dp),
-                            enabled = !isSubmitting
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Preset hour chips
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    // ========================================================
+                    // TIME IN & TIME OUT SUMMARY CARD (AUTO-CALCULATED HOURS)
+                    // ========================================================
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+                        border = BorderStroke(1.5.dp, Color(0xFFFDBA74))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            listOf("4", "8", "10", "12").forEach { h ->
-                                val isSelected = hours == h
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "Time In:",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF9A3412),
+                                        letterSpacing = 0.5.sp
+                                    )
+                                    Text(
+                                        text = effectiveTimeInFormatted,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                }
+
+                                Icon(
+                                    imageVector = Icons.Outlined.ArrowForward,
+                                    contentDescription = null,
+                                    tint = Color(0xFFEA580C),
+                                    modifier = Modifier.size(16.dp)
+                                )
+
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        text = "Time Out:",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF9A3412),
+                                        letterSpacing = 0.5.sp
+                                    )
+                                    Text(
+                                        text = formattedTimeOut,
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0F172A)
+                                    )
+                                }
+                            }
+
+                            HorizontalDivider(color = Color(0xFFFED7AA), thickness = 1.dp)
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column {
+                                    Text(
+                                        text = "Work Hours:",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF9A3412),
+                                        letterSpacing = 0.5.sp
+                                    )
+                                    Text(
+                                        text = "Auto-calculated from shift duration",
+                                        fontSize = 10.sp,
+                                        color = Color(0xFF7C2D12)
+                                    )
+                                }
+
                                 Surface(
-                                    shape = RoundedCornerShape(16.dp),
-                                    color = if (isSelected) SitePulseOrange else Color(0xFFF1F3F5),
-                                    modifier = Modifier.clickable {
-                                        hours = h
-                                        localError = null
-                                    }
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0xFFEA580C)
                                 ) {
                                     Text(
-                                        text = "${h}h",
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) Color.White else Color.DarkGray,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        text = calculatedHoursDisplay,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                     )
+                                }
+                            }
+
+                            if (activeShift.hasGeofenceAlert) {
+                                HorizontalDivider(color = Color(0xFFFED7AA), thickness = 1.dp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.WarningAmber,
+                                        contentDescription = null,
+                                        tint = Color(0xFFDC2626),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Column {
+                                        Text(
+                                            text = "ALERT: GEOFENCE BREACH RECORDED",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFB91C1C)
+                                        )
+                                        Text(
+                                            text = "Left zone at ${activeShift.geofenceLeftTime} • Returned to zone at ${activeShift.geofenceReturnedTime.ifBlank { "Recorded on-site" }}",
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF991B1B)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -2397,8 +4149,8 @@ private fun LogTimeDialog(
                         Text(
                             text = "Work Completed / Accomplishment",
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.Black
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F172A)
                         )
 
                         Spacer(modifier = Modifier.height(6.dp))
@@ -2411,10 +4163,15 @@ private fun LogTimeDialog(
                             minLines = 2,
                             maxLines = 3,
                             shape = RoundedCornerShape(12.dp),
-                            enabled = !isSubmitting
+                            enabled = !isSubmitting,
+                            colors = outdoorFieldColors
                         )
                     }
 
+<<<<<<< HEAD
+=======
+                    // Site Conditions (Auto GPS) - Professional & NO EMOJIS
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
@@ -2427,7 +4184,7 @@ private fun LogTimeDialog(
                                 .padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            // Header: Title & Live Badge / Refresh
+                            // Header
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -2437,17 +4194,18 @@ private fun LogTimeDialog(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                                 ) {
-                                    val isDay = liveWeather?.isDay ?: (Calendar.getInstance().get(Calendar.HOUR_OF_DAY) in 6..17)
-                                    val icon = when (weather.lowercase(Locale.ROOT)) {
-                                        "rainy" -> "🌧️"
-                                        "cloudy" -> if (isDay) "⛅" else "☁️"
-                                        "windy" -> "💨"
-                                        "clear" -> "🌙"
-                                        else -> if (isDay) "☀️" else "🌙"
+                                    val weatherIcon = when (weather.lowercase(Locale.ROOT)) {
+                                        "rainy" -> Icons.Outlined.WaterDrop
+                                        "cloudy" -> Icons.Outlined.CloudQueue
+                                        "windy" -> Icons.Outlined.Air
+                                        "clear" -> Icons.Outlined.WbSunny
+                                        else -> Icons.Outlined.WbSunny
                                     }
-                                    Text(
-                                        text = icon,
-                                        fontSize = 18.sp
+                                    Icon(
+                                        imageVector = weatherIcon,
+                                        contentDescription = null,
+                                        tint = SitePulseOrange,
+                                        modifier = Modifier.size(20.dp)
                                     )
                                     Text(
                                         text = "Site Conditions (Auto GPS)",
@@ -2565,12 +4323,23 @@ private fun LogTimeDialog(
 
                                         Spacer(modifier = Modifier.height(4.dp))
 
-                                        Text(
-                                            text = "📍 ${currentLocation?.label ?: "Site Location"}",
-                                            fontSize = 11.sp,
-                                            color = TextGray,
-                                            maxLines = 1
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Outlined.LocationOn,
+                                                contentDescription = null,
+                                                tint = TextGray,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Text(
+                                                text = currentLocation?.label ?: "Site Location",
+                                                fontSize = 11.sp,
+                                                color = TextGray,
+                                                maxLines = 1
+                                            )
+                                        }
                                     }
                                 }
 
@@ -2589,7 +4358,12 @@ private fun LogTimeDialog(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                                             ) {
-                                                Text("💧", fontSize = 11.sp)
+                                                Icon(
+                                                    imageVector = Icons.Outlined.WaterDrop,
+                                                    contentDescription = null,
+                                                    tint = SitePulseOrange,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
                                                 Text(
                                                     text = "Humidity: ${info.humidity}%",
                                                     fontSize = 11.sp,
@@ -2611,7 +4385,12 @@ private fun LogTimeDialog(
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                                             ) {
-                                                Text("💨", fontSize = 11.sp)
+                                                Icon(
+                                                    imageVector = Icons.Outlined.Air,
+                                                    contentDescription = null,
+                                                    tint = SitePulseOrange,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
                                                 Text(
                                                     text = "Wind: ${String.format(Locale.US, "%.1f", info.windSpeed)} km/h",
                                                     fontSize = 11.sp,
@@ -2623,12 +4402,23 @@ private fun LogTimeDialog(
                                     }
                                 }
 
-                                Text(
-                                    text = "⚡ Automatically captured from live site weather. No manual input needed.",
-                                    fontSize = 11.sp,
-                                    fontStyle = FontStyle.Italic,
-                                    color = Color(0xFF64748B)
-                                )
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Info,
+                                        contentDescription = null,
+                                        tint = Color(0xFF64748B),
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Text(
+                                        text = "Automatically captured from live site weather. No manual input needed.",
+                                        fontSize = 11.sp,
+                                        fontStyle = FontStyle.Italic,
+                                        color = Color(0xFF64748B)
+                                    )
+                                }
                             } else {
                                 Column(
                                     modifier = Modifier.fillMaxWidth(),
@@ -2667,11 +4457,16 @@ private fun LogTimeDialog(
                         }
                     }
 
+<<<<<<< HEAD
                     // MANPOWER (Workers, Supervisors, Sub-contractors)
+=======
+                    // Manpower on Site (Workers, Supervisors, Sub-contractors) with Glove-Friendly Stepper Counters
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFAF9F6))
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1))
                     ) {
                         Column(
                             modifier = Modifier
@@ -2679,90 +4474,62 @@ private fun LogTimeDialog(
                                 .padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text(
-                                text = "Manpower on Site",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = SitePulseOrange
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Groups,
+                                    contentDescription = null,
+                                    tint = SitePulseOrange,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Manpower on Site",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SitePulseOrange
+                                )
+                            }
 
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                // Workers
-                                OutlinedTextField(
+                                ManpowerCounter(
+                                    title = "Workers",
                                     value = workOnSite,
-                                    onValueChange = {
-                                        if (it.isEmpty() || it.matches(Regex("^\\d*$"))) workOnSite = it
-                                    },
-                                    label = { Text("Workers", fontSize = 11.sp) },
-                                    placeholder = { Text("1") },
+                                    onValueChange = { workOnSite = it },
                                     modifier = Modifier.weight(1f),
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(
-                                        keyboardType = KeyboardType.Number,
-                                        imeAction = ImeAction.Next
-                                    ),
-                                    shape = RoundedCornerShape(10.dp),
-                                    enabled = !isSubmitting,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedContainerColor = Color.White,
-                                        unfocusedContainerColor = Color.White
-                                    )
+                                    enabled = !isSubmitting
                                 )
-
-                                // Supervisors
-                                OutlinedTextField(
+                                ManpowerCounter(
+                                    title = "Supervisors",
                                     value = supervisors,
-                                    onValueChange = {
-                                        if (it.isEmpty() || it.matches(Regex("^\\d*$"))) supervisors = it
-                                    },
-                                    label = { Text("Supervisors", fontSize = 11.sp) },
-                                    placeholder = { Text("1") },
+                                    onValueChange = { supervisors = it },
                                     modifier = Modifier.weight(1f),
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(
-                                        keyboardType = KeyboardType.Number,
-                                        imeAction = ImeAction.Next
-                                    ),
-                                    shape = RoundedCornerShape(10.dp),
-                                    enabled = !isSubmitting,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedContainerColor = Color.White,
-                                        unfocusedContainerColor = Color.White
-                                    )
+                                    enabled = !isSubmitting
                                 )
-
-                                // Sub-contractors
-                                OutlinedTextField(
+                                ManpowerCounter(
+                                    title = "Sub-contractors",
                                     value = subContractors,
-                                    onValueChange = {
-                                        if (it.isEmpty() || it.matches(Regex("^\\d*$"))) subContractors = it
-                                    },
-                                    label = { Text("Sub-contractors", fontSize = 10.sp) },
-                                    placeholder = { Text("0") },
-                                    modifier = Modifier.weight(1.1f),
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(
-                                        keyboardType = KeyboardType.Number,
-                                        imeAction = ImeAction.Next
-                                    ),
-                                    shape = RoundedCornerShape(10.dp),
-                                    enabled = !isSubmitting,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedContainerColor = Color.White,
-                                        unfocusedContainerColor = Color.White
-                                    )
+                                    onValueChange = { subContractors = it },
+                                    modifier = Modifier.weight(1f),
+                                    enabled = !isSubmitting
                                 )
                             }
                         }
                     }
 
+<<<<<<< HEAD
+=======
+                    // Site Logistics & Equipment
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFAF9F6))
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF8FAFC)),
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1))
                     ) {
                         Column(
                             modifier = Modifier
@@ -2770,55 +4537,62 @@ private fun LogTimeDialog(
                                 .padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text(
-                                text = "Site Logistics & Equipment",
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = SitePulseOrange
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Inventory2,
+                                    contentDescription = null,
+                                    tint = SitePulseOrange,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Text(
+                                    text = "Site Logistics & Equipment",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = SitePulseOrange
+                                )
+                            }
 
-                            // Materials Delivered
                             OutlinedTextField(
                                 value = materialsDelivered,
                                 onValueChange = { materialsDelivered = it },
-                                label = { Text("Materials Delivered") },
+                                label = { Text("Materials Delivered", fontWeight = FontWeight.SemiBold) },
                                 placeholder = { Text("e.g. 50 bags cement, 100 pcs 16mm rebar, 2 loads gravel") },
                                 modifier = Modifier.fillMaxWidth(),
                                 minLines = 2,
                                 maxLines = 3,
                                 shape = RoundedCornerShape(10.dp),
                                 enabled = !isSubmitting,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = Color.White,
-                                    unfocusedContainerColor = Color.White
-                                )
+                                colors = outdoorFieldColors
                             )
 
-                            // Equipment Used
                             OutlinedTextField(
                                 value = equipmentUsed,
                                 onValueChange = { equipmentUsed = it },
-                                label = { Text("Equipment Used") },
+                                label = { Text("Equipment Used", fontWeight = FontWeight.SemiBold) },
                                 placeholder = { Text("e.g. 1 Backhoe, 1 Concrete Mixer, 2 Plate Compactors") },
                                 modifier = Modifier.fillMaxWidth(),
                                 minLines = 2,
                                 maxLines = 3,
                                 shape = RoundedCornerShape(10.dp),
                                 enabled = !isSubmitting,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedContainerColor = Color.White,
-                                    unfocusedContainerColor = Color.White
-                                )
+                                colors = outdoorFieldColors
                             )
                         }
                     }
 
+<<<<<<< HEAD
+=======
+                    // Additional Notes
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
                     Column {
                         Text(
                             text = "Additional Notes",
                             fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.Black
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF0F172A)
                         )
 
                         Spacer(modifier = Modifier.height(6.dp))
@@ -2831,14 +4605,16 @@ private fun LogTimeDialog(
                             minLines = 2,
                             maxLines = 3,
                             shape = RoundedCornerShape(12.dp),
-                            enabled = !isSubmitting
+                            enabled = !isSubmitting,
+                            colors = outdoorFieldColors
                         )
                     }
 
                     // Location Status Banner
                     Surface(
                         shape = RoundedCornerShape(10.dp),
-                        color = Color(0xFFF8F9FA),
+                        color = Color(0xFFF1F5F9),
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -2904,21 +4680,37 @@ private fun LogTimeDialog(
                         Text("Cancel")
                     }
 
+                    val isDeviceOffline = isOffline || !NetworkMonitor.isInternetAvailable(context)
+                    val hasVerifiedDeparture = currentSelectedShift.hasVerifiedExit || currentSelectedShift.currentlyOutsideGeofence || currentSelectedShift.geofenceLeftTime.isNotBlank()
+                    val isOutsidePerimeter = matchedProject?.geofenceEnabled == true && (currentLocation == null || geofenceResult?.isInside != true)
+                    val isGeofenceLocked = isOutsidePerimeter && !hasVerifiedDeparture && !isDeviceOffline
+
                     Button(
                         onClick = {
                             if (activeProjectName.isBlank()) {
                                 localError = "Please select or enter a project name."
                                 return@Button
                             }
-                            val numHours = hours.trim().toDoubleOrNull()
-                            if (numHours == null || numHours <= 0) {
-                                localError = "Please enter valid work hours (e.g. 8)."
-                                return@Button
+                            if (!isDeviceOffline && matchedProject?.geofenceEnabled == true && !hasVerifiedDeparture) {
+                                if (currentLocation == null) {
+                                    localError = "Cannot Time Out: Waiting for GPS location to verify site geofence."
+                                    onRequestLocation()
+                                    return@Button
+                                }
+                                if (geofenceResult?.isInside != true) {
+                                    val distance = geofenceResult?.distanceMeters?.toInt() ?: 0
+                                    val radius = matchedProject.geofenceRadius?.toInt() ?: 200
+                                    localError = "Cannot Time Out: You are outside the project geofence (${distance}m from site center, limit is ${radius}m). You must be on-site to Time Out."
+                                    return@Button
+                                }
                             }
+                            val finalHours = TimeTrackingManager.formatDuration(timeOutMs - effectiveTimeInMs)
                             onSubmit(
                                 LogTimeFormData(
                                     projectName = activeProjectName.trim(),
-                                    hours = hours.trim(),
+                                    timeIn = effectiveTimeInFormatted,
+                                    timeOut = formattedTimeOut,
+                                    hours = finalHours,
                                     workCompleted = workCompleted.trim(),
                                     weather = weather,
                                     temperature = temperature.trim(),
@@ -2931,9 +4723,10 @@ private fun LogTimeDialog(
                                 )
                             )
                         },
-                        enabled = !isSubmitting,
+                        enabled = !isSubmitting && !isGeofenceLocked,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = SitePulseOrange
+                            containerColor = if (isGeofenceLocked) Color(0xFFEF4444) else if (isDeviceOffline) Color(0xFF2563EB) else SitePulseOrange,
+                            disabledContainerColor = Color(0xFFF1F5F9)
                         ),
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f)
@@ -2946,12 +4739,39 @@ private fun LogTimeDialog(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Saving...", color = Color.White, fontSize = 13.sp)
+                        } else if (isGeofenceLocked) {
+                            Icon(
+                                imageVector = Icons.Outlined.Lock,
+                                contentDescription = null,
+                                tint = Color(0xFF94A3B8),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Geofence Locked",
+                                color = Color(0xFF94A3B8),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
                         } else {
-                            Text("Submit Log", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Icon(
+                                imageVector = if (isDeviceOffline) Icons.Outlined.Save else Icons.Outlined.Check,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = if (isDeviceOffline) "Save Offline Time Out" else "Confirm Time Out",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
                         }
                     }
                 }
             }
+
         }
     }
 }
@@ -3155,6 +4975,7 @@ private fun NotificationItem(
                     }
                 }
             }
+
         }
     }
 }
@@ -3516,21 +5337,22 @@ private fun HealthStatusCard(
     delayedTasks: Int,
     completedTasks: Int,
     totalTasks: Int,
+    isEngineer: Boolean = false,
     onClick: () -> Unit = {}
 ) {
     val healthMessage =
         when {
             totalTasks == 0 ->
-                "No Task Data Yet"
+                if (isEngineer) "No Assigned Tasks" else "No Task Data Yet"
 
             health >= 90 ->
-                "All Sites Operational"
+                if (isEngineer) "Workload On Track" else "All Sites Operational"
 
             health >= 75 ->
-                "Minor Attention Required"
+                if (isEngineer) "Minor Attention Needed" else "Minor Attention Required"
 
             health >= 50 ->
-                "Project Attention Required"
+                if (isEngineer) "Task Attention Required" else "Project Attention Required"
 
             else ->
                 "Critical Attention Required"
@@ -3613,7 +5435,7 @@ private fun HealthStatusCard(
             ) {
                 Text(
                     text =
-                        "AGGREGATED STATUS",
+                        if (isEngineer) "MY WORKLOAD STATUS" else "AGGREGATED STATUS",
                     fontSize =
                         9.sp,
                     fontWeight =
@@ -3638,33 +5460,40 @@ private fun HealthStatusCard(
                         Modifier.height(6.dp)
                 )
 
-                val displayDelayed = if (delayed > 0) delayed else delayedTasks
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    StatusBadge(
-                        text =
-                            "● $onTrack On Track",
-                        background =
-                            Color(0xFFE1F5E7),
-                        textColor =
-                            Green
-                    )
-
-                    Spacer(
-                        modifier =
-                            Modifier.width(8.dp)
-                    )
+                    if (onTrack > 0 || delayed == 0) {
+                        StatusBadge(
+                            text =
+                                "● $onTrack On Track",
+                            background =
+                                if (onTrack > 0) Color(0xFFE1F5E7) else Color(0xFFF1F3F5),
+                            textColor =
+                                if (onTrack > 0) Green else TextGray
+                        )
+                    }
 
                     StatusBadge(
                         text =
-                            "● $displayDelayed Delayed",
+                            "● $delayedTasks Delayed",
                         background =
-                            if (displayDelayed > 0) Color(0xFFFFEED7) else Color(0xFFF1F3F5),
+                            if (delayedTasks > 0) Color(0xFFFFEED7) else Color(0xFFF1F3F5),
                         textColor =
-                            if (displayDelayed > 0) Color(0xFFFF8A00) else TextGray
+                            if (delayedTasks > 0) Color(0xFFFF8A00) else TextGray
                     )
+
+                    if (completedTasks > 0) {
+                        StatusBadge(
+                            text =
+                                "● $completedTasks Completed",
+                            background =
+                                Color(0xFFE0F2FE),
+                            textColor =
+                                Color(0xFF0284C7)
+                        )
+                    }
                 }
 
                 Spacer(
@@ -3682,7 +5511,9 @@ private fun HealthStatusCard(
                     fontSize =
                         11.sp,
                     color =
-                        TextGray
+                        TextGray,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -3726,50 +5557,264 @@ private fun StatusBadge(
 }
 
 
+<<<<<<< HEAD
+=======
+// ============================================================
+// QUICK ACTIONS - TIME IN & TIME OUT
+// ============================================================
+
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
 @Composable
 private fun QuickActions(
+    activeShifts: List<TimeTrackingManager.ActiveShift> = emptyList(),
     isLoggingTime: Boolean = false,
-    onLogTimeClick: () -> Unit = {},
-    onCaptureClick: () -> Unit = {},
-    onReportClick: () -> Unit = {}
+    onTimeInClick: () -> Unit = {},
+    onTimeOutClick: () -> Unit = {},
+    onTimeOutProject: (shift: TimeTrackingManager.ActiveShift) -> Unit = {}
 ) {
+    val isTimedIn = activeShifts.isNotEmpty()
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
 
-    Row(
+    LaunchedEffect(isTimedIn) {
+        if (!isTimedIn) return@LaunchedEffect
+        while (isActive) {
+            nowMs = System.currentTimeMillis()
+            delay(1000L)
+        }
+    }
 
-        modifier =
-            Modifier.fillMaxWidth(),
-
-        horizontalArrangement =
-            Arrangement.spacedBy(10.dp)
-
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // Active Shifts Cards (renders each shift separately if multiple!)
+        if (isTimedIn) {
+            activeShifts.forEach { shift ->
+                val elapsed = TimeTrackingManager.formatDuration(
+                    (nowMs - shift.timeInMs).coerceAtLeast(0L)
+                )
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED)),
+                    border = BorderStroke(1.5.dp, Color(0xFFFDBA74))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .background(Color(0xFFEA580C), CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Schedule,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                                Column {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(8.dp)
+                                                .background(
+                                                    if (shift.currentlyOutsideGeofence) Color(0xFFEF4444) else Color(0xFF16A34A),
+                                                    CircleShape
+                                                )
+                                        )
+                                        Text(
+                                            text = "SHIFT ACTIVE • ${shift.timeInFormatted}",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFFC2410C),
+                                            letterSpacing = 0.5.sp
+                                        )
+                                    }
+                                    Text(
+                                        text = shift.projectName.ifBlank { "Site Operations" },
+                                        fontSize = 15.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF0F172A),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
 
-        QuickActionButton(
-            title =
-                if (isLoggingTime) {
-                    "Logging..."
-                } else {
-                    "Log Time"
-                },
-            icon = Icons.Outlined.Schedule,
-            modifier = Modifier.weight(1f),
-            enabled = !isLoggingTime,
-            onClick = onLogTimeClick
-        )
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = elapsed,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color(0xFFEA580C)
+                                )
+                                Text(
+                                    text = "Elapsed Time",
+                                    fontSize = 11.sp,
+                                    color = Color(0xFF64748B)
+                                )
+                            }
+                        }
 
-        QuickActionButton(
-            title = "Capture",
-            icon = Icons.Outlined.CameraAlt,
-            modifier = Modifier.weight(1f),
-            onClick = onCaptureClick
-        )
+                        // Shift Alert / Departure info if outside or recorded
+                        if (shift.hasGeofenceAlert) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (shift.currentlyOutsideGeofence) Color(0xFFFEF2F2) else Color(0xFFFFFBEB),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (shift.currentlyOutsideGeofence) Color(0xFFFECACA) else Color(0xFFFDE68A)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.WarningAmber,
+                                        contentDescription = null,
+                                        tint = if (shift.currentlyOutsideGeofence) Color(0xFFDC2626) else Color(0xFFD97706),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = if (shift.currentlyOutsideGeofence)
+                                            "Left zone at ${shift.geofenceLeftTime} (Off-site timeout enabled)"
+                                        else
+                                            "Recorded exit: ${shift.geofenceLeftTime} • Back on-site",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = if (shift.currentlyOutsideGeofence) Color(0xFF991B1B) else Color(0xFF92400E)
+                                    )
+                                }
+                            }
+                        }
 
-        QuickActionButton(
-            title = "Report",
-            icon = Icons.Outlined.PriorityHigh,
-            modifier = Modifier.weight(1f),
-            onClick = onReportClick
-        )
+                        // If multiple shifts are active, show a quick "Time Out [Project]" button right on the card!
+                        if (activeShifts.size > 1) {
+                            Button(
+                                onClick = { onTimeOutProject(shift) },
+                                enabled = !isLoggingTime,
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFFEA580C)
+                                ),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(36.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.Logout,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Time Out: ${shift.projectName}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Two Buttons: Time In & Time Out
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Time In Button (Always available to add another site!)
+            Button(
+                onClick = onTimeInClick,
+                enabled = !isLoggingTime,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF16A34A),
+                    disabledContainerColor = Color(0xFFF1F5F9)
+                )
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = if (isTimedIn) Icons.Outlined.Add else Icons.Outlined.Login,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isTimedIn) "+ Time In" else "Time In",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color.White
+                    )
+                }
+            }
+
+            // Time Out Button
+            Button(
+                onClick = onTimeOutClick,
+                enabled = isTimedIn && !isLoggingTime,
+                modifier = Modifier
+                    .weight(1f)
+                    .height(50.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFEA580C),
+                    disabledContainerColor = Color(0xFFF1F5F9)
+                )
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Logout,
+                        contentDescription = null,
+                        tint = if (isTimedIn) Color.White else Color(0xFF94A3B8),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isLoggingTime) "Saving..." else "Time Out",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = if (isTimedIn) Color.White else Color(0xFF94A3B8)
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -3843,7 +5888,7 @@ private fun QuickActionButton(
 
             Text(
                 text = title,
-                fontSize = 11.sp,
+                fontSize = 13.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -3853,11 +5898,9 @@ private fun QuickActionButton(
 
 @Composable
 private fun ProjectCard(
-
     project: DashboardProjectUi,
-
+    currentLocation: DashboardLocationUi? = null,
     modifier: Modifier = Modifier
-
 ) {
 
     val isActive =
@@ -3911,13 +5954,16 @@ private fun ProjectCard(
                     text = project.type,
                     fontSize = 8.sp,
                     fontWeight = FontWeight.Bold,
-                    color = TextGray
+                    color = TextGray,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
                 )
 
 
                 Spacer(
                     modifier =
-                        Modifier.weight(1f)
+                        Modifier.width(6.dp)
                 )
 
 
@@ -3938,6 +5984,45 @@ private fun ProjectCard(
                             Color(0xFFFF8A00)
                         }
                 )
+
+                if (project.geofenceEnabled == true && project.geofenceLatitude != null && project.geofenceLongitude != null) {
+                    val gfCheck = remember(currentLocation, project) {
+                        com.example.capstonesample.security.GeofenceHelper.evaluateGeofence(
+                            userLat = currentLocation?.latitude,
+                            userLng = currentLocation?.longitude,
+                            fenceLat = project.geofenceLatitude,
+                            fenceLng = project.geofenceLongitude,
+                            radiusMeters = project.geofenceRadius,
+                            enabled = project.geofenceEnabled
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (gfCheck.isInside) Color(0xFFDCFCE7) else Color(0xFFF1F5F9),
+                        border = BorderStroke(0.5.dp, if (gfCheck.isInside) Color(0xFF86EFAC) else Color(0xFFCBD5E1))
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .clip(CircleShape)
+                                    .background(if (gfCheck.isInside) Color(0xFF16A34A) else Color(0xFF94A3B8))
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = if (gfCheck.isInside) "On-Site" else "Geofenced",
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (gfCheck.isInside) Color(0xFF15803D) else Color(0xFF475569)
+                            )
+                        }
+                    }
+                }
             }
 
 
@@ -3950,7 +6035,9 @@ private fun ProjectCard(
             Text(
                 text = project.name,
                 fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
 
 
@@ -4046,19 +6133,25 @@ private fun ActivityRow(
         )
 
 
-        Column {
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
 
             Text(
                 text = activity.title,
                 fontSize = 12.sp,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
             )
 
 
             Text(
                 text = activity.description,
                 fontSize = 10.sp,
-                color = TextGray
+                color = TextGray,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -4124,6 +6217,7 @@ fun SitePulseBottomNavigation(
             icon = Icons.Outlined.Home,
             selected =
                 selectedScreen == "dashboard",
+            badgeCount = 0,
             onClick = onHomeClick
         )
 
@@ -4133,6 +6227,7 @@ fun SitePulseBottomNavigation(
             icon = Icons.Outlined.BusinessCenter,
             selected =
                 selectedScreen == "projects",
+            badgeCount = NavBadgeState.ongoingProjectsCount,
             onClick = onProjectsClick
         )
 
@@ -4143,6 +6238,7 @@ fun SitePulseBottomNavigation(
                 Icons.Outlined.ChatBubbleOutline,
             selected =
                 selectedScreen == "chat",
+            badgeCount = NavBadgeState.unreadMessagesCount,
             onClick = onMessagesClick
         )
 
@@ -4152,6 +6248,7 @@ fun SitePulseBottomNavigation(
             icon = Icons.Outlined.TaskAlt,
             selected =
                 selectedScreen == "tasks",
+            badgeCount = NavBadgeState.ongoingTasksCount,
             onClick = onTasksClick
         )
 
@@ -4161,6 +6258,7 @@ fun SitePulseBottomNavigation(
             icon = Icons.Outlined.Person,
             selected =
                 selectedScreen == "profile",
+            badgeCount = 0,
             onClick = onProfileClick
         )
     }
@@ -4176,6 +6274,8 @@ private fun RowScope.SitePulseNavigationItem(
 
     selected: Boolean,
 
+    badgeCount: Int = 0,
+
     onClick: () -> Unit
 
 ) {
@@ -4190,21 +6290,41 @@ private fun RowScope.SitePulseNavigationItem(
 
         icon = {
 
-            Icon(
-                imageVector =
-                    icon,
-                contentDescription =
-                    title,
-                modifier =
-                    Modifier.size(21.dp)
-            )
+            BadgedBox(
+                badge = {
+                    if (badgeCount > 0) {
+                        Badge(
+                            containerColor = SitePulseOrange,
+                            contentColor = Color.White
+                        ) {
+                            Text(
+                                text = if (badgeCount > 99) "99+" else badgeCount.toString(),
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            ) {
+                Icon(
+                    imageVector =
+                        icon,
+                    contentDescription =
+                        title,
+                    modifier =
+                        Modifier.size(21.dp)
+                )
+            }
         },
 
         label = {
 
             Text(
                 text = title,
-                fontSize = 9.sp
+                fontSize = 9.sp,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis
             )
         },
 

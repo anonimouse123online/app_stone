@@ -20,6 +20,7 @@ import com.example.capstonesample.data.model.CreateConversationResponse
 import com.example.capstonesample.data.model.MessagesResponse
 import com.example.capstonesample.data.model.SendMessageRequest
 import com.example.capstonesample.data.model.SendMessageResponse
+import com.example.capstonesample.data.model.MarkReadResponse
 import com.example.capstonesample.data.model.CompleteTaskRequest
 import com.example.capstonesample.data.model.CompleteTaskResponse
 import com.example.capstonesample.data.model.UploadTaskReportRequest
@@ -33,6 +34,9 @@ import com.example.capstonesample.data.model.VerifyResetCodeRequest
 import com.example.capstonesample.data.model.VerifyResetCodeResponse
 import com.example.capstonesample.data.model.ResetPasswordRequest
 import com.example.capstonesample.data.model.ResetPasswordResponse
+import com.example.capstonesample.data.model.VerifyGeofenceRequest
+import com.example.capstonesample.data.model.VerifyGeofenceResponse
+import com.example.capstonesample.data.model.ProjectGeofenceResponse
 
 
 
@@ -49,6 +53,7 @@ import retrofit2.http.Header
 import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.PartMap
 import retrofit2.http.Path
@@ -196,6 +201,14 @@ interface ApiService {
 
     ): Response<MessagesResponse>
 
+    @PUT("messages/conversations/{conversationId}/read")
+    suspend fun markConversationAsRead(
+
+        @Path("conversationId")
+        conversationId: Int
+
+    ): Response<MarkReadResponse>
+
 
     @POST("messages")
     suspend fun sendMessage(
@@ -223,6 +236,17 @@ interface ApiService {
         code: String
 
     ): Response<SingleProjectResponse>
+
+    @GET("projects/{code}/geofence")
+    suspend fun getProjectGeofence(
+        @Path("code") code: String
+    ): Response<ProjectGeofenceResponse>
+
+    @POST("projects/{code}/geofence/verify")
+    suspend fun verifyGeofence(
+        @Path("code") code: String,
+        @Body request: VerifyGeofenceRequest
+    ): Response<VerifyGeofenceResponse>
 
     @GET("users/search")
     suspend fun searchUsers(
@@ -382,6 +406,18 @@ data class TaskResponse(
         alternate = ["dueDate"]
     )
     val dueDate: String? = null,
+
+    @SerializedName(
+        value = "original_due_date",
+        alternate = ["originalDueDate"]
+    )
+    val originalDueDate: String? = null,
+
+    @SerializedName(
+        value = "is_extended",
+        alternate = ["isExtended"]
+    )
+    val isExtended: Boolean? = null,
 
     val phase: String? = null,
 

@@ -8,10 +8,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.Assignment
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FileDownload
-import androidx.compose.material.icons.outlined.ReportProblem
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
@@ -38,9 +36,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.capstonesample.data.api.RetrofitClient
-import com.example.capstonesample.documents.ProjectDocumentViewer
 import com.example.capstonesample.data.model.IssueImage
-import com.example.capstonesample.issues.IssueImagesPreview
+import com.example.capstonesample.documents.ProjectDocumentViewer
+import com.example.capstonesample.security.TokenManager
 
 import androidx.compose.foundation.BorderStroke
 import com.example.capstonesample.ui.theme.*
@@ -116,7 +114,7 @@ fun ProjectDetailsScreen(
     val context = LocalContext.current
     var viewingDocument by remember(project.code) { mutableStateOf<ProjectDocumentItem?>(null) }
     viewingDocument?.let { document ->
-        ProjectDocumentViewer(document = document, onDismiss = { viewingDocument = null })
+        ProjectDocumentViewer(document = document, token = token, onDismiss = { viewingDocument = null })
     }
 
     var documents by remember {
@@ -366,7 +364,7 @@ fun ProjectDetailsScreen(
                             document = document,
                             onOpenClick = { viewingDocument = document },
                             onDownloadClick = {
-                                downloadProjectDocument(context, document)
+                                downloadProjectDocument(context, document, token)
                             }
                         )
 
@@ -375,6 +373,7 @@ fun ProjectDetailsScreen(
                 }
             }
 
+<<<<<<< HEAD
             Spacer(modifier = Modifier.height(24.dp))
 
             SectionHeader(
@@ -448,6 +447,9 @@ fun ProjectDetailsScreen(
             }
 
             Spacer(modifier = Modifier.height(40.dp))
+=======
+            Spacer(modifier = Modifier.height(32.dp))
+>>>>>>> 832bdbbdbc8d87fa94e46afc2308761e8d217fec
         }
     }
 }
@@ -533,30 +535,49 @@ private fun EmptySection(
     }
 }
 
-private fun downloadProjectDocument(context: Context, document: ProjectDocumentItem) {
+private fun downloadProjectDocument(
+    context: Context,
+    document: ProjectDocumentItem,
+    token: String? = null
+) {
     if (document.filePath.isBlank()) {
         Toast.makeText(context, "No attached file found for this document", Toast.LENGTH_SHORT).show()
         return
     }
 
-    val fullUrl = if (document.filePath.startsWith("http://") || document.filePath.startsWith("https://")) {
+    val effectiveToken = if (!token.isNullOrBlank()) {
+        token
+    } else {
+        TokenManager.getToken(context).orEmpty()
+    }
+
+    val base = RetrofitClient.BASE_URL.trimEnd('/')
+    val rawPath = document.filePath.trimStart('/')
+    val baseUrlStr = if (document.filePath.startsWith("http://") || document.filePath.startsWith("https://")) {
         document.filePath
     } else {
-        val base = RetrofitClient.BASE_URL.trimEnd('/')
-        val path = document.filePath.trimStart('/')
-        "$base/$path"
+        "$base/$rawPath"
+    }
+
+    val cleanToken = effectiveToken.removePrefix("Bearer ").trim()
+    val fullUrl = if (cleanToken.isNotBlank() && !baseUrlStr.contains("token=")) {
+        val sep = if (baseUrlStr.contains("?")) "&" else "?"
+        "$baseUrlStr${sep}token=$cleanToken"
+    } else {
+        baseUrlStr
     }
 
     val extension = when {
-        document.filePath.contains(".") -> "." + document.filePath.substringAfterLast(".")
+        document.filePath.contains(".") -> "." + document.filePath.substringBefore("?").substringBefore("#").substringAfterLast(".")
         document.type.isNotBlank() -> "." + document.type.lowercase()
         else -> ""
     }
 
-    val safeFileName = if (document.name.contains(".")) {
-        document.name.replace("/", "_")
+    val rawSafeName = document.name.trim().replace(Regex("[/\\\\?%*:|\"<>]"), "_")
+    val safeFileName = if (rawSafeName.contains(".")) {
+        rawSafeName
     } else {
-        "${document.name.replace("/", "_")}$extension"
+        "$rawSafeName$extension"
     }
 
     val mimeType = when (extension.lowercase()) {
@@ -566,6 +587,8 @@ private fun downloadProjectDocument(context: Context, document: ProjectDocumentI
         ".docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         ".doc" -> "application/msword"
         ".dwg" -> "image/vnd.dwg"
+        ".png" -> "image/png"
+        ".jpg", ".jpeg" -> "image/jpeg"
         else -> "application/octet-stream"
     }
 
@@ -580,11 +603,14 @@ private fun downloadProjectDocument(context: Context, document: ProjectDocumentI
 
     Toast.makeText(context, "Downloading $safeFileName...", Toast.LENGTH_SHORT).show()
 
-    // Download in background using OkHttp and save directly to Downloads
     CoroutineScope(Dispatchers.IO).launch {
         try {
-            val request = Request.Builder().url(fullUrl).build()
-            val response = RetrofitClient.okHttpClient.newCall(request).execute()
+            val reqBuilder = Request.Builder().url(fullUrl)
+            if (effectiveToken.isNotBlank()) {
+                val authHeader = if (effectiveToken.startsWith("Bearer ")) effectiveToken else "Bearer $effectiveToken"
+                reqBuilder.addHeader("Authorization", authHeader)
+            }
+            val response = RetrofitClient.okHttpClient.newCall(reqBuilder.build()).execute()
 
             if (!response.isSuccessful) {
                 withContext(Dispatchers.Main) {
@@ -630,24 +656,20 @@ private fun downloadProjectDocument(context: Context, document: ProjectDocumentI
                 savedUri = Uri.fromFile(destFile)
             }
 
-            // Also notify system download manager if possible
-            try {
-                val dm = context.getSystemService(Context.DOWNLOAD_SERVICE) as? DownloadManager
-                val req = DownloadManager.Request(Uri.parse(fullUrl)).apply {
-                    setTitle(safeFileName)
-                    setDescription("Downloaded from SitePulse")
-                    setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "SitePulse/$safeFileName")
-                    setAllowedOverMetered(true)
-                    setAllowedOverRoaming(true)
-                }
-                dm?.enqueue(req)
-            } catch (e: Exception) {
-                // Ignore background notification failure
-            }
-
             withContext(Dispatchers.Main) {
-                Toast.makeText(context, "✅ Downloaded: $safeFileName", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, "✅ Downloaded to Downloads/SitePulse:\n$safeFileName", Toast.LENGTH_LONG).show()
+                if (savedUri != null) {
+                    try {
+                        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(savedUri, mimeType)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
+                        }
+                        context.startActivity(Intent.createChooser(viewIntent, "Open with").apply {
+                            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                        })
+                    } catch (_: Exception) {}
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -786,195 +808,7 @@ private fun DocumentListItem(
     }
 }
 
-@Composable
-private fun IssueListItem(
-    issue: ProjectIssueItem
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
-    ) {
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(15.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-
-            Box(
-                modifier = Modifier
-                    .size(45.dp)
-                    .background(
-                        color = Color(0xFFFFE7DD),
-                        shape = RoundedCornerShape(11.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-
-                Icon(
-                    imageVector = Icons.Outlined.ReportProblem,
-                    contentDescription = "Issue",
-                    tint = DetailsOrange
-                )
-            }
-
-            Spacer(modifier = Modifier.width(13.dp))
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-
-                Text(
-                    text = issue.title,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Row {
-
-                    if (issue.priority.isNotBlank()) {
-
-                        Text(
-                            text = issue.priority,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color =
-                                when (issue.priority.lowercase()) {
-                                    "high", "critical" -> Color.Red
-                                    "medium" -> Color(0xFFE58B00)
-                                    else -> Color(0xFF199642)
-                                }
-                        )
-                    }
-
-                    if (
-                        issue.priority.isNotBlank() &&
-                        issue.status.isNotBlank()
-                    ) {
-                        Text(
-                            text = " • ",
-                            fontSize = 11.sp,
-                            color = DetailsGray
-                        )
-                    }
-
-                    Text(
-                        text = issue.status,
-                        fontSize = 11.sp,
-                        color = DetailsGray
-                    )
-                }
-
-                if (issue.description.isNotBlank()) {
-
-                    Spacer(modifier = Modifier.height(5.dp))
-
-                    Text(
-                        text = issue.description,
-                        fontSize = 11.sp,
-                        color = DetailsGray
-                    )
-                }
-
-                if (issue.images.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    IssueImagesPreview(issue.images)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReportListItem(
-    report: ProjectReportItem
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White
-        )
-    ) {
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(15.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-
-            Box(
-                modifier = Modifier
-                    .size(45.dp)
-                    .background(
-                        color = Color(0xFFFFE7DD),
-                        shape = RoundedCornerShape(11.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-
-                Icon(
-                    imageVector = Icons.Outlined.Assignment,
-                    contentDescription = "Report",
-                    tint = DetailsOrange
-                )
-            }
-
-            Spacer(modifier = Modifier.width(13.dp))
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-
-                Text(
-                    text = report.title,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Spacer(modifier = Modifier.height(3.dp))
-
-                Text(
-                    text = buildString {
-
-                        if (report.reportType.isNotBlank()) {
-                            append(report.reportType)
-                        }
-
-                        if (report.status.isNotBlank()) {
-
-                            if (isNotEmpty()) {
-                                append(" • ")
-                            }
-
-                            append(report.status)
-                        }
-                    },
-                    fontSize = 11.sp,
-                    color = DetailsGray
-                )
-
-                if (report.reportDate.isNotBlank()) {
-
-                    Spacer(modifier = Modifier.height(3.dp))
-
-                    Text(
-                        text = report.reportDate,
-                        fontSize = 10.sp,
-                        color = DetailsGray
-                    )
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun ProjectHeaderCard(
