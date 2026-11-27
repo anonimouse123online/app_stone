@@ -47,10 +47,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 
-// ============================================================
-// MESSAGE DETAIL SCREEN
-// ============================================================
-
 internal fun chatAttachmentUrl(path: String?, baseUrl: String): String? = runCatching {
     val url = projectDocumentUrl(path.orEmpty(), baseUrl)
     // Uploaded message files belong to this backend, including legacy absolute URLs.
@@ -83,19 +79,11 @@ fun MessageDetailScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    // ============================================================
-    // STATE
-    // ============================================================
-
     var messageText by remember { mutableStateOf("") }
     var messages by remember { mutableStateOf<List<MessageDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var isSending by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    // ============================================================
-    // LOAD MESSAGES FUNCTION
-    // ============================================================
 
     suspend fun loadMessages() {
         try {
@@ -117,10 +105,6 @@ fun MessageDetailScreen(
             isLoading = false
         }
     }
-
-    // ============================================================
-    // FILE PICKER LAUNCHER FOR ATTACHMENTS
-    // ============================================================
 
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -157,19 +141,11 @@ fun MessageDetailScreen(
         }
     }
 
-    // ============================================================
-    // INITIAL LOAD
-    // ============================================================
-
     LaunchedEffect(conversationId) {
         isLoading = true
         errorMessage = null
         loadMessages()
     }
-
-    // ============================================================
-    // PERIODIC LIVE REFRESH
-    // ============================================================
 
     LaunchedEffect(conversationId) {
         while (true) {
@@ -186,19 +162,11 @@ fun MessageDetailScreen(
         }
     }
 
-    // ============================================================
-    // AUTO SCROLL
-    // ============================================================
-
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.lastIndex)
         }
     }
-
-    // ============================================================
-    // UI
-    // ============================================================
 
     Scaffold(
         containerColor = Color(0xFFF6F8FA),
@@ -265,7 +233,6 @@ fun MessageDetailScreen(
                         .padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // ATTACH FILE BUTTON
                     IconButton(
                         enabled = !isSending,
                         onClick = { filePickerLauncher.launch("*/*") }
@@ -277,7 +244,6 @@ fun MessageDetailScreen(
                         )
                     }
 
-                    // MESSAGE INPUT
                     OutlinedTextField(
                         value = messageText,
                         onValueChange = { messageText = it },
@@ -290,7 +256,6 @@ fun MessageDetailScreen(
 
                     Spacer(modifier = Modifier.width(6.dp))
 
-                    // SEND BUTTON
                     IconButton(
                         enabled = messageText.isNotBlank() && !isSending,
                         onClick = {
@@ -555,10 +520,6 @@ fun MessageDetailScreen(
     }
 }
 
-// ============================================================
-// HELPER: URI TO MULTIPART
-// ============================================================
-
 internal fun uriToMultipartPart(context: Context, uri: Uri, partName: String = "file"): MultipartBody.Part? {
     return try {
         val contentResolver = context.contentResolver
@@ -586,10 +547,6 @@ internal fun uriToMultipartPart(context: Context, uri: Uri, partName: String = "
         null
     }
 }
-
-// ============================================================
-// FORMAT CHAT TIME
-// ============================================================
 
 private fun formatChatTime(date: String?): String {
     if (date.isNullOrBlank()) return ""

@@ -75,10 +75,7 @@ android {
     }
 
 
-    // ============================================================
-    // DO NOT COMPRESS AI MODELS
-    // ============================================================
-
+    // Keep model assets uncompressed for runtime loading.
     androidResources {
 
         noCompress +=
@@ -100,10 +97,6 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:34.18.0"))
     implementation("com.google.firebase:firebase-messaging")
 
-
-    // ============================================================
-    // JETPACK COMPOSE
-    // ============================================================
 
     implementation(
 
@@ -157,10 +150,6 @@ dependencies {
 
 
 
-    // ============================================================
-    // RETROFIT
-    // ============================================================
-
     implementation(
 
         "com.squareup.retrofit2:retrofit:2.11.0"
@@ -173,10 +162,6 @@ dependencies {
     )
 
 
-
-    // ============================================================
-    // OKHTTP
-    // ============================================================
 
     implementation(
 
@@ -191,10 +176,6 @@ dependencies {
 
 
 
-    // ============================================================
-    // WORKMANAGER
-    // ============================================================
-
     implementation(
 
         "androidx.work:work-runtime-ktx:2.11.2"
@@ -202,18 +183,7 @@ dependencies {
 
 
 
-    // ============================================================
-    // KOTLIN COROUTINES
-    //
-    // REQUIRED BY LITERT-LM 0.14.0
-    //
-    // Fixes:
-    //
-    // NoSuchMethodError
-    // SendChannel.close$default(...)
-    //
-    // ============================================================
-
+    // LiteRT-LM 0.14.0 requires this version to avoid a SendChannel linkage error.
     implementation(
 
         "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.11.0"
@@ -226,10 +196,6 @@ dependencies {
     )
 
 
-
-    // ============================================================
-    // ROOM DATABASE
-    // ============================================================
 
     implementation(
 
@@ -250,25 +216,13 @@ dependencies {
 
 
 
-    // ============================================================
-    // YOLO / LITERT
-    //
-    // LiteRT 2.1 Kotlin package already provides
-    // accelerator support.
-    //
-    // Do NOT add litert-gpu-api:2.1.0
-    // ============================================================
-
+    // LiteRT 2.1 includes accelerator support; do not add litert-gpu-api separately.
     implementation(
 
         "com.google.ai.edge.litert:litert:2.1.0"
     )
 
 
-
-    // ============================================================
-    // GEMMA / LITERT-LM
-    // ============================================================
 
     implementation(
 
@@ -277,20 +231,12 @@ dependencies {
 
 
 
-    // ============================================================
-    // EXIF
-    // ============================================================
-
     implementation(
 
         "androidx.exifinterface:exifinterface:1.3.7"
     )
 
 
-
-    // ============================================================
-    // TESTING
-    // ============================================================
 
     testImplementation(
 
@@ -338,13 +284,7 @@ dependencies {
 
 
 
-// ============================================================
-// FORCE COROUTINES VERSION
-//
-// Prevents another library from resolving an older
-// kotlinx-coroutines runtime.
-// ============================================================
-
+// Keep coroutine versions aligned across transitive dependencies.
 configurations.all {
 
     resolutionStrategy {

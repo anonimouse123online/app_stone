@@ -69,10 +69,6 @@ object TokenManager {
             .apply()
     }
 
-    // ============================================================
-    // SESSION PERSISTENCE
-    // ============================================================
-
     fun saveSession(
         context: Context,
         token: String,
@@ -136,10 +132,6 @@ object TokenManager {
             .remove(KEY_ROLE)
             .apply()
     }
-
-    // ============================================================
-    // REMEMBER ME CREDENTIALS
-    // ============================================================
 
     fun saveRememberMe(
         context: Context,

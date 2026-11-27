@@ -27,17 +27,9 @@ class GemmaReportGenerator(
     }
 
 
-    // ============================================================
-    // ENGINE
-    // ============================================================
-
     private var engine: Engine? =
         null
 
-
-    // ============================================================
-    // INITIALIZE MODEL
-    // ============================================================
 
     suspend fun initialize() = withContext(
         Dispatchers.Default
@@ -179,10 +171,6 @@ class GemmaReportGenerator(
     }
 
 
-    // ============================================================
-    // GENERATE REPORT
-    // ============================================================
-
     suspend fun generateReport(
         imageDescription: String,
         engineerAnnotations: String =
@@ -221,10 +209,6 @@ class GemmaReportGenerator(
         val cleanOngoingScope = ongoingScopeInfo.ifBlank {
             "General Finishing & Quality Testing"
         }
-
-        // ========================================================
-        // PROMPT
-        // ========================================================
 
         val prompt = buildString {
             appendLine("You are SitePulse AI, a professional construction site report generator.")
@@ -303,17 +287,9 @@ class GemmaReportGenerator(
             appendLine()
         }
 
-        // ========================================================
-        // RESULT BUILDER
-        // ========================================================
-
         val result =
             StringBuilder()
 
-
-        // ========================================================
-        // CREATE CONVERSATION
-        // ========================================================
 
         currentEngine
             .createConversation()
@@ -339,10 +315,6 @@ class GemmaReportGenerator(
                     }
             }
 
-
-        // ========================================================
-        // FINAL RESULT & POST-PROCESSING
-        // ========================================================
 
         var finalReport =
             result
@@ -403,10 +375,6 @@ class GemmaReportGenerator(
     }
 
 
-    // ============================================================
-    // STANDALONE FORMATTER
-    // ============================================================
-
     fun formatDailyReport(
         date: String,
         projectName: String,
@@ -456,19 +424,11 @@ class GemmaReportGenerator(
     }
 
 
-    // ============================================================
-    // CHECK INITIALIZED
-    // ============================================================
-
     fun isInitialized(): Boolean {
 
         return engine != null
     }
 
-
-    // ============================================================
-    // CLOSE
-    // ============================================================
 
     override fun close() {
 

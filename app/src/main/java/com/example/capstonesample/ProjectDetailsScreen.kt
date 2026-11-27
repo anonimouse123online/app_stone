@@ -284,10 +284,6 @@ fun ProjectDetailsScreen(
 
             Spacer(modifier = Modifier.height(22.dp))
 
-            // ============================================================
-            // DOCUMENTS
-            // ============================================================
-
             SectionHeader(
                 title = "Documents",
                 count = documents.size
@@ -381,10 +377,6 @@ fun ProjectDetailsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // ============================================================
-            // ISSUES
-            // ============================================================
-
             SectionHeader(
                 title = "Issues",
                 count = issues.size
@@ -420,10 +412,6 @@ fun ProjectDetailsScreen(
             }
 
             Spacer(modifier = Modifier.height(24.dp))
-
-            // ============================================================
-            // REPORTS
-            // ============================================================
 
             SectionHeader(
                 title = "Reports",

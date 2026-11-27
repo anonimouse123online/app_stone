@@ -106,10 +106,6 @@ import kotlin.math.max
 import kotlin.math.min
 
 
-// ============================================================
-// COLORS
-// ============================================================
-
 private val TaskDetailBackground =
     Color(0xFFF6F8FA)
 
@@ -126,10 +122,6 @@ private val TaskDetailRed =
     Color(0xFFEF4444)
 
 
-// ============================================================
-// MANPOWER DATA MODEL
-// ============================================================
-
 data class ManpowerItem(
     val role: String,
     val count: String = "1",
@@ -145,10 +137,6 @@ fun resolveSelectedPhotoIndex(currentIndex: Int, totalPhotos: Int): Int {
     return currentIndex.coerceIn(0, totalPhotos - 1)
 }
 
-
-// ============================================================
-// TASK DETAIL SCREEN
-// ============================================================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -170,10 +158,6 @@ fun TaskDetailScreen(
     val context =
         LocalContext.current
 
-
-    // ============================================================
-    // AI / LLM STATE
-    // ============================================================
 
     val aiScope =
         rememberCoroutineScope()
@@ -256,10 +240,6 @@ fun TaskDetailScreen(
     var actionMessage by remember(task.id) {
         mutableStateOf<String?>(null)
     }
-
-    // ============================================================
-    // ENGINEER IMAGE ANNOTATIONS & MULTI-PHOTO STATE
-    // ============================================================
 
     var capturedPhotoUris by remember(task.id) {
         mutableStateOf<List<Uri>>(emptyList())
@@ -459,10 +439,6 @@ fun TaskDetailScreen(
     }
 
 
-    // ============================================================
-    // PREPARE / AUTO-DOWNLOAD GEMMA MODEL
-    // ============================================================
-
     LaunchedEffect(Unit) {
 
         // Already on disk → done
@@ -533,10 +509,6 @@ fun TaskDetailScreen(
         }
     }
 
-
-    // ============================================================
-    // CAMERA & GALLERY LAUNCHERS
-    // ============================================================
 
     // URI where the next photo will be saved.
     var pendingPhotoUri by remember(task.id) {
@@ -758,10 +730,6 @@ fun TaskDetailScreen(
         ) {
 
 
-            // ====================================================
-            // TASK HEADER
-            // ====================================================
-
             TaskHeaderCard(
                 task =
                     task,
@@ -775,10 +743,6 @@ fun TaskDetailScreen(
                     Modifier.height(14.dp)
             )
 
-
-            // ====================================================
-            // TASK INFORMATION
-            // ====================================================
 
             TaskInformationCard(
                 task =
@@ -794,10 +758,6 @@ fun TaskDetailScreen(
                     Modifier.height(14.dp)
             )
 
-
-            // ====================================================
-            // SUBTASKS & EXECUTION STEPS
-            // ====================================================
 
             TaskSubtasksCard(
                 subtasks =
@@ -819,10 +779,6 @@ fun TaskDetailScreen(
                     Modifier.height(14.dp)
             )
 
-
-            // ====================================================
-            // PROGRESS
-            // ====================================================
 
             TaskProgressCard(
                 task =
@@ -851,10 +807,6 @@ fun TaskDetailScreen(
                     Modifier.height(14.dp)
             )
 
-
-            // ====================================================
-            // FIELD EVIDENCE
-            // ====================================================
 
             FieldEvidenceCard(
 
@@ -909,10 +861,6 @@ fun TaskDetailScreen(
             )
 
 
-            // ====================================================
-            // REPORT
-            // ====================================================
-
             ReportTaskCard(
                 task = task,
                 onReportClick = onReportClick
@@ -925,10 +873,7 @@ fun TaskDetailScreen(
             )
 
 
-            // ====================================================
             // FUTURE AI
-            // ====================================================
-
             AiFieldAnalysisCard(
 
                 capturedPhotoUri =
@@ -1518,10 +1463,6 @@ fun TaskDetailScreen(
 }
 
 
-// ============================================================
-// TASK HEADER
-// ============================================================
-
 @Composable
 private fun TaskHeaderCard(
     task: SiteTask,
@@ -1654,10 +1595,6 @@ private fun TaskHeaderCard(
 }
 
 
-// ============================================================
-// TASK INFORMATION
-// ============================================================
-
 @Composable
 private fun TaskInformationCard(
     task: SiteTask
@@ -1773,10 +1710,6 @@ private fun TaskInformationCard(
     }
 }
 
-
-// ============================================================
-// INFORMATION ROW
-// ============================================================
 
 @Composable
 private fun TaskAssignmentDetails(task: SiteTask) {
@@ -1927,10 +1860,6 @@ private fun InformationRow(
     }
 }
 
-
-// ============================================================
-// TASK SUBTASKS CARD
-// ============================================================
 
 @Composable
 private fun TaskSubtasksCard(
@@ -2102,10 +2031,6 @@ private fun TaskSubtasksCard(
     }
 }
 
-
-// ============================================================
-// PROGRESS CARD
-// ============================================================
 
 @Composable
 private fun WorkStatusDropdown(
@@ -2320,10 +2245,6 @@ private fun TaskProgressCard(
 }
 
 
-// ============================================================
-// FIELD EVIDENCE / CAMERA + ENGINEER ANNOTATION
-// ============================================================
-
 @Composable
 private fun FieldEvidenceCard(
 
@@ -2361,10 +2282,6 @@ private fun FieldEvidenceCard(
     val photoList = if (capturedPhotoUris.isNotEmpty()) capturedPhotoUris else listOfNotNull(capturedPhotoUri)
     val activeIndex = resolveSelectedPhotoIndex(selectedPhotoIndex, photoList.size)
     val currentPhotoUri = photoList.getOrNull(activeIndex)
-
-    // ============================================================
-    // ANNOTATION STATE
-    // ============================================================
 
     var annotationMode by remember {
         mutableStateOf(false)
@@ -2411,10 +2328,6 @@ private fun FieldEvidenceCard(
     }
 
 
-    // ============================================================
-    // CARD
-    // ============================================================
-
     Card(
 
         modifier =
@@ -2438,10 +2351,6 @@ private fun FieldEvidenceCard(
 
         ) {
 
-
-            // ====================================================
-            // FIELD EVIDENCE HEADER
-            // ====================================================
 
             Row(
 
@@ -2504,10 +2413,6 @@ private fun FieldEvidenceCard(
                     Modifier.height(16.dp)
             )
 
-
-            // ====================================================
-            // CAMERA & GALLERY BUTTONS
-            // ====================================================
 
             Row(
                 modifier =
@@ -2608,10 +2513,6 @@ private fun FieldEvidenceCard(
             }
 
 
-            // ====================================================
-            // MULTI-PHOTO THUMBNAILS ROW
-            // ====================================================
-
             if (photoList.isNotEmpty()) {
                 Spacer(modifier = Modifier.height(14.dp))
 
@@ -2686,10 +2587,6 @@ private fun FieldEvidenceCard(
             }
 
 
-            // ====================================================
-            // CAPTURED PHOTO
-            // ====================================================
-
             if (currentPhotoUri != null) {
 
 
@@ -2698,10 +2595,6 @@ private fun FieldEvidenceCard(
                         Modifier.height(16.dp)
                 )
 
-
-                // =================================================
-                // PHOTO HEADER
-                // =================================================
 
                 Row(
 
@@ -2757,10 +2650,6 @@ private fun FieldEvidenceCard(
                         )
                     }
 
-
-                    // =============================================
-                    // DRAW WORK AREA BUTTON
-                    // =============================================
 
                     TextButton(
 
@@ -2832,10 +2721,6 @@ private fun FieldEvidenceCard(
                 )
 
 
-                // =================================================
-                // LOAD BITMAP
-                // =================================================
-
                 val bitmap =
                     remember(currentPhotoUri) {
 
@@ -2862,10 +2747,6 @@ private fun FieldEvidenceCard(
                         }
                     }
 
-
-                // =================================================
-                // DISPLAY + ANNOTATE IMAGE
-                // =================================================
 
                 if (bitmap != null) {
 
@@ -2914,10 +2795,6 @@ private fun FieldEvidenceCard(
                         ) {
 
 
-                            // ============================================
-                            // ORIGINAL IMAGE
-                            // ============================================
-
                             Image(
 
                                 bitmap =
@@ -2933,10 +2810,6 @@ private fun FieldEvidenceCard(
                                     ContentScale.Fit
                             )
 
-
-                            // ============================================
-                            // SAVED ANNOTATIONS
-                            // ============================================
 
                             Canvas(
 
@@ -3006,10 +2879,6 @@ private fun FieldEvidenceCard(
                                             }
 
 
-                                        // =================================
-                                        // DRAW RECTANGLE
-                                        // =================================
-
                                         drawRect(
 
                                             color =
@@ -3042,10 +2911,6 @@ private fun FieldEvidenceCard(
                                                 )
                                         )
 
-
-                                        // =================================
-                                        // LABEL TEXT
-                                        // =================================
 
                                         val labelText =
                                             buildString {
@@ -3159,10 +3024,6 @@ private fun FieldEvidenceCard(
                                             )
 
 
-                                        // =================================
-                                        // SELECTED BOX HANDLES
-                                        // =================================
-
                                         if (isSelected) {
 
 
@@ -3231,10 +3092,6 @@ private fun FieldEvidenceCard(
                                         }
                                     }
 
-
-                                // ========================================
-                                // CURRENT RECTANGLE BEING DRAWN
-                                // ========================================
 
                                 val startPoint =
                                     dragStart
@@ -3320,10 +3177,6 @@ private fun FieldEvidenceCard(
                             }
 
 
-                            // ============================================
-                            // TOUCH LAYER
-                            // ============================================
-
                             Box(
 
                                 modifier =
@@ -3338,16 +3191,8 @@ private fun FieldEvidenceCard(
                                             detectDragGestures(
 
 
-                                                // =================================
-                                                // DRAG START
-                                                // =================================
-
                                                 onDragStart = { offset ->
 
-
-                                                    // =============================
-                                                    // CREATE NEW BOX
-                                                    // =============================
 
                                                     if (annotationMode) {
 
@@ -3370,10 +3215,6 @@ private fun FieldEvidenceCard(
 
                                                     } else {
 
-
-                                                        // =========================
-                                                        // FIND EXISTING BOX
-                                                        // =========================
 
                                                         val currentAnnotations =
                                                             latestAnnotations.value
@@ -3448,10 +3289,6 @@ private fun FieldEvidenceCard(
                                                 },
 
 
-                                                // =================================
-                                                // DRAGGING
-                                                // =================================
-
                                                 onDrag = {
                                                         change,
                                                         dragAmount ->
@@ -3459,10 +3296,6 @@ private fun FieldEvidenceCard(
 
                                                     change.consume()
 
-
-                                                    // =============================
-                                                    // DRAW NEW BOX
-                                                    // =============================
 
                                                     if (annotationMode) {
 
@@ -3505,10 +3338,6 @@ private fun FieldEvidenceCard(
 
                                                     } else {
 
-
-                                                        // =========================
-                                                        // MOVE EXISTING BOX
-                                                        // =========================
 
                                                         val movingId =
                                                             movingAnnotationId
@@ -3645,10 +3474,6 @@ private fun FieldEvidenceCard(
                                                 },
 
 
-                                                // =================================
-                                                // CANCEL DRAG
-                                                // =================================
-
                                                 onDragCancel = {
 
 
@@ -3665,16 +3490,8 @@ private fun FieldEvidenceCard(
                                                 },
 
 
-                                                // =================================
-                                                // DRAG END
-                                                // =================================
-
                                                 onDragEnd = {
 
-
-                                                    // =============================
-                                                    // NEW RECTANGLE FINISHED
-                                                    // =============================
 
                                                     if (annotationMode) {
 
@@ -3812,10 +3629,6 @@ private fun FieldEvidenceCard(
                                                     } else {
 
 
-                                                        // =========================
-                                                        // MOVING BOX FINISHED
-                                                        // =========================
-
                                                         movingAnnotationId =
                                                             null
                                                     }
@@ -3826,10 +3639,6 @@ private fun FieldEvidenceCard(
                         }
                     }
 
-
-                    // =================================================
-                    // DRAW MODE MESSAGE
-                    // =================================================
 
                     if (annotationMode) {
 
@@ -3910,10 +3719,6 @@ private fun FieldEvidenceCard(
                         }
                     }
 
-
-                    // =================================================
-                    // SELECTED BOX MESSAGE
-                    // =================================================
 
                     if (
                         selectedAnnotationId != null &&
@@ -3999,10 +3804,6 @@ private fun FieldEvidenceCard(
                         }
                     }
 
-
-                    // =================================================
-                    // ENGINEER LABEL LIST
-                    // =================================================
 
                     if (
                         annotations.isNotEmpty()
@@ -4165,10 +3966,6 @@ private fun FieldEvidenceCard(
                                         }
 
 
-                                        // =================================
-                                        // SELECT BUTTON
-                                        // =================================
-
                                         IconButton(
 
                                             onClick = {
@@ -4213,10 +4010,6 @@ private fun FieldEvidenceCard(
                                             )
                                         }
 
-
-                                        // =================================
-                                        // DELETE
-                                        // =================================
 
                                         IconButton(
 
@@ -4303,10 +4096,6 @@ private fun FieldEvidenceCard(
                 )
 
 
-                // =================================================
-                // LOCAL SAVE MESSAGE
-                // =================================================
-
                 Row(
 
                     verticalAlignment =
@@ -4377,10 +4166,6 @@ private fun FieldEvidenceCard(
     }
 
 
-    // ============================================================
-    // ADD LABEL DIALOG
-    // ============================================================
-
     if (
         showAnnotationDialog &&
         pendingBox != null
@@ -4389,10 +4174,6 @@ private fun FieldEvidenceCard(
 
         AddFieldAnnotationDialog(
 
-
-            // ====================================================
-            // CANCEL
-            // ====================================================
 
             onDismiss = {
 
@@ -4413,10 +4194,6 @@ private fun FieldEvidenceCard(
                     null
             },
 
-
-            // ====================================================
-            // SAVE
-            // ====================================================
 
             onSave = {
                     label,
@@ -4504,10 +4281,7 @@ private fun FieldEvidenceCard(
     }
 }
 
-// ============================================================
 // TEMPORARY BOX BEFORE ENGINEER SAVES THE LABEL
-// ============================================================
-
 private data class PendingAnnotationBox(
 
     val left: Float,
@@ -4520,10 +4294,6 @@ private data class PendingAnnotationBox(
 )
 
 
-// ============================================================
-// HELPER: EXTRACT WORK LABELS FROM SUBTASKS
-// ============================================================
-
 internal fun subtaskWorkLabels(subtasks: List<SubtaskItem>): List<String> {
     val labels = subtasks
         .map { it.title.trim() }
@@ -4532,17 +4302,10 @@ internal fun subtaskWorkLabels(subtasks: List<SubtaskItem>): List<String> {
     return if (labels.isNotEmpty()) labels else listOf("General Work")
 }
 
-// ============================================================
 // HELPER: CHECK IF ALL SUBTASKS ARE 100% COMPLETED
-// ============================================================
-
 internal fun allSubtasksCompleted(subtasks: List<SubtaskItem>): Boolean {
     return subtasks.isEmpty() || subtasks.all { it.completed || (it.progress ?: 0) >= 100 }
 }
-
-// ============================================================
-// ADD FIELD ANNOTATION DIALOG
-// ============================================================
 
 @Composable
 private fun AddFieldAnnotationDialog(
@@ -4977,11 +4740,7 @@ private fun AddFieldAnnotationDialog(
 }
 
 
-// ============================================================
-// REPORT CARD
 // Manual issue report — separate from AI-generated reports.
-// ============================================================
-
 @Composable
 private fun ReportTaskCard(
     task: SiteTask,
@@ -5055,10 +4814,6 @@ private fun ReportTaskCard(
             modifier =
                 Modifier.padding(18.dp)
         ) {
-
-            // ========================================================
-            // HEADER
-            // ========================================================
 
             Row(
                 modifier =
@@ -5153,10 +4908,6 @@ private fun ReportTaskCard(
             )
 
 
-            // ========================================================
-            // OPEN / CLOSE BUTTON
-            // ========================================================
-
             OutlinedButton(
                 onClick = {
                     expanded =
@@ -5214,10 +4965,6 @@ private fun ReportTaskCard(
                 )
             }
 
-
-            // ========================================================
-            // SLIDE-DOWN ISSUE FORM
-            // ========================================================
 
             AnimatedVisibility(
                 visible =
@@ -5831,10 +5578,7 @@ private fun ReportTaskCard(
 }
 
 
-// ============================================================
 // FUTURE AI CARD
-// ============================================================
-
 @Composable
 private fun AiFieldAnalysisCard(
 
@@ -5912,10 +5656,6 @@ private fun AiFieldAnalysisCard(
         ) {
 
 
-            // ====================================================
-            // HEADER
-            // ====================================================
-
             Row(
 
                 verticalAlignment =
@@ -5978,10 +5718,6 @@ private fun AiFieldAnalysisCard(
             )
 
 
-            // ====================================================
-            // PHOTO STATUS
-            // ====================================================
-
             AiStatusRow(
 
                 good =
@@ -6008,10 +5744,6 @@ private fun AiFieldAnalysisCard(
                     Modifier.height(8.dp)
             )
 
-
-            // ====================================================
-            // GEMMA STATUS
-            // ====================================================
 
             AiStatusRow(
 
@@ -6042,10 +5774,6 @@ private fun AiFieldAnalysisCard(
             )
 
 
-            // ====================================================
-            // MANPOWER STATUS
-            // ====================================================
-
             val totalManpower = manpowerList.sumOf { it.count.toIntOrNull() ?: 0 }
             val hasManpower = hasValidManpower(manpowerList)
 
@@ -6069,10 +5797,7 @@ private fun AiFieldAnalysisCard(
             )
 
 
-            // ====================================================
             // DOWNLOADING GEMMA — INLINE PROGRESS
-            // ====================================================
-
             if (isDownloading) {
 
                 Column {
@@ -6119,10 +5844,7 @@ private fun AiFieldAnalysisCard(
                 Spacer(modifier = Modifier.height(12.dp))
 
 
-            // ====================================================
             // PREPARING GEMMA (after download)
-            // ====================================================
-
             } else if (isPreparing) {
 
                 Row(
@@ -6171,10 +5893,6 @@ private fun AiFieldAnalysisCard(
                 )
             }
 
-
-            // ====================================================
-            // MANPOWER INPUT SECTION
-            // ====================================================
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -6574,10 +6292,6 @@ private fun AiFieldAnalysisCard(
             )
 
 
-            // ====================================================
-            // GENERATE REPORT
-            // ====================================================
-
             Button(
 
                 onClick =
@@ -6686,10 +6400,6 @@ private fun AiFieldAnalysisCard(
             }
 
 
-            // ====================================================
-            // ERROR
-            // ====================================================
-
             if (!error.isNullOrBlank()) {
 
                 Spacer(
@@ -6728,10 +6438,6 @@ private fun AiFieldAnalysisCard(
                 }
             }
 
-
-            // ====================================================
-            // DETECTED OBJECTS
-            // ====================================================
 
             if (detectedObjects.isNotBlank()) {
 
@@ -6793,10 +6499,6 @@ private fun AiFieldAnalysisCard(
                 }
             }
 
-
-            // ====================================================
-            // GENERATED REPORT
-            // ====================================================
 
             if (!report.isNullOrBlank()) {
 
@@ -6974,10 +6676,6 @@ private fun AiFieldAnalysisCard(
                 }
 
 
-                // ====================================================
-                // UPLOAD REPORT TO ADMIN
-                // ====================================================
-
                 Spacer(
                     modifier =
                         Modifier.height(10.dp)
@@ -7077,11 +6775,7 @@ private fun AiFieldAnalysisCard(
                                 FontWeight.Bold
                         )
                     }
-                      // ====================================================
-                // MARK TASK AS DONE
                 // Available only after all subtasks reach 100%
-                // ====================================================
-
                 val allSubtasksDone =
                     allSubtasksCompleted(subtasks)
 
@@ -7282,10 +6976,6 @@ private fun AiStatusRow(
 
 
 
-
-// ============================================================
-// STATUS BADGE
-// ============================================================
 
 @Composable
 private fun TaskDetailStatusBadge(

@@ -27,37 +27,20 @@ class SyncWorker(
 
         return try {
 
-            // ================================================
-            // GET LOCAL USERS THAT HAVE NOT BEEN SYNCED
-            // ================================================
-
             val unsyncedUsers =
                 userDao.getUnsyncedUsers()
 
             for (user in unsyncedUsers) {
 
                 /*
-                 * We deliberately cannot sync the user here
-                 * if we only stored passwordHash.
-                 *
-                 * The backend /auth/signup requires the
-                 * original password.
-                 *
-                 * So account creation should ideally sync
-                 * while registration has the password.
-                 *
-                 * Other objects such as tasks, reports,
-                 * issues and project updates are much
-                 * better candidates for this worker.
+                 * Signup requires the original password, which is not stored
+                 * here. Account creation must sync during registration;
+                 * other pending data can use this worker.
                  */
             }
 
 
-            // ================================================
             // TODO:
-            // SYNC PENDING TASKS
-            // ================================================
-
             /*
             val pendingTasks =
                 taskDao.getPendingSyncTasks()
@@ -79,17 +62,12 @@ class SyncWorker(
             */
 
 
-            // ================================================
-            // EVERYTHING SUCCESSFUL
-            // ================================================
-
             Result.success()
 
         } catch (e: Exception) {
 
             e.printStackTrace()
 
-            // WorkManager tries again later
             Result.retry()
         }
     }

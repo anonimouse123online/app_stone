@@ -1,102 +1,44 @@
-# ============================================================
-# ANDROID STUDIO / INTELLIJ
-# ============================================================
-
+# IDE and local settings
 *.iml
 .idea/
 .gradle/
 .DS_Store
 
-
-# ============================================================
-# LOCAL CONFIGURATION
-# ============================================================
-
+# Local configuration
 local.properties
 /local.properties
 
-
-# ============================================================
-# BUILD OUTPUTS
-# ============================================================
-
+# Build and generated output
 /build/
 **/build/
-
 captures/
 /captures/
-
 .externalNativeBuild/
 .cxx/
-
-
-# ============================================================
-# GENERATED FILES
-# ============================================================
-
 **/generated/
 **/ksp/
 
-
-# ============================================================
-# KOTLIN / JAVA
-# ============================================================
-
+# Compiled files
 *.class
 *.jar
 *.war
 
-
-# ============================================================
-# LOG FILES
-# ============================================================
-
+# Logs and operating-system files
 *.log
-
-
-# ============================================================
-# OPERATING SYSTEM FILES
-# ============================================================
-
 .DS_Store
 Thumbs.db
 desktop.ini
 
-
-# ============================================================
-# AI / LLM MODELS
-# ============================================================
-
-# Gemma LiteRT-LM model
+# Downloaded AI models
 *.litertlm
-
-# Specifically ignore bundled Gemma models
 app/src/main/assets/*.litertlm
-
-
-# ============================================================
-# OPTIONAL LARGE AI MODEL FORMATS
-# ============================================================
-
 *.gguf
 *.ggml
 *.onnx
 
+# The app bundles yolo11n.tflite as a runtime asset.
 
-# ============================================================
-# IMPORTANT:
-# DO NOT IGNORE TFLITE
-#
-# YOLO model should remain in Git if it is small enough.
-#
-# app/src/main/assets/yolo11n.tflite
-# ============================================================
-
-
-# ============================================================
-# TEMPORARY FILES
-# ============================================================
-
+# Temporary files
 *.tmp
 *.temp
 *.bak
@@ -104,47 +46,23 @@ app/src/main/assets/*.litertlm
 *.swo
 *~
 
-
-# ============================================================
-# APK / APP BUNDLES
-# ============================================================
-
+# Android packages
 *.apk
 *.aab
 
-
-# ============================================================
-# NATIVE BUILD OUTPUT
-# ============================================================
-
+# Native build output
 .externalNativeBuild/
 .cxx/
 obj/
 
-
-# ============================================================
-# SIGNING / KEYSTORE FILES
-#
-# NEVER PUSH SIGNING KEYS TO GITHUB
-# ============================================================
-
+# Signing files
 *.jks
 *.keystore
 
-
-# ============================================================
-# ENVIRONMENT / SECRETS
-# ============================================================
-
+# Environment files
 .env
 .env.*
 !.env.example
 
-
-# ============================================================
-# GOOGLE SERVICES
-#
-# Uncomment this if google-services.json contains credentials
-# you do not want committed.
-# ============================================================
+# Firebase client configuration
 google-services.json

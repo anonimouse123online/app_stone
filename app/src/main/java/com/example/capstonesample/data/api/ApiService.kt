@@ -58,8 +58,6 @@ import retrofit2.http.Query
 interface ApiService {
 
 
-    // ============================================================
-    // AUTH
     // ==========================================   ==================
 
     @POST("auth/login")
@@ -72,27 +70,15 @@ interface ApiService {
     suspend fun signup(
         @Body request: SignupRequest
     ): Response<SignupResponse>
-    // ============================================================
-    // FORGOT PASSWORD
-    // ============================================================
-
     @POST("auth/forgot-password")
     suspend fun forgotPassword(
         @Body request: ForgotPasswordRequest
     ): Response<ForgotPasswordResponse>
-    // ============================================================
-// VERIFY PASSWORD RESET OTP
-// ============================================================
-
     @POST("auth/verify-reset-code")
     suspend fun verifyResetCode(
         @Body request: VerifyResetCodeRequest
     ): Response<VerifyResetCodeResponse>
 
-
-// ============================================================
-// RESET PASSWORD
-// ============================================================
 
     @POST("auth/reset-password")
     suspend fun resetPassword(
@@ -171,15 +157,7 @@ interface ApiService {
 
 
 
-    // ============================================================
-    // DASHBOARD
-    // ============================================================
 
-
-
-    // ============================================================
-    // TASKS
-    // ============================================================
 
     @GET("tasks")
     suspend fun getTasks(
@@ -196,10 +174,6 @@ interface ApiService {
     ): Response<TasksResponse>
 
 
-    // ============================================================
-    // GET ALL PROJECTS
-    // ============================================================
-
     @GET("projects")
     suspend fun getProjects(
 
@@ -211,10 +185,6 @@ interface ApiService {
     @GET("messages/conversations")
     suspend fun getConversations(): Response<ConversationsResponse>
 
-
-    // ============================================================
-    // GET ONE PROJECT
-    // ============================================================
 
     @GET(
         "messages/conversations/{conversationId}"
@@ -268,10 +238,6 @@ interface ApiService {
 
 
 
-    // ============================================================
-    // JOIN PROJECT
-    // ============================================================
-
     @POST("projects/join")
     suspend fun joinProject(
 
@@ -282,10 +248,6 @@ interface ApiService {
 
     ): Response<JoinProjectResponse>
 
-
-    // ============================================================
-    // PROJECTS JOINED BY CURRENT USER
-    // ============================================================
 
     @GET("projects/joined")
     suspend fun getJoinedProjects(
@@ -306,8 +268,6 @@ interface ApiService {
 }
 
 
-// ============================================================
-// TASKS API RESPONSE
 //
 // Backend:
 //
@@ -317,9 +277,6 @@ interface ApiService {
 //         {...}
 //     ]
 // }
-// ============================================================
-// ============================================================
-// PROJECT DOCUMENTS API RESPONSE
 //
 // Backend:
 //
@@ -335,8 +292,6 @@ interface ApiService {
 //         }
 //     ]
 // }
-// ============================================================
-
 data class ProjectDocumentsResponse(
 
     val success: Boolean = false,
@@ -344,10 +299,6 @@ data class ProjectDocumentsResponse(
     val data: List<ProjectDocumentResponse> = emptyList()
 )
 
-
-// ============================================================
-// PROJECT DOCUMENT RESPONSE
-// ============================================================
 
 data class ProjectDocumentResponse(
 
@@ -375,10 +326,6 @@ data class TasksResponse(
     val data: List<TaskResponse> = emptyList()
 )
 
-
-// ============================================================
-// TASK RESPONSE
-// ============================================================
 
 data class TaskResponse(
 
@@ -461,10 +408,6 @@ data class TaskResponse(
     )
     val projectStatus: String? = null
 )
-
-// ============================================================
-// SUBTASKS MODELS
-// ============================================================
 
 data class SubtaskItem(
     val id: String = "",

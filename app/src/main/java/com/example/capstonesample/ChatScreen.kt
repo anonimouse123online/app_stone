@@ -45,19 +45,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 
-// ============================================================
-// COLORS
-// ============================================================
-
 private val MessageBackground = Color(0xFFF6F8FA)
 private val MessageOrange = Color(0xFFF15A24)
 private val SearchBackground = Color.White
 private val MessageGray = Color(0xFF64748B)
 
-
-// ============================================================
-// CHAT SCREEN
-// ============================================================
 
 @Composable
 fun ChatScreen(
@@ -164,12 +156,8 @@ fun ChatScreen(
     }
 
 
-    // ============================================================
-    // SEARCH USERS
     //
     // GET /users/search?q=
-    // ============================================================
-
     LaunchedEffect(searchQuery) {
 
         val query =
@@ -225,12 +213,8 @@ fun ChatScreen(
     }
 
 
-    // ============================================================
-    // LOAD CONVERSATIONS
     //
     // GET /messages/conversations
-    // ============================================================
-
     LaunchedEffect(Unit) {
 
         isLoading = true
@@ -306,10 +290,6 @@ fun ChatScreen(
     }
 
 
-    // ============================================================
-    // OPEN SELECTED CHAT
-    // ============================================================
-
     if (selectedChat != null) {
 
         MessageDetailScreen(
@@ -334,10 +314,6 @@ fun ChatScreen(
     }
 
 
-    // ============================================================
-    // FILTER EXISTING CONVERSATIONS
-    // ============================================================
-
     val filteredChats =
         chatList.filter { chat ->
 
@@ -352,10 +328,6 @@ fun ChatScreen(
                     )
         }
 
-
-    // ============================================================
-    // UI
-    // ============================================================
 
     Scaffold(
 
@@ -500,10 +472,6 @@ fun ChatScreen(
         ) {
 
 
-            // ====================================================
-            // HEADER
-            // ====================================================
-
             Column(
 
                 modifier = Modifier
@@ -609,10 +577,6 @@ fun ChatScreen(
             }
 
 
-            // ====================================================
-            // INITIAL LOADING
-            // ====================================================
-
             if (isLoading) {
 
                 Box(
@@ -637,10 +601,6 @@ fun ChatScreen(
                 return@Column
             }
 
-
-            // ====================================================
-            // ERROR
-            // ====================================================
 
             if (
                 errorMessage != null &&
@@ -697,10 +657,6 @@ fun ChatScreen(
             }
 
 
-            // ====================================================
-            // SEARCH MODE
-            // ====================================================
-
             if (
                 searchQuery.isNotBlank()
             ) {
@@ -724,10 +680,6 @@ fun ChatScreen(
 
                 ) {
 
-
-                    // ==============================================
-                    // EXISTING CONVERSATIONS
-                    // ==============================================
 
                     if (
                         filteredChats.isNotEmpty()
@@ -773,10 +725,6 @@ fun ChatScreen(
                         }
                     }
 
-
-                    // ==============================================
-                    // USER RESULTS
-                    // ==============================================
 
                     if (
                         searchedUsers.isNotEmpty()
@@ -882,7 +830,6 @@ fun ChatScreen(
                                                         )
 
 
-                                                    // Add conversation locally
                                                     if (
                                                         chatList.none {
                                                             it.conversationId ==
@@ -898,7 +845,6 @@ fun ChatScreen(
                                                     }
 
 
-                                                    // Clear search
                                                     searchQuery =
                                                         ""
 
@@ -906,7 +852,6 @@ fun ChatScreen(
                                                         emptyList()
 
 
-                                                    // OPEN CHAT
                                                     selectedChat =
                                                         newChat
 
@@ -942,10 +887,6 @@ fun ChatScreen(
                     }
 
 
-                    // ==============================================
-                    // SEARCHING
-                    // ==============================================
-
                     if (
                         isSearchingUsers
                     ) {
@@ -977,10 +918,6 @@ fun ChatScreen(
                     }
 
 
-                    // ==============================================
-                    // NO RESULTS
-                    // ==============================================
-
                     if (
                         filteredChats.isEmpty() &&
                         searchedUsers.isEmpty() &&
@@ -1002,10 +939,6 @@ fun ChatScreen(
                         }
                     }
 
-
-                    // ==============================================
-                    // START CONVERSATION ERROR
-                    // ==============================================
 
                     if (
                         errorMessage != null
@@ -1035,10 +968,6 @@ fun ChatScreen(
                 return@Column
             }
 
-
-            // ====================================================
-            // NO CONVERSATIONS
-            // ====================================================
 
             if (
                 chatList.isEmpty()
@@ -1092,10 +1021,6 @@ fun ChatScreen(
                 return@Column
             }
 
-
-            // ====================================================
-            // NORMAL CONVERSATION LIST
-            // ====================================================
 
             LazyColumn(
 
@@ -1157,10 +1082,6 @@ fun ChatScreen(
 }
 
 
-// ============================================================
-// FORMAT TIME
-// ============================================================
-
 private fun formatMessageTime(
     date: String?
 ): String {
@@ -1189,10 +1110,6 @@ private fun formatMessageTime(
     }
 }
 
-
-// ============================================================
-// TOP BAR
-// ============================================================
 
 private fun generateChatInitials(name: String): String {
     val words = name.trim().split(" ").filter { it.isNotBlank() }
@@ -1287,10 +1204,6 @@ private fun MessagesTopBar(
     )
 }
 
-
-// ============================================================
-// MESSAGE CARD
-// ============================================================
 
 @Composable
 private fun MessageCard(
@@ -1511,10 +1424,6 @@ private fun MessageCard(
 }
 
 
-// ============================================================
-// SEARCHED USER CARD
-// ============================================================
-
 @Composable
 private fun UserSearchCard(
 
@@ -1675,10 +1584,6 @@ private fun UserSearchCard(
 }
 
 
-// ============================================================
-// BOTTOM NAVIGATION
-// ============================================================
-
 @Composable
 private fun MessagesBottomNavigationBar(
 
@@ -1787,10 +1692,6 @@ private fun MessagesBottomNavigationBar(
 }
 
 
-// ============================================================
-// NAV ITEM
-// ============================================================
-
 @Composable
 private fun RowScope.MessagesNavigationItem(
 
@@ -1863,10 +1764,6 @@ private fun RowScope.MessagesNavigationItem(
     )
 }
 
-// ============================================================
-// CREATE GROUP DIALOG
-// ============================================================
-
 @Composable
 private fun CreateGroupDialog(
     groupName: String,
@@ -1914,7 +1811,6 @@ private fun CreateGroupDialog(
                     .fillMaxWidth()
                     .heightIn(max = 440.dp)
             ) {
-                // 1. Group Name Field
                 OutlinedTextField(
                     value = groupName,
                     onValueChange = onGroupNameChange,
@@ -1927,7 +1823,6 @@ private fun CreateGroupDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // 2. Selected Members Preview
                 if (selectedMembersList.isNotEmpty()) {
                     Text(
                         text = "Added to group (${selectedMembersList.size})",
@@ -1977,7 +1872,6 @@ private fun CreateGroupDialog(
                     Spacer(modifier = Modifier.height(8.dp))
                 }
 
-                // 3. Search members in list
                 OutlinedTextField(
                     value = searchFilter,
                     onValueChange = { searchFilter = it },
@@ -1994,7 +1888,6 @@ private fun CreateGroupDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // 4. List of available colleagues
                 Text(
                     text = "Project Colleagues & Admins",
                     fontSize = 12.sp,

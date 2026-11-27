@@ -19,18 +19,10 @@ class TaskRepository(
 
 ) {
 
-    // ============================================================
-    // READ TASKS FROM ROOM
-    // ============================================================
-
     fun getTasks(): Flow<List<TaskEntity>> {
         return taskDao.getTasks()
     }
 
-
-    // ============================================================
-    // DOWNLOAD ASSIGNED TASKS
-    // ============================================================
 
     suspend fun refreshTasks(
 
@@ -103,12 +95,7 @@ class TaskRepository(
             }
 
 
-            // ====================================================
-            // IMPORTANT:
-            // response.body() is TasksResponse,
-            // NOT List<TaskResponse>
-            // ====================================================
-
+            // The API wraps task records in TasksResponse.
             val result =
                 response.body()
 
@@ -196,10 +183,7 @@ class TaskRepository(
             }
 
 
-            // ====================================================
             // API -> ROOM
-            // ====================================================
-
             val localTasks: List<TaskEntity> =
                 serverTasks.map { task ->
 

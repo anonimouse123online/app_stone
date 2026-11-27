@@ -25,10 +25,6 @@ object SyncManager {
         "sitepulse_immediate_notification_sync"
 
 
-    // ============================================================
-    // PERIODIC BACKGROUND SYNC
-    // ============================================================
-
     fun startPeriodicSync(
         context: Context
     ) {
@@ -88,10 +84,6 @@ object SyncManager {
     }
 
 
-    // ============================================================
-    // SYNC AS SOON AS INTERNET IS AVAILABLE
-    // ============================================================
-
     fun requestImmediateSync(
         context: Context
     ) {
@@ -117,10 +109,6 @@ object SyncManager {
                 request
             )
     }
-
-    // ============================================================
-    // CHECK NOTIFICATIONS IMMEDIATELY (BACKGROUND / ON-DEMAND)
-    // ============================================================
 
     fun checkNotificationsImmediately(
         context: Context

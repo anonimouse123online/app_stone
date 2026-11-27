@@ -9,17 +9,9 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface TaskDao {
 
-    // ============================================================
-    // GET ALL LOCAL TASKS
-    // ============================================================
-
     @Query("SELECT * FROM tasks")
     fun getTasks(): Flow<List<TaskEntity>>
 
-
-    // ============================================================
-    // INSERT MANY
-    // ============================================================
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTasks(
@@ -27,19 +19,11 @@ interface TaskDao {
     )
 
 
-    // ============================================================
-    // INSERT ONE
-    // ============================================================
-
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertTask(
         task: TaskEntity
     )
 
-
-    // ============================================================
-    // GET UNSYNCED TASKS
-    // ============================================================
 
     @Query(
         """
@@ -51,10 +35,6 @@ interface TaskDao {
     suspend fun getUnsyncedTasks():
             List<TaskEntity>
 
-
-    // ============================================================
-    // MARK SYNCED
-    // ============================================================
 
     @Query(
         """
@@ -68,10 +48,6 @@ interface TaskDao {
     )
 
 
-    // ============================================================
-    // MARK UNSYNCED
-    // ============================================================
-
     @Query(
         """
         UPDATE tasks
@@ -83,10 +59,6 @@ interface TaskDao {
         taskId: String
     )
 
-
-    // ============================================================
-    // DELETE ALL
-    // ============================================================
 
     @Query("DELETE FROM tasks")
     suspend fun deleteAllTasks()

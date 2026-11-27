@@ -2,33 +2,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- ================================================== -->
-    <!-- NETWORK -->
-    <!-- ================================================== -->
-
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
 
-    <!-- ================================================== -->
-    <!-- NOTIFICATIONS -->
-    <!-- ================================================== -->
-
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-
-    <!-- ================================================== -->
-    <!-- LOCATION -->
-    <!-- ================================================== -->
 
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
-
-    <!-- ================================================== -->
-    <!-- CAMERA -->
-    <!-- ================================================== -->
 
     <uses-permission android:name="android.permission.CAMERA" />
 
@@ -55,10 +39,6 @@
         android:usesCleartextTraffic="true">
 
 
-        <!-- ================================================== -->
-        <!-- FIREBASE DEFAULT NOTIFICATION SETTINGS -->
-        <!-- ================================================== -->
-
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="sitepulse_notifications" />
@@ -67,10 +47,6 @@
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/ic_notification" />
 
-
-        <!-- ================================================== -->
-        <!-- FIREBASE CLOUD MESSAGING SERVICE -->
-        <!-- ================================================== -->
 
         <service
             android:name=".notifications.MyFirebaseMessagingService"
@@ -82,11 +58,6 @@
 
         </service>
 
-
-        <!-- ================================================== -->
-        <!-- FILE PROVIDER -->
-        <!-- CAMERA PHOTOS + PDF REPORTS -->
-        <!-- ================================================== -->
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -100,10 +71,6 @@
 
         </provider>
 
-
-        <!-- ================================================== -->
-        <!-- MAIN ACTIVITY -->
-        <!-- ================================================== -->
 
         <activity
             android:name=".MainActivity"

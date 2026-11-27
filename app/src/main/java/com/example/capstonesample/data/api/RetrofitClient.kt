@@ -17,10 +17,6 @@ object RetrofitClient {
         return url.scheme == backend.scheme && url.host == backend.host && url.port == backend.port
     }
 
-    // ============================================================
-    // APP CONTEXT
-    // ============================================================
-
     private lateinit var appContext: Context
 
     fun init(context: Context) {
@@ -28,24 +24,13 @@ object RetrofitClient {
     }
 
 
-    // ============================================================
-    // BACKEND BASE URL
-    // ============================================================
-
-    // PHYSICAL PHONE 
-
-    const val BASE_URL = "http://192.168.254.124:5001/"
+    const val BASE_URL = "http://192.168.254.110:5001/"
 
     //const val BASE_URL = "http://192.168.1.4:5001/"
 
-    // ANDROID EMULATOR
     /// private const val BASE_URL =
         // "http://10.0.2.2:5001/"
 
-
-    // ============================================================
-    // HTTP LOGGING
-    // ============================================================
 
     private val loggingInterceptor =
         HttpLoggingInterceptor().apply {
@@ -56,13 +41,9 @@ object RetrofitClient {
         }
 
 
-    // ============================================================
-    // AUTH INTERCEPTOR
     // Automatically adds:
     //
     // Authorization: Bearer <JWT>
-    // ============================================================
-
     private val authInterceptor = { chain: okhttp3.Interceptor.Chain ->
 
         val originalRequest =
@@ -95,10 +76,6 @@ object RetrofitClient {
         )
     }
 
-
-    // ============================================================
-    // OKHTTP CLIENT
-    // ============================================================
 
     val okHttpClient: OkHttpClient get() = client
 
@@ -143,10 +120,6 @@ object RetrofitClient {
             .build()
     }
 
-
-    // ============================================================
-    // RETROFIT
-    // ============================================================
 
     val api: ApiService by lazy {
 

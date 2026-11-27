@@ -48,10 +48,6 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 
 
-// ============================================================
-// PROJECT UI MODEL
-// ============================================================
-
 data class SiteProject(
 
     val id: String,
@@ -80,10 +76,6 @@ data class SiteProject(
 
     val manager: String
 )
-
-// ============================================================
-// COLORS & FORMATTERS
-// ============================================================
 
 private val ProjectBackground =
     Color(0xFFF6F8FA)
@@ -122,10 +114,6 @@ private fun formatDisplayDate(raw: String): String {
     return trimmed
 }
 
-
-// ============================================================
-// PROJECTS SCREEN
-// ============================================================
 
 @Composable
 fun ProjectsScreen(
@@ -166,9 +154,7 @@ fun ProjectsScreen(
         )
     }
 
-    // Project currently opened by the user.
-    // Keeping this state here makes project cards work immediately,
-    // even before you add a NavHost route for project details.
+    // Keep project details in this screen without requiring a NavHost route.
     var selectedProject by remember {
         mutableStateOf<SiteProject?>(null)
     }
@@ -198,10 +184,7 @@ fun ProjectsScreen(
         rememberCoroutineScope()
 
 
-    // ============================================================
     // CONVERT API PROJECT -> UI PROJECT
-    // ============================================================
-
     fun convertProject(
         project: com.example.capstonesample.data.model.ProjectResponse
     ): SiteProject {
@@ -251,10 +234,6 @@ fun ProjectsScreen(
         )
     }
 
-
-    // ============================================================
-    // LOAD PROJECTS
-    // ============================================================
 
     fun loadProjects() {
 
@@ -397,10 +376,6 @@ fun ProjectsScreen(
     }
 
 
-    // ============================================================
-    // LOAD WHEN SCREEN OPENS
-    // ============================================================
-
     LaunchedEffect(token) {
 
         if (
@@ -412,10 +387,6 @@ fun ProjectsScreen(
         }
     }
 
-
-    // ============================================================
-    // FILTER
-    // ============================================================
 
     val filteredProjects =
         projects.filter { project ->
@@ -436,10 +407,6 @@ fun ProjectsScreen(
                     )
         }
 
-
-    // ============================================================
-    // JOIN PROJECT DIALOG
-    // ============================================================
 
     if (
         showJoinDialog
@@ -494,10 +461,6 @@ fun ProjectsScreen(
                     joinSuccess =
                         null
 
-
-                    // ====================================================
-                    // TOKEN CHECK
-                    // ====================================================
 
                     if (
                         token.isBlank()
@@ -574,10 +537,6 @@ fun ProjectsScreen(
                         )
 
 
-                        // ====================================================
-                        // SUCCESS
-                        // ====================================================
-
                         if (
                             response.isSuccessful
                         ) {
@@ -612,10 +571,6 @@ fun ProjectsScreen(
                                     "JOINED PROJECT CODE = $joinedProjectCode"
                                 )
 
-
-                                // =================================================
-                                // FETCH PROJECT DETAILS IMMEDIATELY
-                                // =================================================
 
                                 if (
                                     !joinedProjectCode.isNullOrBlank()
@@ -668,11 +623,6 @@ fun ProjectsScreen(
                                                     )
 
 
-                                                // =====================================
-                                                // REMOVE DUPLICATE
-                                                // THEN ADD CURRENT PROJECT
-                                                // =====================================
-
                                                 projects =
                                                     projects
                                                         .filterNot {
@@ -713,10 +663,6 @@ fun ProjectsScreen(
                                 }
 
 
-                                // =================================================
-                                // REFRESH COMPLETE PROJECT LIST TOO
-                                // =================================================
-
                                 loadProjects()
 
 
@@ -733,10 +679,6 @@ fun ProjectsScreen(
 
 
                         } else {
-
-                            // ====================================================
-                            // BACKEND ERROR
-                            // ====================================================
 
                             val serverError =
                                 try {
@@ -836,10 +778,6 @@ fun ProjectsScreen(
     }
 
 
-    // ============================================================
-    // OPENED PROJECT DETAILS
-    // ============================================================
-
     selectedProject?.let { project ->
         ProjectDetailsScreen(
             project = project,
@@ -851,10 +789,6 @@ fun ProjectsScreen(
         )
         return
     }
-
-    // ============================================================
-    // UI
-    // ============================================================
 
     Scaffold(
 
@@ -935,10 +869,6 @@ fun ProjectsScreen(
 
         ) {
 
-
-            // ====================================================
-            // HEADER
-            // ====================================================
 
             Column(
 
@@ -1104,10 +1034,6 @@ fun ProjectsScreen(
             }
 
 
-            // ====================================================
-            // LOADING
-            // ====================================================
-
             if (
                 isLoading &&
                 projects.isEmpty()
@@ -1135,10 +1061,6 @@ fun ProjectsScreen(
                 filteredProjects.isEmpty()
             ) {
 
-
-                // =================================================
-                // EMPTY
-                // =================================================
 
                 Box(
 
@@ -1222,10 +1144,6 @@ fun ProjectsScreen(
             } else {
 
 
-                // =================================================
-                // PROJECT LIST
-                // =================================================
-
                 LazyColumn(
 
                     modifier =
@@ -1284,11 +1202,7 @@ fun ProjectsScreen(
                                 println("CODE = ${project.code}")
                                 println("====================================")
 
-                                // Open the project immediately inside this screen.
                                 selectedProject = project
-
-                                // Keep this callback so MainActivity/NavHost can also
-                                // react to the project click later if you want.
                                 onProjectClick(project)
                             }
                         )
@@ -1309,10 +1223,6 @@ fun ProjectsScreen(
     }
 }
 
-
-// ============================================================
-// JOIN PROJECT DIALOG
-// ============================================================
 
 @Composable
 private fun JoinProjectDialog(
@@ -1595,10 +1505,6 @@ private fun JoinProjectDialog(
 }
 
 
-// ============================================================
-// TOP BAR
-// ============================================================
-
 private fun generateProjectInitials(name: String): String {
     val words = name.trim().split(" ").filter { it.isNotBlank() }
     if (words.isEmpty()) return "SP"
@@ -1707,10 +1613,6 @@ private fun ProjectsTopBar(
     )
 }
 
-
-// ============================================================
-// PROJECT CARD
-// ============================================================
 
 @Composable
 private fun ProjectListCard(
@@ -1970,10 +1872,6 @@ private fun ProjectDetailRow(
         )
     }
 }
-// ============================================================
-// PROJECT DETAILS SCREEN
-// ============================================================
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProjectDetailsScreen(
@@ -2145,10 +2043,6 @@ private fun ProjectDetailsScreen(
     }
 }
 
-// ============================================================
-// BOTTOM NAV
-// ============================================================
-
 @Composable
 private fun ProjectsBottomNavigationBar(
 
@@ -2260,10 +2154,6 @@ private fun ProjectsBottomNavigationBar(
     }
 }
 
-
-// ============================================================
-// NAV ITEM
-// ============================================================
 
 @Composable
 private fun RowScope.ProjectsNavigationItem(

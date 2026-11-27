@@ -52,10 +52,6 @@ class YoloDetector(
     private val labels: List<String>
 
 
-    // ============================================================
-    // INITIALIZE YOLO
-    // ============================================================
-
     init {
 
         Log.d(
@@ -63,10 +59,6 @@ class YoloDetector(
             "Initializing YOLO..."
         )
 
-
-        // --------------------------------------------------------
-        // LOAD LABELS
-        // --------------------------------------------------------
 
         labels =
             appContext.assets
@@ -93,10 +85,6 @@ class YoloDetector(
         )
 
 
-        // --------------------------------------------------------
-        // LOAD TFLITE MODEL
-        // --------------------------------------------------------
-
         val modelBuffer =
             loadModelFile(
                 modelAssetPath
@@ -122,10 +110,6 @@ class YoloDetector(
             "YOLO model loaded successfully."
         )
 
-
-        // --------------------------------------------------------
-        // PRINT MODEL INFORMATION
-        // --------------------------------------------------------
 
         try {
 
@@ -176,10 +160,6 @@ class YoloDetector(
     }
 
 
-    // ============================================================
-    // DETECT FROM URI
-    // ============================================================
-
     fun detect(
         uri: Uri
     ): List<Detection> {
@@ -217,10 +197,6 @@ class YoloDetector(
     }
 
 
-    // ============================================================
-    // DETECT FROM BITMAP
-    // ============================================================
-
     fun detect(
         bitmap: Bitmap
     ): List<Detection> {
@@ -239,10 +215,6 @@ class YoloDetector(
             )
 
 
-            // ----------------------------------------------------
-            // RESIZE IMAGE
-            // ----------------------------------------------------
-
             val resizedBitmap =
                 Bitmap.createScaledBitmap(
                     bitmap,
@@ -252,19 +224,11 @@ class YoloDetector(
                 )
 
 
-            // ----------------------------------------------------
-            // CONVERT IMAGE TO FLOAT BUFFER
-            // ----------------------------------------------------
-
             val inputBuffer =
                 convertBitmapToByteBuffer(
                     resizedBitmap
                 )
 
-
-            // ----------------------------------------------------
-            // READ OUTPUT SHAPE
-            // ----------------------------------------------------
 
             val outputTensor =
                 interpreter.getOutputTensor(0)
@@ -300,8 +264,6 @@ class YoloDetector(
             //
             // 4 box values +
             // 80 class confidence values
-            // ----------------------------------------------------
-
             val dimension1 =
                 outputShape[1]
 
@@ -415,13 +377,10 @@ class YoloDetector(
     }
 
 
-    // ============================================================
     // PARSE [1, CHANNELS, PREDICTIONS]
     //
     // Example:
     // [1, 84, 8400]
-    // ============================================================
-
     private fun parseChannelsFirstOutput(
 
         output: Array<FloatArray>,
@@ -551,13 +510,10 @@ class YoloDetector(
     }
 
 
-    // ============================================================
     // PARSE [1, PREDICTIONS, CHANNELS]
     //
     // Example:
     // [1, 8400, 84]
-    // ============================================================
-
     private fun parsePredictionsFirstOutput(
 
         output: Array<FloatArray>,
@@ -680,10 +636,6 @@ class YoloDetector(
     }
 
 
-    // ============================================================
-    // ADD DETECTION
-    // ============================================================
-
     private fun addDetection(
 
         detections:
@@ -711,8 +663,6 @@ class YoloDetector(
         // normalized xywh values in this stage.
         //
         // Handle both normalized and pixel-style values.
-        // --------------------------------------------------------
-
         val normalized =
             centerX <= 1.5f &&
                     centerY <= 1.5f &&
@@ -821,10 +771,6 @@ class YoloDetector(
     }
 
 
-    // ============================================================
-    // PREPROCESS BITMAP
-    // ============================================================
-
     private fun convertBitmapToByteBuffer(
         bitmap: Bitmap
     ): ByteBuffer {
@@ -884,10 +830,6 @@ class YoloDetector(
         )
 
 
-        // ============================================================
-        // RED CHANNEL
-        // ============================================================
-
         for (pixel in pixels) {
 
             val red =
@@ -901,10 +843,6 @@ class YoloDetector(
         }
 
 
-        // ============================================================
-        // GREEN CHANNEL
-        // ============================================================
-
         for (pixel in pixels) {
 
             val green =
@@ -917,10 +855,6 @@ class YoloDetector(
             )
         }
 
-
-        // ============================================================
-        // BLUE CHANNEL
-        // ============================================================
 
         for (pixel in pixels) {
 
@@ -947,10 +881,6 @@ class YoloDetector(
         return buffer
     }
 
-
-    // ============================================================
-    // NON MAXIMUM SUPPRESSION
-    // ============================================================
 
     private fun nonMaximumSuppression(
 
@@ -1031,10 +961,6 @@ class YoloDetector(
         return selected
     }
 
-
-    // ============================================================
-    // IOU
-    // ============================================================
 
     private fun calculateIoU(
 
@@ -1122,10 +1048,6 @@ class YoloDetector(
     }
 
 
-    // ============================================================
-    // LOAD MODEL
-    // ============================================================
-
     private fun loadModelFile(
 
         assetName: String
@@ -1161,10 +1083,6 @@ class YoloDetector(
         }
     }
 
-
-    // ============================================================
-    // CLOSE
-    // ============================================================
 
     fun close() {
 

@@ -40,10 +40,6 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 
 
-// ============================================================
-// LOGIN SCREEN
-// ============================================================
-
 @Composable
 fun LoginScreen(
 
@@ -99,17 +95,9 @@ fun LoginScreen(
     }
 
 
-    // ============================================================
-    // CONTEXT / COROUTINE
-    // ============================================================
-
     val scope =
         rememberCoroutineScope()
 
-
-    // ============================================================
-    // LOCAL ROOM DATABASE
-    // ============================================================
 
     val database =
         remember {
@@ -125,10 +113,6 @@ fun LoginScreen(
             database.userDao()
         }
 
-
-    // ============================================================
-    // COLORS
-    // ============================================================
 
     val orange =
         Color(0xFFF15A24)
@@ -155,19 +139,11 @@ fun LoginScreen(
         Color(0xFFF0EAE7)
 
 
-    // ============================================================
-    // MAIN UI
-    // ============================================================
-
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(screenBackground)
     ) {
-
-        // ========================================================
-        // TOP BACKGROUND
-        // ========================================================
 
         Box(
             modifier = Modifier
@@ -182,10 +158,6 @@ fun LoginScreen(
                 .background(headerBeige)
         )
 
-
-        // ========================================================
-        // SCROLLABLE CONTENT
-        // ========================================================
 
         Column(
             modifier = Modifier
@@ -202,10 +174,6 @@ fun LoginScreen(
                 modifier = Modifier.height(32.dp)
             )
 
-
-            // ====================================================
-            // BRAND
-            // ====================================================
 
             Row(
                 verticalAlignment =
@@ -240,10 +208,6 @@ fun LoginScreen(
             )
 
 
-            // ====================================================
-            // WELCOME TEXT
-            // ====================================================
-
             Text(
                 text = "Welcome back",
                 fontSize = 30.sp,
@@ -270,10 +234,6 @@ fun LoginScreen(
                 modifier = Modifier.height(27.dp)
             )
 
-
-            // ====================================================
-            // LOGIN CARD
-            // ====================================================
 
             Card(
                 modifier = Modifier
@@ -308,10 +268,6 @@ fun LoginScreen(
                         )
                 ) {
 
-                    // ============================================
-                    // LOGIN TITLE
-                    // ============================================
-
                     Text(
                         text = "Sign in",
                         color = Color(0xFF1F1F1F),
@@ -337,10 +293,6 @@ fun LoginScreen(
                         modifier = Modifier.height(24.dp)
                     )
 
-
-                    // ============================================
-                    // EMAIL
-                    // ============================================
 
                     Text(
                         text = "Username / Email",
@@ -427,10 +379,6 @@ fun LoginScreen(
                         modifier = Modifier.height(18.dp)
                     )
 
-
-                    // ============================================
-                    // PASSWORD
-                    // ============================================
 
                     Text(
                         text = "Password",
@@ -569,10 +517,6 @@ fun LoginScreen(
                     )
 
 
-                    // ============================================
-                    // REMEMBER ME / FORGOT PASSWORD
-                    // ============================================
-
                     Row(
                         modifier =
                             Modifier.fillMaxWidth(),
@@ -650,10 +594,6 @@ fun LoginScreen(
                         )
 
 
-                        // ========================================
-                        // FIXED FORGOT PASSWORD BUTTON
-                        // ========================================
-
                         Text(
                             text =
                                 "Forgot Password?",
@@ -694,17 +634,9 @@ fun LoginScreen(
                     )
 
 
-                    // ============================================
-                    // SIGN IN BUTTON
-                    // ============================================
-
                     Button(
 
                         onClick = {
-
-                            // ====================================
-                            // VALIDATE
-                            // ====================================
 
                             if (
                                 username.isBlank() ||
@@ -717,10 +649,6 @@ fun LoginScreen(
                                 return@Button
                             }
 
-
-                            // ====================================
-                            // LOGIN
-                            // ====================================
 
                             scope.launch {
 
@@ -736,10 +664,6 @@ fun LoginScreen(
                                         .trim()
                                         .lowercase()
 
-
-                                // ================================
-                                // GET LOCAL USER
-                                // ================================
 
                                 val localUser =
 
@@ -758,10 +682,6 @@ fun LoginScreen(
                                         null
                                     }
 
-
-                                // ================================
-                                // TRY ONLINE LOGIN FIRST
-                                // ================================
 
                                 try {
 
@@ -804,10 +724,6 @@ fun LoginScreen(
                                     )
 
 
-                                    // ============================
-                                    // ONLINE LOGIN SUCCESS
-                                    // ============================
-
                                     if (
                                         response.isSuccessful
                                     ) {
@@ -840,18 +756,11 @@ fun LoginScreen(
                                             )
 
 
-                                            // ====================
                                             // SAVE JWT
-                                            // ====================
-
                                             TokenManager.saveToken(
                                                 context = context,
                                                 token = jwt
                                             )
-
-                                            // ====================
-                                            // SAVE REMEMBER ME
-                                            // ====================
 
                                             TokenManager.saveRememberMe(
                                                 context = context,
@@ -865,10 +774,6 @@ fun LoginScreen(
                                                 "🔐 JWT TOKEN SAVED"
                                             )
 
-
-                                            // ====================
-                                            // MARK LOCAL USER SYNCED
-                                            // ====================
 
                                             if (
                                                 localUser != null
@@ -897,10 +802,6 @@ fun LoginScreen(
                                                 }
                                             }
 
-
-                                            // ====================
-                                            // PROFILE INFORMATION
-                                            // ====================
 
                                             val profileFullName =
                                                 serverUser?.name
@@ -931,10 +832,6 @@ fun LoginScreen(
                                             )
 
 
-                                            // ====================
-                                            // PASS TOKEN + PROFILE
-                                            // ====================
-
                                             onLoginClick(
                                                 jwt,
                                                 profileFullName,
@@ -959,10 +856,6 @@ fun LoginScreen(
                                         return@launch
                                     }
 
-
-                                    // ============================
-                                    // SERVER REPLIED WITH ERROR
-                                    // ============================
 
                                     val serverError =
 
@@ -1083,10 +976,6 @@ fun LoginScreen(
                                 }
 
 
-                                // ================================
-                                // OFFLINE LOGIN
-                                // ================================
-
                                 if (
                                     localUser == null
                                 ) {
@@ -1118,10 +1007,6 @@ fun LoginScreen(
                                             "✅ OFFLINE LOGIN SUCCESS"
                                         )
 
-
-                                        // ====================
-                                        // SAVE REMEMBER ME
-                                        // ====================
 
                                         TokenManager.saveRememberMe(
                                             context = context,
@@ -1220,10 +1105,6 @@ fun LoginScreen(
                         }
                     }
 
-
-                    // ============================================
-                    // MESSAGE
-                    // ============================================
 
                     BiometricLoginSection(
                         enteredEmail = username,
@@ -1362,10 +1243,6 @@ fun LoginScreen(
                     )
 
 
-                    // ============================================
-                    // DIVIDER
-                    // ============================================
-
                     HorizontalDivider(
                         color =
                             Color(0xFFF0EBE8)
@@ -1377,10 +1254,6 @@ fun LoginScreen(
                             Modifier.height(20.dp)
                     )
 
-
-                    // ============================================
-                    // SIGN UP
-                    // ============================================
 
                     Row(
                         modifier =
@@ -1438,10 +1311,6 @@ fun LoginScreen(
                     Modifier.height(20.dp)
             )
 
-
-            // ====================================================
-            // SECURITY INFORMATION
-            // ====================================================
 
             Surface(
                 modifier =
@@ -1559,10 +1428,6 @@ fun LoginScreen(
     }
 
 
-    // ============================================================
-    // FORGOT PASSWORD DIALOG
-    // ============================================================
-
     if (
         showForgotPassword
     ) {
@@ -1588,10 +1453,6 @@ fun LoginScreen(
 }
 
 
-// ============================================================
-// FORGOT PASSWORD DIALOG
-// ============================================================
-
 @Composable
 fun ForgotPasswordDialog(
     onDismiss: () -> Unit,
@@ -1600,13 +1461,9 @@ fun ForgotPasswordDialog(
 
     val context = LocalContext.current
 
-    // ============================================================
-    // STEPS
     // 1 = EMAIL
     // 2 = OTP
     // 3 = NEW PASSWORD
-    // ============================================================
-
     var step by remember {
         mutableStateOf(1)
     }
@@ -1678,10 +1535,6 @@ fun ForgotPasswordDialog(
             RoundedCornerShape(22.dp),
 
 
-        // ========================================================
-        // TITLE
-        // ========================================================
-
         title = {
 
             Column {
@@ -1747,10 +1600,6 @@ fun ForgotPasswordDialog(
         },
 
 
-        // ========================================================
-        // CONTENT
-        // ========================================================
-
         text = {
 
             Column(
@@ -1758,10 +1607,6 @@ fun ForgotPasswordDialog(
                     Modifier.fillMaxWidth()
             ) {
 
-
-                // ====================================================
-                // STEP 1 - EMAIL
-                // ====================================================
 
                 if (
                     step == 1
@@ -1841,10 +1686,6 @@ fun ForgotPasswordDialog(
                     )
                 }
 
-
-                // ====================================================
-                // STEP 2 - OTP
-                // ====================================================
 
                 if (
                     step == 2
@@ -1951,10 +1792,6 @@ fun ForgotPasswordDialog(
                     )
                 }
 
-
-                // ====================================================
-                // STEP 3 - NEW PASSWORD
-                // ====================================================
 
                 if (
                     step == 3
@@ -2207,10 +2044,6 @@ fun ForgotPasswordDialog(
                 }
 
 
-                // ====================================================
-                // STATUS MESSAGE
-                // ====================================================
-
                 if (
                     message.isNotBlank()
                 ) {
@@ -2274,10 +2107,6 @@ fun ForgotPasswordDialog(
         },
 
 
-        // ========================================================
-        // MAIN BUTTON
-        // ========================================================
-
         confirmButton = {
 
             Button(
@@ -2296,10 +2125,6 @@ fun ForgotPasswordDialog(
 
                 onClick = {
 
-
-                    // =================================================
-                    // STEP 1 - SEND OTP
-                    // =================================================
 
                     if (
                         step == 1
@@ -2426,10 +2251,6 @@ fun ForgotPasswordDialog(
                     }
 
 
-                    // =================================================
-                    // STEP 2 - VERIFY OTP
-                    // =================================================
-
                     else if (
                         step == 2
                     ) {
@@ -2525,10 +2346,6 @@ fun ForgotPasswordDialog(
                         }
                     }
 
-
-                    // =================================================
-                    // STEP 3 - RESET PASSWORD
-                    // =================================================
 
                     else {
 
@@ -2705,10 +2522,6 @@ fun ForgotPasswordDialog(
             }
         },
 
-
-        // ========================================================
-        // CANCEL / BACK
-        // ========================================================
 
         dismissButton = {
 

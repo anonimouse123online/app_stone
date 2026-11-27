@@ -60,7 +60,6 @@ fun ForgotPasswordScreen(
                 modifier = Modifier.height(30.dp)
             )
 
-            // BACK BUTTON
             IconButton(
                 onClick = onBackClick
             ) {

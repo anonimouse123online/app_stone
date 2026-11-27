@@ -26,17 +26,9 @@ class AiPipeline(
     }
 
 
-    // ============================================================
-    // APP CONTEXT
-    // ============================================================
-
     private val appContext =
         context.applicationContext
 
-
-    // ============================================================
-    // MODEL STATUS
-    // ============================================================
 
     private val modelStatusChecker =
         ModelStatusChecker(
@@ -44,25 +36,13 @@ class AiPipeline(
         )
 
 
-    // ============================================================
-    // YOLO
-    // ============================================================
-
-    // YOLO is kept in the pipeline so your existing
-    // image processing code does not need to be removed.
-    //
-    // IMPORTANT:
-    // YOLO is now SECONDARY evidence only.
+    // YOLO detections are supplemental; engineer annotations remain authoritative.
     private val yolo =
         YoloDetector(
             appContext =
                 appContext
         )
 
-
-    // ============================================================
-    // GEMMA
-    // ============================================================
 
     private val gemma =
         GemmaReportGenerator(
@@ -74,10 +54,6 @@ class AiPipeline(
                 modelStatusChecker.getGemmaPath()
         )
 
-
-    // ============================================================
-    // INITIALIZE AI
-    // ============================================================
 
     suspend fun initialize() =
         withContext(
@@ -119,10 +95,7 @@ class AiPipeline(
         }
 
 
-    // ============================================================
     // IMAGE + ENGINEER LABELS → GEMMA
-    // ============================================================
-
     suspend fun analyzeImage(
         imageUri: Uri,
         annotations: List<FieldAnnotation> = emptyList(),
@@ -144,10 +117,6 @@ class AiPipeline(
                 "Starting AI field analysis."
             )
 
-
-            // ========================================================
-            // YOLO
-            // ========================================================
 
             // YOLO still runs so you do not need to remove your
             // existing detector/model.
@@ -180,10 +149,6 @@ class AiPipeline(
                 "YOLO detections: ${detections.size}"
             )
 
-
-            // ========================================================
-            // YOLO DETECTION SUMMARY
-            // ========================================================
 
             val detectionSummary =
 
@@ -228,10 +193,6 @@ class AiPipeline(
             )
 
 
-            // ========================================================
-            // ENGINEER ANNOTATIONS
-            // ========================================================
-
             val hasEngineerAnnotations =
                 annotations.isNotEmpty()
 
@@ -272,26 +233,10 @@ class AiPipeline(
             )
 
 
-            // ========================================================
-            // REPORT INPUT
-            // ========================================================
-
             /*
-             * IMPORTANT LOGIC
-             *
-             * Engineer annotations are the authoritative source.
-             *
-             * If at least one engineer annotation exists:
-             * - report is based on engineer annotations
-             * - YOLO is only supplemental
-             * - YOLO must not override progress
-             * - YOLO must not override stage
-             * - YOLO confidence must never become progress %
-             *
-             * If no engineer annotations exist:
-             * - AI should return that there is insufficient
-             *   engineer-provided evidence for progress reporting
-             * - YOLO may still be displayed separately
+             * Engineer annotations are authoritative. YOLO may supplement them
+             * but must not determine progress or stage. Without annotations,
+             * report insufficient evidence and keep detections separate.
              */
 
             val primaryEngineerInput =
@@ -364,10 +309,6 @@ class AiPipeline(
                 }
 
 
-            // ========================================================
-            // YOLO SUPPORTING INPUT
-            // ========================================================
-
             val secondaryVisualInput =
                 if (hasEngineerAnnotations) {
 
@@ -394,10 +335,6 @@ class AiPipeline(
                     """.trimIndent()
                 }
 
-
-            // ========================================================
-            // DAILY SITE REPORT PREPARATION
-            // ========================================================
 
             val formattedDate =
                 SimpleDateFormat("MMMM d, yyyy", Locale.ENGLISH).format(Date())
@@ -471,10 +408,6 @@ class AiPipeline(
                 ongoingList.joinToString("\n")
 
 
-            // ========================================================
-            // GEMMA REPORT GENERATION WITH FALLBACK
-            // ========================================================
-
             val report =
                 try {
                     gemma.generateReport(
@@ -508,10 +441,6 @@ class AiPipeline(
             )
 
 
-            // ========================================================
-            // RESULT
-            // ========================================================
-
             AiAnalysisResult(
                 detections =
                     detections,
@@ -522,10 +451,6 @@ class AiPipeline(
             )
         }
 
-
-    // ============================================================
-    // RELEASE
-    // ============================================================
 
     fun release() {
 
@@ -564,10 +489,6 @@ class AiPipeline(
     }
 }
 
-
-// ============================================================
-// AI RESULT
-// ============================================================
 
 data class AiAnalysisResult(
 

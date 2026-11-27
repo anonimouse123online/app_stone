@@ -69,10 +69,6 @@ import java.util.Date
 import java.util.Locale
 
 
-// ============================================================
-// UI MODELS
-// ============================================================
-
 data class Task(
     val title: String,
     val engineer: String,
@@ -113,10 +109,6 @@ enum class DashboardActivityType {
 }
 
 
-// ============================================================
-// COLORS
-// ============================================================
-
 private val DashboardBackground = Color(0xFFF6F8FA)
 private val SitePulseOrange = Color(0xFFF15A24)
 private val OrangeLight = Color(0xFFFFF7ED)
@@ -124,10 +116,6 @@ private val TextGray = Color(0xFF64748B)
 private val Green = Color(0xFF10B981)
 private val Blue = Color(0xFF3B82F6)
 
-
-// ============================================================
-// DASHBOARD
-// ============================================================
 
 @Composable
 fun DashboardScreen(
@@ -151,10 +139,6 @@ fun DashboardScreen(
     onProfileClick: () -> Unit
 
 ) {
-
-    // ========================================================
-    // API DATA
-    // ========================================================
 
     var projects by remember {
         mutableStateOf<List<DashboardProjectUi>>(emptyList())
@@ -565,10 +549,6 @@ fun DashboardScreen(
         }
     }
 
-    // ========================================================
-    // LOAD PROJECTS + TASKS
-    // ========================================================
-
     LaunchedEffect(token) {
 
         isLoading = true
@@ -584,11 +564,7 @@ fun DashboardScreen(
                 }
 
 
-            // =================================================
-            // PROJECTS API
             // GET /projects
-            // =================================================
-
             val projectsResponse =
                 RetrofitClient.api.getProjects(
                     token = authorizationToken
@@ -655,11 +631,7 @@ fun DashboardScreen(
             }
 
 
-            // =================================================
-            // TASKS API
             // GET /tasks
-            // =================================================
-
             val tasksResponse =
                 RetrofitClient.api.getTasks(
                     token = authorizationToken
@@ -721,9 +693,6 @@ fun DashboardScreen(
     }
 
 
-    // ========================================================
-    // USER
-    // ========================================================
     val userName = resolvedUserName
     val userRole = resolvedUserRole
 
@@ -738,12 +707,8 @@ fun DashboardScreen(
         }
 
 
-    // ========================================================
-    // RECENT FIELD ACTIVITY
     //
     // Uses tasks from GET /tasks
-    // ========================================================
-
     val activities =
         tasks
             .take(5)
@@ -807,10 +772,6 @@ fun DashboardScreen(
             }
 
 
-    // ========================================================
-    // HEALTH CALCULATION
-    // ========================================================
-
     val totalTasks =
         tasks.size
 
@@ -855,10 +816,6 @@ fun DashboardScreen(
         }
 
 
-    // ========================================================
-    // PROJECT STATUS
-    // ========================================================
-
     val onTrack =
         projects.count { project ->
             project.status.equals(
@@ -890,20 +847,7 @@ fun DashboardScreen(
         }
 
 
-    // ========================================================
-    // HEALTH SCORE
-    //
-    // TEMPORARY FORMULA:
-    // Every delayed / overdue / blocked task reduces health.
-    //
-    // We can improve this later using:
-    // - expected project progress
-    // - issues
-    // - delayed tasks
-    // - overdue tasks
-    // - field reports
-    // ========================================================
-
+    // Temporary score: delayed, overdue, or blocked tasks reduce project health.
     val health =
         if (totalTasks == 0) {
 
@@ -921,10 +865,6 @@ fun DashboardScreen(
                 .coerceIn(0, 100)
         }
 
-
-    // ========================================================
-    // SCREEN
-    // ========================================================
 
     Scaffold(
 
@@ -994,10 +934,6 @@ fun DashboardScreen(
         ) {
 
 
-            // =================================================
-            // LOADING
-            // =================================================
-
             if (isLoading) {
 
                 item {
@@ -1013,10 +949,6 @@ fun DashboardScreen(
                 }
             }
 
-
-            // =================================================
-            // ERROR
-            // =================================================
 
             errorMessage?.let { error ->
 
@@ -1083,10 +1015,6 @@ fun DashboardScreen(
                 }
             }
 
-
-            // =================================================
-            // USER
-            // =================================================
 
             item {
 
@@ -1165,18 +1093,10 @@ fun DashboardScreen(
             }
 
 
-            // =================================================
-            // ADVISORY
-            // =================================================
-
             item {
                 AdvisoryCard()
             }
 
-
-            // =================================================
-            // HEALTH
-            // =================================================
 
             item {
 
@@ -1205,10 +1125,6 @@ fun DashboardScreen(
             }
 
 
-            // =================================================
-            // QUICK ACTIONS
-            // =================================================
-
             item {
                 QuickActions(
                     isLoggingTime = isLoggingTime,
@@ -1232,10 +1148,6 @@ fun DashboardScreen(
                 )
             }
 
-
-            // =================================================
-            // ACTIVE PROJECT TITLE
-            // =================================================
 
             item {
 
@@ -1281,10 +1193,6 @@ fun DashboardScreen(
                 }
             }
 
-
-            // =================================================
-            // PROJECTS
-            // =================================================
 
             if (
                 projects.isEmpty() &&
@@ -1342,10 +1250,6 @@ fun DashboardScreen(
             }
 
 
-            // =================================================
-            // RECENT FIELD ACTIVITY
-            // =================================================
-
             item {
 
                 Row(
@@ -1396,10 +1300,6 @@ fun DashboardScreen(
                 }
             }
 
-
-            // =================================================
-            // TASK ACTIVITIES
-            // =================================================
 
             if (
                 activities.isEmpty() &&
@@ -1538,10 +1438,6 @@ fun DashboardScreen(
 
 
 
-// ============================================================
-// FORMAT NOTIFICATION TIME
-// ============================================================
-
 private fun formatNotificationTime(
     createdAt: String?
 ): String {
@@ -1641,10 +1537,6 @@ private fun formatNotificationTime(
 }
 
 
-// ============================================================
-// INITIALS
-// ============================================================
-
 private fun generateInitials(
     name: String
 ): String {
@@ -1680,10 +1572,6 @@ private fun generateInitials(
         .uppercase()
 }
 
-
-// ============================================================
-// TOP BAR
-// ============================================================
 
 @OptIn(
     ExperimentalMaterial3Api::class
@@ -1760,10 +1648,6 @@ private fun DashboardTopBar(
 }
 
 
-// ============================================================
-// NOTIFICATION DIALOG
-// ============================================================
-
 @Composable
 private fun NotificationDialog(
 
@@ -1804,10 +1688,6 @@ private fun NotificationDialog(
                         .fillMaxSize()
                         .padding(20.dp)
             ) {
-
-                // ====================================================
-                // HEADER
-                // ====================================================
 
                 Row(
                     modifier =
@@ -1935,10 +1815,6 @@ private fun NotificationDialog(
                 )
 
 
-                // ====================================================
-                // LOADING
-                // ====================================================
-
                 if (isLoading) {
 
                     Box(
@@ -1958,10 +1834,6 @@ private fun NotificationDialog(
                     return@Column
                 }
 
-
-                // ====================================================
-                // ERROR
-                // ====================================================
 
                 if (errorMessage != null) {
 
@@ -2026,10 +1898,6 @@ private fun NotificationDialog(
                     return@Column
                 }
 
-
-                // ====================================================
-                // EMPTY
-                // ====================================================
 
                 if (notifications.isEmpty()) {
 
@@ -2096,10 +1964,6 @@ private fun NotificationDialog(
                 }
 
 
-                // ====================================================
-                // API NOTIFICATIONS
-                // ====================================================
-
                 LazyColumn(
                     modifier =
                         Modifier.fillMaxSize(),
@@ -2148,10 +2012,6 @@ private fun NotificationDialog(
     }
 }
 
-// ============================================================
-// LOG TIME FORM DATA
-// ============================================================
-
 data class LogTimeFormData(
     val projectName: String,
     val hours: String,
@@ -2165,10 +2025,6 @@ data class LogTimeFormData(
     val equipmentUsed: String,
     val additionalNotes: String
 )
-
-// ============================================================
-// LOG TIME DIALOG
-// ============================================================
 
 @Composable
 private fun LogTimeDialog(
@@ -2559,9 +2415,6 @@ private fun LogTimeDialog(
                         )
                     }
 
-                    // ============================================================
-                    // AUTOMATIC SITE CONDITIONS (AUTO-DETECTED VIA GPS)
-                    // ============================================================
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(16.dp),
@@ -2814,9 +2667,7 @@ private fun LogTimeDialog(
                         }
                     }
 
-                    // ============================================================
                     // MANPOWER (Workers, Supervisors, Sub-contractors)
-                    // ============================================================
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
@@ -2908,9 +2759,6 @@ private fun LogTimeDialog(
                         }
                     }
 
-                    // ============================================================
-                    // MATERIALS & EQUIPMENT
-                    // ============================================================
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp),
@@ -2965,9 +2813,6 @@ private fun LogTimeDialog(
                         }
                     }
 
-                    // ============================================================
-                    // ADDITIONAL NOTES
-                    // ============================================================
                     Column {
                         Text(
                             text = "Additional Notes",
@@ -3110,10 +2955,6 @@ private fun LogTimeDialog(
         }
     }
 }
-
-// ============================================================
-// NOTIFICATION ITEM
-// ============================================================
 
 @Composable
 private fun NotificationItem(
@@ -3318,10 +3159,6 @@ private fun NotificationItem(
     }
 }
 
-
-// ============================================================
-// LOCATION
-// ============================================================
 
 @Composable
 private fun DashboardLocationRow(
@@ -3620,10 +3457,6 @@ private fun formatCoordinates(
 }
 
 
-// ============================================================
-// ADVISORY
-// ============================================================
-
 @Composable
 private fun AdvisoryCard() {
     Card(
@@ -3674,10 +3507,6 @@ private fun AdvisoryCard() {
     }
 }
 
-
-// ============================================================
-// HEALTH
-// ============================================================
 
 @Composable
 private fun HealthStatusCard(
@@ -3861,10 +3690,6 @@ private fun HealthStatusCard(
 }
 
 
-// ============================================================
-// STATUS BADGE
-// ============================================================
-
 @Composable
 private fun StatusBadge(
 
@@ -3900,10 +3725,6 @@ private fun StatusBadge(
     }
 }
 
-
-// ============================================================
-// QUICK ACTIONS
-// ============================================================
 
 @Composable
 private fun QuickActions(
@@ -3952,10 +3773,6 @@ private fun QuickActions(
     }
 }
 
-
-// ============================================================
-// QUICK ACTION BUTTON
-// ============================================================
 
 @Composable
 private fun QuickActionButton(
@@ -4033,10 +3850,6 @@ private fun QuickActionButton(
     }
 }
 
-
-// ============================================================
-// PROJECT CARD
-// ============================================================
 
 @Composable
 private fun ProjectCard(
@@ -4182,10 +3995,6 @@ private fun ProjectCard(
 }
 
 
-// ============================================================
-// ACTIVITY ROW
-// ============================================================
-
 @Composable
 private fun ActivityRow(
 
@@ -4256,10 +4065,6 @@ private fun ActivityRow(
 }
 
 
-// ============================================================
-// EMPTY CARD
-// ============================================================
-
 @Composable
 private fun EmptyDashboardCard(
     text: String
@@ -4291,10 +4096,6 @@ private fun EmptyDashboardCard(
     }
 }
 
-
-// ============================================================
-// BOTTOM NAVIGATION
-// ============================================================
 
 @Composable
 fun SitePulseBottomNavigation(
@@ -4365,10 +4166,6 @@ fun SitePulseBottomNavigation(
     }
 }
 
-
-// ============================================================
-// NAVIGATION ITEM
-// ============================================================
 
 @Composable
 private fun RowScope.SitePulseNavigationItem(

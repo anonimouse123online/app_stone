@@ -3,10 +3,6 @@ package com.example.capstonesample.data.api
 import com.google.gson.annotations.SerializedName
 
 
-// ============================================================
-// TIME LOG CREATE REQUEST
-// ============================================================
-
 data class TimeLogCreateRequest(
 
     @SerializedName("project_name")
@@ -46,10 +42,6 @@ data class TimeLogCreateRequest(
 )
 
 
-// ============================================================
-// TIME LOG CREATE RESPONSE
-// ============================================================
-
 data class TimeLogCreateResponse(
 
     val success: Boolean = false,
@@ -59,10 +51,6 @@ data class TimeLogCreateResponse(
     val data: TimeLogCreatedData? = null
 )
 
-
-// ============================================================
-// CREATED TIME LOG DATA
-// ============================================================
 
 data class TimeLogCreatedData(
 
@@ -110,10 +98,6 @@ data class TimeLogCreatedData(
     val updatedAt: String? = null
 )
 
-
-// ============================================================
-// TIME LOGS LIST RESPONSE
-// ============================================================
 
 data class TimeLogsListResponse(
     val success: Boolean = false,

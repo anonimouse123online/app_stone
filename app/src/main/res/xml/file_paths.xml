@@ -2,7 +2,6 @@
 
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Root paths for complete FileProvider coverage -->
     <external-files-path
         name="all_external_files"
         path="." />
@@ -15,22 +14,18 @@
         name="all_files"
         path="." />
 
-    <!-- Existing image files -->
     <files-path
         name="images"
         path="images/" />
 
-    <!-- Existing reports -->
     <files-path
         name="reports"
         path="reports/" />
 
-    <!-- Existing inspection images -->
     <cache-path
         name="inspection_images"
         path="." />
 
-    <!-- Camera photos saved in Pictures/SitePulse -->
     <external-files-path
         name="sitepulse_camera_images"
         path="Pictures/SitePulse/" />

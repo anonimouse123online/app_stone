@@ -28,10 +28,6 @@ class ModelDownloadManager(
             "MODEL_DOWNLOAD"
 
 
-        // ========================================================
-        // GEMMA MODEL
-        // ========================================================
-
         const val GEMMA_FILENAME =
             ModelStatusChecker.GEMMA_FILENAME
 
@@ -40,10 +36,6 @@ class ModelDownloadManager(
             "https://drive.usercontent.google.com/download?id=10ogxRw1GKemoSrbsBPlaPGbl9HdDKAsP&export=download&confirm=t"
     }
 
-
-    // ============================================================
-    // MODEL DIRECTORY
-    // ============================================================
 
     private val modelDir =
         File(
@@ -69,10 +61,6 @@ class ModelDownloadManager(
             )
         }
 
-
-    // ============================================================
-    // HTTP CLIENT
-    // ============================================================
 
     private val client =
         OkHttpClient.Builder()
@@ -103,17 +91,9 @@ class ModelDownloadManager(
             .build()
 
 
-    // ============================================================
-    // CURRENT DOWNLOAD
-    // ============================================================
-
     private var currentCall: Call? =
         null
 
-
-    // ============================================================
-    // DOWNLOAD GEMMA
-    // ============================================================
 
     fun downloadGemma():
             Flow<DownloadProgress> {
@@ -129,10 +109,6 @@ class ModelDownloadManager(
     }
 
 
-    // ============================================================
-    // DOWNLOAD FILE
-    // ============================================================
-
     fun downloadFile(
 
         url: String,
@@ -142,10 +118,6 @@ class ModelDownloadManager(
     ): Flow<DownloadProgress> = flow {
 
         try {
-
-            // ====================================================
-            // VALIDATE URL
-            // ====================================================
 
             if (
                 url.isBlank() ||
@@ -197,10 +169,6 @@ class ModelDownloadManager(
             )
 
 
-            // ====================================================
-            // FINAL + TEMP FILE
-            // ====================================================
-
             val finalFile =
                 File(
                     modelDir,
@@ -214,10 +182,6 @@ class ModelDownloadManager(
                     "$filename.download"
                 )
 
-
-            // ====================================================
-            // ALREADY INSTALLED
-            // ====================================================
 
             if (
                 finalFile.exists() &&
@@ -253,10 +217,6 @@ class ModelDownloadManager(
             }
 
 
-            // ====================================================
-            // RESUME INFORMATION
-            // ====================================================
-
             var existingBytes =
 
                 if (
@@ -276,10 +236,6 @@ class ModelDownloadManager(
                 "Existing partial bytes: $existingBytes"
             )
 
-
-            // ====================================================
-            // REQUEST
-            // ====================================================
 
             val requestBuilder =
                 Request.Builder()
@@ -315,10 +271,6 @@ class ModelDownloadManager(
                 )
             }
 
-
-            // ====================================================
-            // EXECUTE DOWNLOAD
-            // ====================================================
 
             val call =
                 client.newCall(
@@ -378,10 +330,6 @@ class ModelDownloadManager(
                         )
 
 
-                // =================================================
-                // SERVER RESUME SUPPORT
-                // =================================================
-
                 val isPartialResponse =
                     response.code == 206
 
@@ -413,10 +361,6 @@ class ModelDownloadManager(
                         0L
                 }
 
-
-                // =================================================
-                // CONTENT LENGTH
-                // =================================================
 
                 val responseLength =
                     body.contentLength()
@@ -457,10 +401,6 @@ class ModelDownloadManager(
                     "Expected total: $totalBytes"
                 )
 
-
-                // =================================================
-                // WRITE MODEL
-                // =================================================
 
                 val append =
                     isPartialResponse &&
@@ -529,10 +469,6 @@ class ModelDownloadManager(
                                 val now =
                                     System.currentTimeMillis()
 
-
-                                // =================================
-                                // PROGRESS
-                                // =================================
 
                                 if (
                                     now -
@@ -613,10 +549,6 @@ class ModelDownloadManager(
             }
 
 
-            // ====================================================
-            // VERIFY TEMP FILE
-            // ====================================================
-
             if (
                 !tempFile.exists()
             ) {
@@ -644,10 +576,6 @@ class ModelDownloadManager(
             )
 
 
-            // ====================================================
-            // REMOVE OLD FINAL MODEL
-            // ====================================================
-
             if (
                 finalFile.exists()
             ) {
@@ -663,10 +591,7 @@ class ModelDownloadManager(
             }
 
 
-            // ====================================================
             // TEMP -> FINAL
-            // ====================================================
-
             val renamed =
                 tempFile.renameTo(
                     finalFile
@@ -709,10 +634,6 @@ class ModelDownloadManager(
                 }
             }
 
-
-            // ====================================================
-            // VERIFY FINAL MODEL
-            // ====================================================
 
             if (
                 !finalFile.exists() ||
@@ -818,10 +739,6 @@ class ModelDownloadManager(
     )
 
 
-    // ============================================================
-    // CANCEL DOWNLOAD
-    // ============================================================
-
     fun cancelDownload() {
 
         Log.d(
@@ -838,10 +755,6 @@ class ModelDownloadManager(
             null
     }
 
-
-    // ============================================================
-    // MODEL EXISTS
-    // ============================================================
 
     fun modelExists(
         filename: String
@@ -861,10 +774,6 @@ class ModelDownloadManager(
     }
 
 
-    // ============================================================
-    // GEMMA EXISTS
-    // ============================================================
-
     fun gemmaExists(): Boolean {
 
         return modelExists(
@@ -872,10 +781,6 @@ class ModelDownloadManager(
         )
     }
 
-
-    // ============================================================
-    // GET MODEL FILE
-    // ============================================================
 
     fun getModelFile(
         filename: String
@@ -888,10 +793,6 @@ class ModelDownloadManager(
     }
 
 
-    // ============================================================
-    // GET GEMMA FILE
-    // ============================================================
-
     fun getGemmaFile(): File {
 
         return getModelFile(
@@ -899,10 +800,6 @@ class ModelDownloadManager(
         )
     }
 
-
-    // ============================================================
-    // DELETE MODEL
-    // ============================================================
 
     fun deleteModel(
         filename: String
@@ -956,10 +853,6 @@ class ModelDownloadManager(
     }
 
 
-    // ============================================================
-    // DELETE GEMMA
-    // ============================================================
-
     fun deleteGemma(): Boolean {
 
         return deleteModel(
@@ -967,10 +860,6 @@ class ModelDownloadManager(
         )
     }
 
-
-    // ============================================================
-    // DELETE ALL MODELS
-    // ============================================================
 
     fun deleteAllModels() {
 

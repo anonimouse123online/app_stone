@@ -39,10 +39,6 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 
-// ============================================================
-// TASK UI MODEL
-// ============================================================
-
 data class SiteTask(
     val id: String,
     val title: String,
@@ -68,10 +64,6 @@ data class SiteTask(
 )
 
 
-// ============================================================
-// COLORS
-// ============================================================
-
 private val TaskBackground =
     Color(0xFFF6F8FA)
 
@@ -88,10 +80,7 @@ private val TaskRed =
     Color(0xFFEF4444)
 
 
-// ============================================================
 // GET USER UUID FROM JWT
-// ============================================================
-
 private fun getUserIdFromJwt(
     token: String
 ): String? {
@@ -164,10 +153,6 @@ private fun getUserIdFromJwt(
 }
 
 
-// ============================================================
-// TASKS SCREEN
-// ============================================================
-
 @Composable
 fun TasksScreen(
 
@@ -179,12 +164,7 @@ fun TasksScreen(
 
     onProfileClick: () -> Unit,
 
-    /*
-     * Kept for compatibility with your current navigation.
-     *
-     * The task details are now opened internally using selectedTask.
-     * You can remove this parameter later if nothing else uses it.
-     */
+    // Retain the callback for MainActivity navigation.
     onTaskClick: (SiteTask) -> Unit = {},
 
     // REAL JWT
@@ -199,13 +179,9 @@ fun TasksScreen(
         rememberCoroutineScope()
 
 
-    // ============================================================
-    // SELECTED TASK
     //
     // When user clicks a task card, the selected task is stored
     // here and TaskDetailScreen.kt will be shown.
-    // ============================================================
-
     var selectedTask by remember {
 
         mutableStateOf<SiteTask?>(
@@ -214,10 +190,7 @@ fun TasksScreen(
     }
 
 
-    // ============================================================
     // CURRENT ENGINEER UUID
-    // ============================================================
-
     val engineerId =
         remember(token) {
 
@@ -227,10 +200,6 @@ fun TasksScreen(
         }
 
 
-    // ============================================================
-    // SERVER TASKS
-    // ============================================================
-
     var serverTasks by remember {
 
         mutableStateOf<List<TaskResponse>>(
@@ -238,10 +207,6 @@ fun TasksScreen(
         )
     }
 
-
-    // ============================================================
-    // FILTER
-    // ============================================================
 
     var selectedFilter by remember {
 
@@ -251,10 +216,6 @@ fun TasksScreen(
     }
 
 
-    // ============================================================
-    // LOADING
-    // ============================================================
-
     var isRefreshing by remember {
 
         mutableStateOf(
@@ -262,10 +223,6 @@ fun TasksScreen(
         )
     }
 
-
-    // ============================================================
-    // ERROR
-    // ============================================================
 
     var taskError by remember {
 
@@ -275,15 +232,7 @@ fun TasksScreen(
     }
 
 
-    // ============================================================
-    // REFRESH TASKS
-    // ============================================================
-
     fun refreshTasks() {
-
-        // ========================================================
-        // TOKEN CHECK
-        // ========================================================
 
         if (
             token.isBlank()
@@ -295,10 +244,6 @@ fun TasksScreen(
             return
         }
 
-
-        // ========================================================
-        // OFFLINE CHECK
-        // ========================================================
 
         if (
             token.startsWith(
@@ -312,10 +257,6 @@ fun TasksScreen(
             return
         }
 
-
-        // ========================================================
-        // ENGINEER CHECK
-        // ========================================================
 
         if (
             engineerId.isNullOrBlank()
@@ -333,10 +274,6 @@ fun TasksScreen(
             return
         }
 
-
-        // ========================================================
-        // API REQUEST
-        // ========================================================
 
         scope.launch {
 
@@ -370,10 +307,7 @@ fun TasksScreen(
                 )
 
 
-                // ====================================================
                 // AUTHORIZATION TOKEN
-                // ====================================================
-
                 val authorizationToken =
                     if (
                         token.startsWith(
@@ -389,10 +323,7 @@ fun TasksScreen(
                     }
 
 
-                // ====================================================
                 // GET /tasks
-                // ====================================================
-
                 val response =
                     RetrofitClient.api
                         .getTasks(
@@ -413,10 +344,6 @@ fun TasksScreen(
                 )
 
 
-                // ====================================================
-                // SUCCESS
-                // ====================================================
-
                 if (
                     response.isSuccessful
                 ) {
@@ -428,10 +355,6 @@ fun TasksScreen(
                     if (
                         result?.success == true
                     ) {
-
-                        // =================================================
-                        // STORE TASKS
-                        // =================================================
 
                         serverTasks =
                             result.data
@@ -510,10 +433,6 @@ fun TasksScreen(
 
 
                 } else {
-
-                    // =================================================
-                    // SERVER ERROR BODY
-                    // =================================================
 
                     val error =
                         try {
@@ -601,10 +520,6 @@ fun TasksScreen(
     }
 
 
-    // ============================================================
-    // AUTOMATIC TASK LOAD
-    // ============================================================
-
     LaunchedEffect(
         token,
         engineerId,
@@ -622,26 +537,15 @@ fun TasksScreen(
     }
 
 
-    // ============================================================
     // API TASK -> UI TASK
-    // ============================================================
-
     val tasks =
         serverTasks.map { task ->
 
-
-            // ========================================================
-            // STATUS
-            // ========================================================
 
             val taskStatus =
                 task.status
                     ?: "Pending"
 
-
-            // ========================================================
-            // STATUS INDICATOR COLOR
-            // ========================================================
 
             val indicatorColor =
                 when (
@@ -675,18 +579,10 @@ fun TasksScreen(
                 }
 
 
-            // ========================================================
-            // ASSIGNEE
-            // ========================================================
-
             val assigneeName =
                 task.assigneeName
                     ?: "Me"
 
-
-            // ========================================================
-            // INITIALS
-            // ========================================================
 
             val initials =
                 assigneeName
@@ -706,10 +602,6 @@ fun TasksScreen(
                         "ME"
                     }
 
-
-            // ========================================================
-            // SITE TASK
-            // ========================================================
 
             SiteTask(
 
@@ -801,19 +693,11 @@ fun TasksScreen(
         }
 
 
-    // ============================================================
-    // FILTERED TASKS
-    // ============================================================
-
     val filteredTasks =
         when (
             selectedFilter
         ) {
 
-
-            // ========================================================
-            // TO DO
-            // ========================================================
 
             "To Do" ->
 
@@ -836,10 +720,6 @@ fun TasksScreen(
                 }
 
 
-            // ========================================================
-            // IN PROGRESS
-            // ========================================================
-
             "In Progress" ->
 
                 tasks.filter {
@@ -855,10 +735,6 @@ fun TasksScreen(
                             )
                 }
 
-
-            // ========================================================
-            // DONE
-            // ========================================================
 
             "Done" ->
 
@@ -881,26 +757,18 @@ fun TasksScreen(
                 }
 
 
-            // ========================================================
-            // ALL
-            // ========================================================
-
             else ->
 
                 tasks
         }
 
 
-    // ============================================================
-    // SCREEN SWITCH
     //
     // If a task has been selected, show TaskDetailScreen.kt.
     //
     // Otherwise show the regular Tasks list.
     //
     // This is placed AFTER all remember/state calls.
-    // ============================================================
-
     val openedTask =
         selectedTask
 
@@ -908,10 +776,6 @@ fun TasksScreen(
     if (
         openedTask != null
     ) {
-
-        // ========================================================
-        // TASK DETAILS
-        // ========================================================
 
         TaskDetailScreen(
 
@@ -936,10 +800,6 @@ fun TasksScreen(
             },
 
 
-            // ====================================================
-            // BACK
-            // ====================================================
-
             onBackClick = {
 
                 selectedTask =
@@ -950,192 +810,28 @@ fun TasksScreen(
             },
 
 
-            // ====================================================
-            // CAMERA
-            // ====================================================
-
             onCameraClick = {
 
                 /*
-                 * ===================================================
-                 * TODO: CAMERA IMPLEMENTATION
-                 * ===================================================
+                 * TODO: Implement camera capture and attach the photo to its
+                 * task and project. Include timestamp, location, and engineer
+                 * context with the evidence.
                  *
-                 * Recommended Android library:
-                 *
-                 * CAMERA X
-                 *
-                 * Future flow:
-                 *
-                 * Open Camera
-                 *      ↓
-                 * Capture construction/site photo
-                 *      ↓
-                 * Store image locally
-                 *      ↓
-                 * Add:
-                 *
-                 * - Timestamp
-                 * - GPS/location
-                 * - Engineer ID
-                 * - Task ID
-                 * - Project ID
-                 *
-                 *      ↓
-                 *
-                 * Upload photo to backend
-                 *
-                 *      ↓
-                 *
-                 * Save as Task Evidence
-                 *
-                 *
-                 * openedTask.id
-                 *
-                 * gives you the TASK UUID.
-                 *
-                 *
-                 * openedTask.projectId
-                 *
-                 * gives you the PROJECT UUID.
-                 *
-                 *
-                 * ===================================================
-                 * FUTURE AI
-                 * ===================================================
-                 *
-                 * Photo
-                 *    ↓
-                 * AI Vision Model
-                 *    ↓
-                 * Analyze:
-                 *
-                 * - PPE detection
-                 * - Helmet detection
-                 * - Safety vest detection
-                 * - Possible hazards
-                 * - Visible cracks/damage
-                 * - Construction progress
-                 * - Missing materials/components
-                 * - Worksite condition
-                 *
-                 *
-                 * RECOMMENDED ARCHITECTURE:
-                 *
-                 * CameraX
-                 *    ↓
-                 * Captured image
-                 *    ↓
-                 * Upload to SitePulse backend
-                 *    ↓
-                 * Vision AI
-                 *    ↓
-                 * AI Result
-                 *    ↓
-                 * Engineer reviews result
-                 *    ↓
-                 * Engineer confirms/rejects
-                 *
-                 *
-                 * IMPORTANT:
-                 *
-                 * AI should NEVER automatically approve
-                 * construction work.
-                 *
-                 * AI should only provide:
-                 *
-                 * - observations
-                 * - warnings
-                 * - suggestions
-                 * - confidence scores
-                 *
-                 * The engineer must make the final decision.
+                 * Keep AI advisory. The engineer reviews and decides before
+                 * construction work is approved or evidence is submitted.
                  */
             },
 
 
-            // ====================================================
-            // REPORT
-            // ====================================================
-
             onReportClick = {
 
                 /*
-                 * ===================================================
-                 * TODO: REPORT ISSUE SCREEN
-                 * ===================================================
+                 * TODO: Implement issue reporting with title, description,
+                 * category, severity, photo and location evidence, timestamp,
+                 * engineer, task, and project details.
                  *
-                 * Later create:
-                 *
-                 * ReportIssueScreen.kt
-                 *
-                 *
-                 * Suggested navigation:
-                 *
-                 * ReportIssueScreen(
-                 *
-                 *     taskId =
-                 *         openedTask.id,
-                 *
-                 *     projectId =
-                 *         openedTask.projectId
-                 * )
-                 *
-                 *
-                 * Suggested report fields:
-                 *
-                 * - Report title
-                 *
-                 * - Description
-                 *
-                 * - Category
-                 *
-                 * - Severity
-                 *
-                 * - Photo evidence
-                 *
-                 * - GPS/location
-                 *
-                 * - Date
-                 *
-                 * - Timestamp
-                 *
-                 * - Engineer
-                 *
-                 * - Task
-                 *
-                 * - Project
-                 *
-                 *
-                 * FUTURE AI:
-                 *
-                 * Engineer captures image
-                 *       ↓
-                 *
-                 * Engineer writes short note
-                 *       ↓
-                 *
-                 * AI analyzes:
-                 *
-                 * Image + note + task
-                 *
-                 *       ↓
-                 *
-                 * AI can suggest:
-                 *
-                 * Report Title
-                 *
-                 * Report Description
-                 *
-                 * Possible Category
-                 *
-                 * Possible Severity
-                 *
-                 * Recommended Action
-                 *
-                 *
-                 * Engineer reviews everything
-                 * before submitting.
+                 * AI may suggest report fields, but the engineer reviews and
+                 * submits the issue.
                  */
             }
         )
@@ -1143,19 +839,11 @@ fun TasksScreen(
 
     } else {
 
-        // ========================================================
-        // TASK LIST SCREEN
-        // ========================================================
-
         Scaffold(
 
             containerColor =
                 TaskBackground,
 
-
-            // ====================================================
-            // TOP BAR
-            // ====================================================
 
             topBar = {
 
@@ -1171,10 +859,6 @@ fun TasksScreen(
                 )
             },
 
-
-            // ====================================================
-            // BOTTOM NAVIGATION
-            // ====================================================
 
             bottomBar = {
 
@@ -1217,10 +901,6 @@ fun TasksScreen(
 
             ) {
 
-
-                // ====================================================
-                // TASK HEADER
-                // ====================================================
 
                 Column(
 
@@ -1270,10 +950,6 @@ fun TasksScreen(
                         )
 
 
-                        // =================================================
-                        // OFFLINE
-                        // =================================================
-
                         if (
                             token.startsWith(
                                 "LOCAL_"
@@ -1297,10 +973,6 @@ fun TasksScreen(
                             isRefreshing
                         ) {
 
-
-                            // =================================================
-                            // REFRESHING
-                            // =================================================
 
                             CircularProgressIndicator(
 
@@ -1327,10 +999,6 @@ fun TasksScreen(
                             )
                     )
 
-
-                    // =================================================
-                    // FILTER BUTTONS
-                    // =================================================
 
                     Row(
 
@@ -1374,10 +1042,6 @@ fun TasksScreen(
                     }
 
 
-                    // =================================================
-                    // ERROR MESSAGE
-                    // =================================================
-
                     if (
                         taskError != null
                     ) {
@@ -1407,10 +1071,6 @@ fun TasksScreen(
                     }
                 }
 
-
-                // ====================================================
-                // INITIAL LOADING
-                // ====================================================
 
                 if (
                     isRefreshing &&
@@ -1472,10 +1132,6 @@ fun TasksScreen(
                     filteredTasks.isEmpty()
                 ) {
 
-
-                    // =================================================
-                    // EMPTY STATE
-                    // =================================================
 
                     Box(
 
@@ -1585,10 +1241,6 @@ fun TasksScreen(
                             )
 
 
-                            // =================================================
-                            // MANUAL REFRESH
-                            // =================================================
-
                             if (
                                 !token.startsWith(
                                     "LOCAL_"
@@ -1656,10 +1308,6 @@ fun TasksScreen(
                 } else {
 
 
-                    // =================================================
-                    // TASK LIST
-                    // =================================================
-
                     LazyColumn(
 
                         modifier =
@@ -1682,10 +1330,6 @@ fun TasksScreen(
                     ) {
 
 
-                        // =================================================
-                        // TASK ITEMS
-                        // =================================================
-
                         items(
 
                             items =
@@ -1705,10 +1349,6 @@ fun TasksScreen(
                                     task,
 
                                 onClick = {
-
-                                    // =========================================
-                                    // OPEN TASK DETAILS
-                                    // =========================================
 
                                     selectedTask =
                                         task
@@ -1747,10 +1387,6 @@ fun TasksScreen(
     }
 }
 
-
-// ============================================================
-// TOP BAR
-// ============================================================
 
 @OptIn(
     ExperimentalMaterial3Api::class
@@ -1819,10 +1455,6 @@ private fun TasksTopBar(
 }
 
 
-// ============================================================
-// FILTER BUTTON
-// ============================================================
-
 @Composable
 private fun TaskFilterButton(
     text: String,
@@ -1851,10 +1483,6 @@ private fun TaskFilterButton(
     }
 }
 
-
-// ============================================================
-// TASK CARD
-// ============================================================
 
 @Composable
 private fun TaskListCard(
@@ -2090,10 +1718,6 @@ private fun TaskListCard(
 }
 
 
-// ============================================================
-// TASK DETAIL ROW
-// ============================================================
-
 @Composable
 private fun TaskDetailRow(
 
@@ -2144,20 +1768,12 @@ private fun TaskDetailRow(
 }
 
 
-// ============================================================
-// STATUS BADGE
-// ============================================================
-
 @Composable
 private fun TaskStatusBadge(
 
     status: String
 
 ) {
-
-    // ========================================================
-    // STATUS COLORS
-    // ========================================================
 
     val backgroundColor =
         when (
@@ -2273,10 +1889,6 @@ private fun TaskStatusBadge(
 }
 
 
-// ============================================================
-// BOTTOM NAVIGATION
-// ============================================================
-
 @Composable
 private fun TasksBottomNavigationBar(
 
@@ -2302,10 +1914,6 @@ private fun TasksBottomNavigationBar(
     ) {
 
 
-        // ========================================================
-        // HOME
-        // ========================================================
-
         TasksNavigationItem(
 
             title =
@@ -2322,10 +1930,6 @@ private fun TasksBottomNavigationBar(
                 onHomeClick
         )
 
-
-        // ========================================================
-        // PROJECTS
-        // ========================================================
 
         TasksNavigationItem(
 
@@ -2344,10 +1948,6 @@ private fun TasksBottomNavigationBar(
         )
 
 
-        // ========================================================
-        // MESSAGES
-        // ========================================================
-
         TasksNavigationItem(
 
             title =
@@ -2365,10 +1965,6 @@ private fun TasksBottomNavigationBar(
         )
 
 
-        // ========================================================
-        // TASKS
-        // ========================================================
-
         TasksNavigationItem(
 
             title =
@@ -2385,10 +1981,6 @@ private fun TasksBottomNavigationBar(
                 onTasksClick
         )
 
-
-        // ========================================================
-        // PROFILE
-        // ========================================================
 
         TasksNavigationItem(
 
@@ -2408,10 +2000,6 @@ private fun TasksBottomNavigationBar(
     }
 }
 
-
-// ============================================================
-// NAVIGATION ITEM
-// ============================================================
 
 @Composable
 private fun RowScope.TasksNavigationItem(

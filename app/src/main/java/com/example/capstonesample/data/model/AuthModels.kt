@@ -1,10 +1,6 @@
 package com.example.capstonesample.data.model
 
 
-// ============================================================
-// LOGIN
-// ============================================================
-
 data class LoginRequest(
     val email: String,
     val password: String
@@ -27,10 +23,6 @@ data class UserResponse(
     val role: String?
 )
 
-
-// ============================================================
-// SIGNUP
-// ============================================================
 
 data class SignupRequest(
     val name: String,

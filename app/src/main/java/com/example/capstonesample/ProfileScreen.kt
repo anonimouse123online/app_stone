@@ -59,10 +59,6 @@ import java.io.File
 import java.util.Locale
 
 
-// ============================================================
-// COLORS
-// ============================================================
-
 private val ProfileBackground =
     Color(0xFFF6F8FA)
 
@@ -75,10 +71,6 @@ private val ProfileGray =
 private val ProfileDividerColor =
     Color(0xFFE2E8F0)
 
-
-// ============================================================
-// PROFILE MODEL
-// ============================================================
 
 data class ProfileUiModel(
 
@@ -93,10 +85,6 @@ data class ProfileUiModel(
     val loggedHours: String = "0h"
 )
 
-
-// ============================================================
-// PROFILE SCREEN
-// ============================================================
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,10 +120,6 @@ fun ProfileScreen(
         rememberScrollState()
 
 
-    // ============================================================
-    // PROFILE INFO
-    // ============================================================
-
     val displayName =
         profile.fullName.ifBlank {
             "User"
@@ -151,10 +135,6 @@ fun ProfileScreen(
             displayName
         )
 
-
-    // ============================================================
-    // USER PROJECTS
-    // ============================================================
 
     var userProjects by remember {
 
@@ -174,13 +154,9 @@ fun ProfileScreen(
     }
 
 
-    // ============================================================
-    // LOAD USER PROJECTS
     //
     // SAME API USED BY ProjectsScreen
     // GET joined projects for logged-in user
-    // ============================================================
-
     fun loadUserProjects() {
 
         if (
@@ -344,10 +320,6 @@ fun ProfileScreen(
     }
 
 
-    // ============================================================
-    // USER STATS: COMPLETED TASKS & LOGGED HOURS
-    // ============================================================
-
     var completedCount by remember {
         mutableIntStateOf(profile.completedCount)
     }
@@ -455,10 +427,6 @@ fun ProfileScreen(
     }
 
 
-    // ============================================================
-    // LOAD PROJECTS & STATS WHEN PROFILE OPENS
-    // ============================================================
-
     LaunchedEffect(
         token
     ) {
@@ -466,10 +434,6 @@ fun ProfileScreen(
         loadUserStats()
     }
 
-
-    // ============================================================
-    // SCREEN
-    // ============================================================
 
     Scaffold(
 
@@ -577,10 +541,6 @@ fun ProfileScreen(
             )
 
 
-            // ====================================================
-            // PROFILE CARD
-            // ====================================================
-
             Card(
 
                 modifier =
@@ -616,10 +576,6 @@ fun ProfileScreen(
 
                 ) {
 
-
-                    // =================================================
-                    // AVATAR
-                    // =================================================
 
                     Box(
 
@@ -666,10 +622,6 @@ fun ProfileScreen(
                     )
 
 
-                    // =================================================
-                    // NAME
-                    // =================================================
-
                     Text(
 
                         text =
@@ -685,10 +637,6 @@ fun ProfileScreen(
                             Color.Black
                     )
 
-
-                    // =================================================
-                    // EMAIL
-                    // =================================================
 
                     if (
                         profile.email.isNotBlank()
@@ -722,10 +670,6 @@ fun ProfileScreen(
                             )
                     )
 
-
-                    // =================================================
-                    // ROLE
-                    // =================================================
 
                     Text(
 
@@ -763,10 +707,6 @@ fun ProfileScreen(
                     )
 
 
-                    // =================================================
-                    // PROFILE STATS
-                    // =================================================
-
                     Row(
 
                         modifier =
@@ -774,10 +714,6 @@ fun ProfileScreen(
 
                     ) {
 
-
-                        // =================================================
-                        // ACTUAL PROJECT COUNT
-                        // =================================================
 
                         ProfileStat(
 
@@ -837,10 +773,6 @@ fun ProfileScreen(
 
 
 
-            // ====================================================
-            // SETTINGS
-            // ====================================================
-
             Card(
 
                 modifier =
@@ -866,9 +798,7 @@ fun ProfileScreen(
                 Column {
 
 
-                    // ------------------------------------------------
                     // Which settings sheet is open
-                    // ------------------------------------------------
                     var showAccountSettings    by remember { mutableStateOf(false) }
                     var showNotifications      by remember { mutableStateOf(false) }
                     var showAppearance         by remember { mutableStateOf(false) }
@@ -922,9 +852,6 @@ fun ProfileScreen(
                         onClick = { showHelp = true }
                     )
 
-                    // ------------------------------------------------
-                    // SETTINGS BOTTOM SHEETS
-                    // ------------------------------------------------
                     if (showAccountSettings) {
                         AccountSettingsSheet(
                             profile = profile,
@@ -968,10 +895,6 @@ fun ProfileScreen(
                     )
             )
 
-
-            // ====================================================
-            // LOGOUT
-            // ====================================================
 
             OutlinedButton(
 
@@ -1053,10 +976,6 @@ fun ProfileScreen(
     }
 }
 
-
-// ============================================================
-// PROFILE PROJECT CARD
-// ============================================================
 
 @Composable
 private fun ProfileProjectCard(
@@ -1342,10 +1261,6 @@ private fun ProfileProjectCard(
 }
 
 
-// ============================================================
-// INITIALS
-// ============================================================
-
 private fun getProfileInitials(
     fullName: String
 ): String {
@@ -1376,10 +1291,6 @@ private fun getProfileInitials(
         }
 }
 
-
-// ============================================================
-// PROFILE STAT
-// ============================================================
 
 @Composable
 private fun ProfileStat(
@@ -1444,10 +1355,6 @@ private fun ProfileStat(
     }
 }
 
-
-// ============================================================
-// SETTINGS ROW
-// ============================================================
 
 @Composable
 private fun ProfileSettingRow(
@@ -1544,10 +1451,6 @@ private fun ProfileSettingRow(
 }
 
 
-// ============================================================
-// DIVIDER
-// ============================================================
-
 @Composable
 private fun ProfileDivider() {
 
@@ -1563,10 +1466,6 @@ private fun ProfileDivider() {
     )
 }
 
-
-// ============================================================
-// BOTTOM NAV
-// ============================================================
 
 @Composable
 private fun ProfileBottomNavigationBar(
@@ -1675,10 +1574,6 @@ private fun ProfileBottomNavigationBar(
 }
 
 
-// ============================================================
-// NAV ITEM
-// ============================================================
-
 @Composable
 private fun RowScope.ProfileNavigationItem(
 
@@ -1753,10 +1648,6 @@ private fun RowScope.ProfileNavigationItem(
 }
 
 
-// ============================================================
-// HELPERS
-// ============================================================
-
 private fun getAppPrefs(context: Context): SharedPreferences =
     context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
 
@@ -1771,10 +1662,7 @@ private fun formatBytes(bytes: Long): String = when {
 }
 
 
-// ============================================================
 // 1. ACCOUNT SETTINGS SHEET
-// ============================================================
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AccountSettingsSheet(
@@ -1885,10 +1773,7 @@ private fun AccountInfoItem(
 }
 
 
-// ============================================================
 // 2. NOTIFICATIONS SHEET
-// ============================================================
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotificationsSheet(onDismiss: () -> Unit) {
@@ -2001,10 +1886,7 @@ private fun NotifToggleRow(
 }
 
 
-// ============================================================
 // 3. APPEARANCE SHEET
-// ============================================================
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppearanceSheet(onDismiss: () -> Unit) {
@@ -2133,10 +2015,7 @@ fun AppearanceSheet(onDismiss: () -> Unit) {
 }
 
 
-// ============================================================
 // 4. DATA AND STORAGE SHEET
-// ============================================================
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DataStorageSheet(onDismiss: () -> Unit) {
@@ -2255,10 +2134,7 @@ private fun StorageInfoRow(label: String, value: String) {
 }
 
 
-// ============================================================
 // 5. SECURITY SHEET  (change password via email OTP flow)
-// ============================================================
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SecuritySheet(
@@ -2306,9 +2182,7 @@ fun SecuritySheet(
 
             when (step) {
 
-                // -----------------------------------------------
                 // STEP 0: Request password-reset OTP
-                // -----------------------------------------------
                 0 -> {
                     Surface(
                         shape  = RoundedCornerShape(14.dp),
@@ -2388,9 +2262,7 @@ fun SecuritySheet(
                     }
                 }
 
-                // -----------------------------------------------
                 // STEP 1: Enter OTP + new password
-                // -----------------------------------------------
                 1 -> {
                     Text(
                         text = "Enter the 6-digit code sent to $email and choose a new password.",
@@ -2496,9 +2368,7 @@ fun SecuritySheet(
                     }
                 }
 
-                // -----------------------------------------------
                 // STEP 2: Success
-                // -----------------------------------------------
                 2 -> {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -2543,10 +2413,7 @@ fun SecuritySheet(
 }
 
 
-// ============================================================
 // 6. HELP AND SUPPORT SHEET
-// ============================================================
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HelpSupportSheet(onDismiss: () -> Unit) {
@@ -2691,4 +2558,4 @@ fun HelpSupportSheet(onDismiss: () -> Unit) {
             }
         }
     }
-}
+}

@@ -3,10 +3,6 @@ package com.example.capstonesample.data.model
 import com.google.gson.annotations.SerializedName
 
 
-// ============================================================
-// CONVERSATION LIST
-// ============================================================
-
 data class ConversationsResponse(
     val success: Boolean,
     val conversations: List<ConversationDto>
@@ -48,10 +44,6 @@ data class ConversationDto(
 )
 
 
-// ============================================================
-// SEARCH USERS
-// ============================================================
-
 data class UserSearchResponse(
     val success: Boolean,
     val users: List<UserSearchDto>
@@ -72,10 +64,6 @@ data class UserSearchDto(
     val sharedProjects: List<String>? = null
 )
 
-
-// ============================================================
-// CREATE / OPEN CONVERSATION
-// ============================================================
 
 data class CreateConversationRequest(
 
@@ -102,10 +90,6 @@ data class CreateConversationResponse(
 )
 
 
-// ============================================================
-// GET MESSAGES
-// ============================================================
-
 data class MessagesResponse(
 
     val success: Boolean,
@@ -113,10 +97,6 @@ data class MessagesResponse(
     val messages: List<MessageDto>
 )
 
-
-// ============================================================
-// MESSAGE
-// ============================================================
 
 data class MessageDto(
 
@@ -150,11 +130,7 @@ data class MessageDto(
 )
 
 
-// ============================================================
-// MESSAGE ATTACHMENT
 // Used for images, PDF, Word files, etc.
-// ============================================================
-
 data class MessageAttachmentDto(
 
     val id: Int,
@@ -171,10 +147,6 @@ data class MessageAttachmentDto(
 )
 
 
-// ============================================================
-// SEND TEXT MESSAGE
-// ============================================================
-
 data class SendMessageRequest(
 
     val conversationId: Int,
@@ -182,10 +154,6 @@ data class SendMessageRequest(
     val message: String
 )
 
-
-// ============================================================
-// SEND MESSAGE RESPONSE
-// ============================================================
 
 data class SendMessageResponse(
 

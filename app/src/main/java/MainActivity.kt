@@ -49,15 +49,9 @@ class MainActivity : FragmentActivity() {
             null
         }
 
-        // ============================================================
-        // CREATE SITEPULSE NOTIFICATION CHANNEL
-        // ============================================================
         com.example.capstonesample.notifications.NotificationHelper.createNotificationChannel(this)
 
-        // ============================================================
-        // NOTIFICATION PERMISSION
         // Android 13+ requires runtime permission.
-        // ============================================================
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
@@ -72,10 +66,7 @@ class MainActivity : FragmentActivity() {
             )
         }
 
-        // ============================================================
-        // FIREBASE CLOUD MESSAGING
         // Subscribe this device to notifications sent to ALL USERS and ENGINEERS.
-        // ============================================================
         FirebaseMessaging.getInstance()
             .subscribeToTopic("all_users")
             .addOnCompleteListener { task ->
@@ -96,9 +87,6 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-        // ============================================================
-        // GET FCM TOKEN FOR DIRECT MESSAGING
-        // ============================================================
         FirebaseMessaging.getInstance()
             .token
             .addOnCompleteListener { task ->
@@ -115,40 +103,18 @@ class MainActivity : FragmentActivity() {
             }
 
 
-        // ============================================================
-        // RETROFIT
-        // ============================================================
-
         RetrofitClient.init(this)
 
-
-        // ============================================================
-        // BACKGROUND SYNC
-        // ============================================================
-
-        // Periodic synchronization.
-        //
-        // WorkManager will wait for network connectivity
-        // before running the SyncWorker.
 
         SyncManager.startPeriodicSync(
             applicationContext
         )
 
 
-        // Request synchronization when the application starts.
-        //
-        // If there is no internet connection,
-        // WorkManager will wait automatically.
-
         SyncManager.requestImmediateSync(
             applicationContext
         )
 
-
-        // ============================================================
-        // COMPOSE
-        // ============================================================
 
         setContent {
 
@@ -162,10 +128,6 @@ class MainActivity : FragmentActivity() {
                     startupSession
                 }
 
-                // ====================================================
-                // NAVIGATION STATE
-                // ====================================================
-
                 val startScreen = when {
                     savedSession == null -> "login"
                     intent?.getStringExtra("navigate_to") == "chat" -> "chat"
@@ -175,10 +137,6 @@ class MainActivity : FragmentActivity() {
                 var currentScreen by remember {
                     mutableStateOf(startScreen)
                 }
-
-                // ====================================================
-                // AUTHENTICATION STATE
-                // ====================================================
 
                 var authToken by remember {
                     mutableStateOf(savedSession?.token ?: "")
@@ -207,25 +165,13 @@ class MainActivity : FragmentActivity() {
                 }
 
 
-                // ====================================================
-                // SELECTED PROJECT
-                // ====================================================
-
                 var selectedProject by remember {
                     mutableStateOf<SiteProject?>(null)
                 }
 
 
-                // ====================================================
-                // NAVIGATION
-                // ====================================================
-
                 when (currentScreen) {
 
-
-                    // =================================================
-                    // LOGIN
-                    // =================================================
 
                     "login" -> {
 
@@ -253,10 +199,6 @@ class MainActivity : FragmentActivity() {
                                 loggedInRole =
                                     role
 
-                                // =====================================
-                                // SAVE USER SESSION
-                                // =====================================
-
                                 TokenManager.saveSession(
                                     context = context,
                                     token = token,
@@ -266,10 +208,7 @@ class MainActivity : FragmentActivity() {
                                 )
 
 
-                                // =====================================
                                 // SAVE REAL JWT TOKEN
-                                // =====================================
-
                                 if (
                                     token.isNotBlank() &&
                                     !token.startsWith("LOCAL_")
@@ -289,10 +228,6 @@ class MainActivity : FragmentActivity() {
                                 }
 
 
-                                // =====================================
-                                // GO TO DASHBOARD
-                                // =====================================
-
                                 currentScreen =
                                     "dashboard"
                             },
@@ -307,22 +242,11 @@ class MainActivity : FragmentActivity() {
                     }
 
 
-                    // =================================================
-                    // SIGNUP
-                    // =================================================
-
                     "signup" -> {
 
                         SignupScreen(
 
                             onSignupClick = {
-
-                                // Registration completed.
-                                //
-                                // Queue another synchronization.
-                                //
-                                // WorkManager waits automatically
-                                // if internet is unavailable.
 
                                 SyncManager.requestImmediateSync(
                                     context
@@ -342,10 +266,6 @@ class MainActivity : FragmentActivity() {
                         )
                     }
 
-
-                    // =================================================
-                    // DASHBOARD
-                    // =================================================
 
                     "dashboard" -> {
 
@@ -400,10 +320,6 @@ class MainActivity : FragmentActivity() {
                         )
                     }
 
-
-                    // =================================================
-                    // PROJECTS
-                    // =================================================
 
                     "projects" -> {
 
@@ -479,10 +395,6 @@ class MainActivity : FragmentActivity() {
                     }
 
 
-                    // =================================================
-                    // PROJECT DETAILS
-                    // =================================================
-
                     "project_detail" -> {
 
                         val project =
@@ -510,10 +422,7 @@ class MainActivity : FragmentActivity() {
 
                         } else {
 
-                            // Safety fallback.
-                            //
-                            // If the project information was somehow
-                            // lost, return to the projects page.
+                            // Return to the project list if project state is missing.
 
                             LaunchedEffect(Unit) {
 
@@ -523,10 +432,6 @@ class MainActivity : FragmentActivity() {
                         }
                     }
 
-
-                    // =================================================
-                    // CHAT
-                    // =================================================
 
                     "chat" -> {
 
@@ -564,10 +469,6 @@ class MainActivity : FragmentActivity() {
                         )
                     }
 
-
-                    // =================================================
-                    // TASKS
-                    // =================================================
 
                     "tasks" -> {
 
@@ -620,13 +521,7 @@ class MainActivity : FragmentActivity() {
                                 )
 
 
-                                // =====================================
-                                // AI REMOVED FOR NOW
-                                // =====================================
-                                //
-                                // Later we can open TaskDetailsScreen
-                                // here and add the camera + AI analysis
-                                // only when the user requests it.
+                                // Keep camera and AI analysis out of this flow until requested.
                             },
 
 
@@ -635,10 +530,6 @@ class MainActivity : FragmentActivity() {
                         )
                     }
 
-
-                    // =================================================
-                    // PROFILE
-                    // =================================================
 
                     "profile" -> {
 
@@ -714,10 +605,7 @@ class MainActivity : FragmentActivity() {
                             onLogoutClick = {
 
 
-                                // =====================================
                                 // CLEAR LOCAL LOGIN STATE
-                                // =====================================
-
                                 authToken =
                                     ""
 
@@ -731,10 +619,7 @@ class MainActivity : FragmentActivity() {
                                     ""
 
 
-                                // =====================================
                                 // DELETE STORED JWT AND ACTIVE SESSION
-                                // =====================================
-
                                 TokenManager.clearSession(
                                     context
                                 )
